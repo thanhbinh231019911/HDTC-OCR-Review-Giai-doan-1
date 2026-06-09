@@ -257,13 +257,13 @@ function appendAssetSection_(body, values) {
 }
 
 function buildAuthorizationContractNumber_(values) {
-  return contractValue_(values, 'so_thu_tu_hop_dong', '01') + '/' +
+  return formatContractSequence_(contractValue_(values, 'so_thu_tu_hop_dong', '01')) + '/' +
     contractValue_(values, 'ngay_lap_hop_dong_nam', Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyy')) +
     '/' + contractValue_(values, 'cif_khach_hang', '................') + '/HĐUQ';
 }
 
 function buildMortgageContractNumber_(values) {
-  return contractValue_(values, 'so_thu_tu_hop_dong', '01') + '/' +
+  return formatContractSequence_(contractValue_(values, 'so_thu_tu_hop_dong', '01')) + '/' +
     contractValue_(values, 'ngay_lap_hop_dong_nam', Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyy')) +
     '/' + contractValue_(values, 'cif_khach_hang', '................') + '/HĐBĐ';
 }
@@ -354,6 +354,7 @@ function applyTemplate03bReplacements_(doc, values, finalData) {
   applyTemplate03bAssetBlock_(body, firstAsset);
   applyTemplate03bBankBlock_(body, values);
   applyTemplate03bValuationBlock_(body, values);
+  applyMoneyWordsStyle03b_(body);
 
   replaceLiteral_(body, 'T\u00f2a \u00e1n nh\u00e2n d\u00e2n khu v\u1ef1c 13 \u2013 Ph\u00fa Th\u1ecd', values.toa_an_tranh_chap || '');
   replaceLiteral_(body, 'H\u1ee3p \u0111\u1ed3ng n\u00e0y \u0111\u01b0\u1ee3c l\u1eadp th\u00e0nh 05 b\u1ea3n', 'H\u1ee3p \u0111\u1ed3ng n\u00e0y \u0111\u01b0\u1ee3c l\u1eadp th\u00e0nh ' + buildContractCopyCount_(finalData) + ' b\u1ea3n');
@@ -395,6 +396,7 @@ function applyTemplate03bSecuredPartyBlock_(body, secured) {
   ];
   samples.forEach(function(sample, index) {
     const person = secured[index] || {};
+    replaceNextLiteral_(body, 'CCCD s\u1ed1', buildIdDocumentLabelForContract_(person));
     replaceLiteral_(body, sample.name, person.full_name || '');
     replaceLiteral_(body, sample.dob, person.date_of_birth || '');
     replaceLiteral_(body,
@@ -411,7 +413,7 @@ function applyTemplate03bAssetBlock_(body, asset) {
     (asset.certificate_title || 'Gi\u1ea5y ch\u1ee9ng nh\u1eadn') +
     ' s\u1ed1 ' + (re.certificate_number || '') +
     (re.registry_number ? ' (S\u1ed1 v\u00e0o s\u1ed5 c\u1ea5p GCN: ' + re.registry_number + ')' : '') +
-    (re.issuing_authority ? ' do ' + re.issuing_authority : '') +
+    (re.issuing_authority ? ' do ' + normalizeIssuingAuthorityForContract_(re.issuing_authority) : '') +
     (re.issue_date ? ' c\u1ea5p ng\u00e0y ' + re.issue_date : '') +
     ', c\u1ee5 th\u1ec3 nh\u01b0 sau:';
   replaceLiteral_(body, oldIntro, newIntro);
@@ -422,7 +424,7 @@ function applyTemplate03bAssetBlock_(body, asset) {
   replaceLiteral_(body, 'H\u00ecnh th\u1ee9c s\u1eed d\u1ee5ng: S\u1eed d\u1ee5ng chung c\u1ee7a v\u1ee3 v\u00e0 ch\u1ed3ng', 'H\u00ecnh th\u1ee9c s\u1eed d\u1ee5ng: ' + (re.usage_form || ''));
   replaceLiteral_(body, 'M\u1ee5c \u0111\u00edch s\u1eed d\u1ee5ng: \u0110\u1ea5t \u1edf t\u1ea1i n\u00f4ng th\u00f4n (ONT)', 'M\u1ee5c \u0111\u00edch s\u1eed d\u1ee5ng: ' + (re.usage_purpose || ''));
   replaceLiteral_(body, 'Th\u1eddi h\u1ea1n s\u1eed d\u1ee5ng: L\u00e2u d\u00e0i', 'Th\u1eddi h\u1ea1n s\u1eed d\u1ee5ng: ' + (re.usage_term || ''));
-  replaceLiteral_(body, 'Ngu\u1ed3n g\u1ed1c s\u1eed d\u1ee5ng: Nh\u00e0 n\u01b0\u1edbc giao \u0111\u1ea5t c\u00f3 thu ti\u1ec1n s\u1eed d\u1ee5ng \u0111\u1ea5t', 'Ngu\u1ed3n g\u1ed1c s\u1eed d\u1ee5ng: ' + (re.usage_origin || ''));
+  replaceLiteral_(body, 'Ngu\u1ed3n g\u1ed1c s\u1eed d\u1ee5ng: Nh\u00e0 n\u01b0\u1edbc giao \u0111\u1ea5t c\u00f3 thu ti\u1ec1n s\u1eed d\u1ee5ng \u0111\u1ea5t', '');
 }
 
 function applyTemplate03bBankBlock_(body, values) {
@@ -437,6 +439,14 @@ function applyTemplate03bValuationBlock_(body, values) {
   if (!amount) return;
   const words = numberToVietnameseCurrencyText_(amount);
   replaceLiteral_(body, ' 2.272.000.000 ,\u0111\u1ed3ng (b\u1eb1ng ch\u1eef: Hai t\u1ef7 hai tr\u0103m b\u1ea3y m\u01b0\u01a1i hai tri\u1ec7u \u0111\u1ed3ng ).', ' ' + formatMoneyForContract_(amount) + ' \u0111\u1ed3ng (b\u1eb1ng ch\u1eef: ' + words + ').');
+}
+
+function applyMoneyWordsStyle03b_(body) {
+  const range = body.findText('\\(b\\u1eb1ng ch\\u1eef:[^)]+\\)');
+  if (!range) return;
+  const text = range.getElement().asText();
+  text.setBold(range.getStartOffset(), range.getEndOffsetInclusive(), false);
+  text.setItalic(range.getStartOffset(), range.getEndOffsetInclusive(), true);
 }
 
 function exportGoogleDocAs_(fileId, mimeType) {
@@ -459,9 +469,9 @@ function buildDriveDownloadUrl_(fileId) {
 function buildContractPlaceholderMap_(finalData) {
   finalData = unwrapFinalValuesForContract_(finalData || {});
   const contract = finalData.contract_info || {};
-  const secured = finalData.secured_parties || [];
-  const obligors = finalData.obligors || [];
-  const assets = finalData.assets || [];
+  const secured = (finalData.secured_parties || []).map(cleanContractPerson_);
+  const obligors = (finalData.obligors || []).map(cleanContractPerson_);
+  const assets = (finalData.assets || []).map(cleanContractAsset_);
   const firstSecured = secured[0] || {};
   const firstObligor = obligors[0] || {};
   const firstAsset = assets[0] || {};
@@ -469,6 +479,8 @@ function buildContractPlaceholderMap_(finalData) {
   const mv = firstAsset.movable || {};
   const contractDateParts = parseContractDateInput_(contract.contract_date);
   const valuationTotal = calculateValuationTotalForContract_(contract);
+  const bankSigner = resolveBankSignerForContract_(contract.bank_signer);
+  const disputeCourt = resolveDisputeCourtForContract_(contract.dispute_court);
 
   const map = {
     case_id: finalData.case_id || '',
@@ -477,16 +489,20 @@ function buildContractPlaceholderMap_(finalData) {
     ngay_lap_hop_dong_ngay: contractDateParts.day,
     ngay_lap_hop_dong_thang: contractDateParts.month,
     ngay_lap_hop_dong_nam: contractDateParts.year,
-    so_thu_tu_hop_dong: cleanContractText_(contract.contract_sequence),
+    so_thu_tu_hop_dong: formatContractSequence_(contract.contract_sequence),
     cif_khach_hang: cleanContractText_(contract.cif_customer),
     loai_hop_dong: cleanContractText_(contract.contract_type),
-    loai_tai_san: cleanContractText_(contract.asset_type) || cleanContractText_(firstAsset.asset_type),
+    loai_tai_san: normalizeAssetTypeForContract_(cleanContractText_(contract.asset_type) || cleanContractText_(firstAsset.asset_type)),
     gia_tri_dinh_gia_dat: cleanContractText_(contract.valuation_land_amount),
     gia_tri_dinh_gia_nha: cleanContractText_(contract.valuation_house_amount),
     gia_tri_dinh_gia: valuationTotal || cleanContractText_(contract.valuation_amount),
     tong_gia_tri_tai_san: valuationTotal || cleanContractText_(contract.valuation_amount),
-    nguoi_ky_ngan_hang: cleanContractText_(contract.bank_signer),
-    toa_an_tranh_chap: cleanContractText_(contract.dispute_court),
+    nguoi_ky_ngan_hang: bankSigner.name,
+    chuc_vu_nguoi_ky_ngan_hang: bankSigner.title,
+    don_vi_quan_ly_khach_hang: bankSigner.unit,
+    dia_chi_don_vi_ngan_hang: bankSigner.address,
+    van_ban_uy_quyen_ngan_hang: bankSigner.authorization,
+    toa_an_tranh_chap: disputeCourt,
     tai_san_la_nha_thuc_te: cleanContractText_(contract.actual_house_asset),
     tai_san_thuc_te_khac_bia: cleanContractText_(contract.actual_asset_differs_from_certificate),
     mo_ta_tai_san_thuc_te_khac_bia: cleanContractText_(contract.actual_asset_difference_description) || cleanContractText_(contract.actual_house_asset),
@@ -497,8 +513,8 @@ function buildContractPlaceholderMap_(finalData) {
 
     ben_bao_dam_text: buildPeopleLegalText_(secured),
     ben_duoc_bao_dam_text: buildPeopleLegalText_(obligors),
-    ben_bao_dam_danh_sach_ten: secured.map(function(p) { return p.full_name || ''; }).filter(Boolean).join('; '),
-    ben_duoc_bao_dam_danh_sach_ten: obligors.map(function(p) { return p.full_name || ''; }).filter(Boolean).join('; '),
+    ben_bao_dam_danh_sach_ten: buildPersonNamesForContract_(secured),
+    ben_duoc_bao_dam_danh_sach_ten: buildPersonNamesForContract_(obligors),
 
     ben_bao_dam_1_ho_ten: firstSecured.full_name || '',
     ben_bao_dam_1_ngay_sinh: firstSecured.date_of_birth || '',
@@ -531,7 +547,7 @@ function buildContractPlaceholderMap_(finalData) {
     tai_san_1_hinh_thuc_su_dung: re.usage_form || '',
     tai_san_1_muc_dich_su_dung: re.usage_purpose || '',
     tai_san_1_thoi_han_su_dung: re.usage_term || '',
-    tai_san_1_nguon_goc_su_dung: re.usage_origin || '',
+    tai_san_1_nguon_goc_su_dung: '',
     tai_san_1_tai_san_gan_lien: cleanContractText_(contract.actual_asset_difference_description) || cleanContractText_(contract.actual_house_asset) || re.attached_assets || '',
     tai_san_1_thay_doi_sau_cap: re.post_issue_changes || '',
 
@@ -596,6 +612,142 @@ function cleanContractText_(value) {
   return String(value);
 }
 
+function joinVietnameseList_(items) {
+  items = (items || []).filter(Boolean);
+  if (!items.length) return '';
+  if (items.length === 1) return items[0];
+  if (items.length === 2) return items[0] + ' v\u00e0 ' + items[1];
+  return items.slice(0, -1).join(', ') + ' v\u00e0 ' + items[items.length - 1];
+}
+
+function normalizeAssetTypeForContract_(value) {
+  const raw = cleanContractText_(value);
+  const text = normalizeSearchTextForContract_(raw);
+  if (text.indexOf('real estate') >= 0 || text.indexOf('bat dong san') >= 0) return 'B\u1ea5t \u0111\u1ed9ng s\u1ea3n';
+  if (text.indexOf('movable') >= 0 || text.indexOf('dong san') >= 0) return '\u0110\u1ed9ng s\u1ea3n';
+  return raw;
+}
+
+function normalizeIdDocumentTypeForContract_(value) {
+  const raw = cleanContractText_(value);
+  const text = removeVietnameseAccents_(raw).toLowerCase();
+  if (text.indexOf('chung minh') >= 0 || /\bcmnd\b/.test(text)) return 'Ch\u1ee9ng minh nh\u00e2n d\u00e2n';
+  if (text.indexOf('can cuoc cong dan') >= 0 || /\bcccd\b/.test(text)) return 'C\u0103n c\u01b0\u1edbc c\u00f4ng d\u00e2n';
+  if (text.indexOf('can cuoc') >= 0) return 'C\u0103n c\u01b0\u1edbc';
+  return raw || 'C\u0103n c\u01b0\u1edbc c\u00f4ng d\u00e2n';
+}
+
+function buildIdDocumentLabelForContract_(person) {
+  return normalizeIdDocumentTypeForContract_(person && person.id_document_type) + ' s\u1ed1';
+}
+
+function normalizeIdIssuePlaceForContract_(value) {
+  const raw = cleanContractText_(value);
+  const text = removeVietnameseAccents_(raw).toLowerCase();
+  if (text.indexOf('bo cong an') >= 0 || text.indexOf('ministry of public security') >= 0) return 'B\u1ed9 C\u00f4ng an';
+  if (text.indexOf('canh sat quan ly hanh chinh') >= 0 || text.indexOf('qlhcvttxh') >= 0) {
+    return 'C\u1ee5c C\u1ea3nh s\u00e1t qu\u1ea3n l\u00fd h\u00e0nh ch\u00ednh v\u1ec1 tr\u1eadt t\u1ef1 x\u00e3 h\u1ed9i';
+  }
+  return raw;
+}
+
+function defaultIssuePlaceForIdDocument_(documentType, idNumber) {
+  if (!cleanContractText_(idNumber)) return '';
+  const text = removeVietnameseAccents_(cleanContractText_(documentType)).toLowerCase();
+  if (text.indexOf('can cuoc') >= 0) return 'B\u1ed9 C\u00f4ng an';
+  return '';
+}
+
+function normalizeIssuingAuthorityForContract_(value) {
+  const raw = cleanContractText_(value).replace(/\s+/g, ' ').trim();
+  if (!raw) return '';
+  const lowerWords = {
+    'CHI': 'Chi', 'NHANH': 'nh\u00e1nh', 'VAN': 'v\u0103n', 'PHONG': 'ph\u00f2ng',
+    'DANG': '\u0111\u0103ng', 'KY': 'k\u00fd', 'DAT': '\u0111\u1ea5t', 'DAI': '\u0111ai',
+    'HUYEN': 'huy\u1ec7n', 'THANH': 'th\u00e0nh', 'PHO': 'ph\u1ed1', 'TINH': 't\u1ec9nh',
+    'XA': 'x\u00e3', 'PHUONG': 'ph\u01b0\u1eddng', 'QUAN': 'qu\u1eadn'
+  };
+  const keepTitle = {};
+  raw.split(/\s+/).forEach(function(word) {
+    const ascii = removeVietnameseAccents_(word).toUpperCase();
+    if (!lowerWords[ascii] && word === word.toUpperCase() && word.length > 1) keepTitle[ascii] = titleCaseVietnameseWord_(word);
+  });
+  return raw.split(/\s+/).map(function(word, index) {
+    const ascii = removeVietnameseAccents_(word).toUpperCase();
+    if (index === 0) return titleCaseVietnameseWord_(word);
+    if (keepTitle[ascii]) return keepTitle[ascii];
+    return lowerWords[ascii] || word.toLowerCase();
+  }).join(' ')
+    .replace(/huy\u1ec7n l\u01b0\u01a1ng s\u01a1n/gi, 'huy\u1ec7n L\u01b0\u01a1ng S\u01a1n')
+    .replace(/t\u1ec9nh ph\u00fa th\u1ecd/gi, 't\u1ec9nh Ph\u00fa Th\u1ecd')
+    .replace(/x\u00e3 l\u01b0\u01a1ng s\u01a1n/gi, 'x\u00e3 L\u01b0\u01a1ng S\u01a1n');
+}
+
+function titleCaseVietnameseWord_(word) {
+  word = String(word || '').toLowerCase();
+  return word ? word.charAt(0).toUpperCase() + word.slice(1) : '';
+}
+
+function normalizeCertificateNumberForContract_(certificateNumber, registryNumber) {
+  const cert = cleanContractText_(certificateNumber).trim();
+  const registry = cleanContractText_(registryNumber).trim();
+  if (!cert) return '';
+  if (registry && removeVietnameseAccents_(cert).toUpperCase() === removeVietnameseAccents_(registry).toUpperCase()) return '';
+  if (/^CN\s*\d/i.test(cert)) return '';
+  return cert;
+}
+
+function normalizePostIssueChangesForContract_(value) {
+  const raw = cleanContractText_(value).trim();
+  const text = normalizeSearchTextForContract_(raw);
+  if (!raw) return '';
+  if (text.indexOf('khong ghi nhan') >= 0 || text.indexOf('khong thay doi') >= 0 || text === '-') return '';
+  return raw;
+}
+
+function resolveDisputeCourtForContract_(value) {
+  const raw = cleanContractText_(value);
+  const text = normalizeSearchTextForContract_(raw);
+  if (text.indexOf('13') >= 0 || text.indexOf('b') >= 0) return 'T\u00f2a \u00e1n nh\u00e2n d\u00e2n khu v\u1ef1c 13 - Ph\u00fa Th\u1ecd';
+  if (text.indexOf('12') >= 0 || text.indexOf('a') >= 0) return 'T\u00f2a \u00e1n nh\u00e2n d\u00e2n khu v\u1ef1c 12 - Ph\u00fa Th\u1ecd';
+  return raw;
+}
+
+function resolveBankSignerForContract_(value) {
+  const raw = cleanContractText_(value);
+  const text = normalizeSearchTextForContract_(raw);
+  const profiles = getBankSignerProfilesForContract_();
+  const legacy = {
+    'ong a': 'luong quang minh',
+    'ong b': 'le phi long',
+    'ong c': 'bui tu cuong',
+    'ba d': 'vu thi tam'
+  };
+  const target = legacy[text] || text;
+  const found = profiles.filter(function(profile) {
+    return normalizeSearchTextForContract_(profile.name) === target ||
+      target.indexOf(normalizeSearchTextForContract_(profile.name)) >= 0;
+  })[0];
+  return found || { name: raw, title: '', unit: '', address: '', authorization: '' };
+}
+
+function getBankSignerProfilesForContract_() {
+  const branchAddress = '\u0110\u01b0\u1eddng L\u00ea Th\u00e1nh T\u00f4ng, ph\u01b0\u1eddng H\u00f2a B\u00ecnh, t\u1ec9nh Ph\u00fa Th\u1ecd';
+  const authorization = '299/Q\u0110-BIDV.HB ng\u00e0y 01/04/2026 c\u1ee7a Gi\u00e1m \u0111\u1ed1c BIDV H\u00f2a B\u00ecnh';
+  return [
+    { name: 'L\u01b0\u01a1ng Quang Minh', title: 'Gi\u00e1m \u0111\u1ed1c', unit: 'Chi nh\u00e1nh H\u00f2a B\u00ecnh', address: branchAddress, authorization: authorization },
+    { name: 'L\u00ea Phi Long', title: 'Ph\u00f3 Gi\u00e1m \u0111\u1ed1c', unit: 'Chi nh\u00e1nh H\u00f2a B\u00ecnh', address: branchAddress, authorization: authorization },
+    { name: '\u0110inh Th\u1ecb Loan', title: 'Ph\u00f3 Gi\u00e1m \u0111\u1ed1c', unit: 'Chi nh\u00e1nh H\u00f2a B\u00ecnh', address: branchAddress, authorization: authorization },
+    { name: 'B\u00f9i T\u1ef1 C\u01b0\u1eddng', title: 'Ph\u00f3 Gi\u00e1m \u0111\u1ed1c', unit: 'Chi nh\u00e1nh H\u00f2a B\u00ecnh', address: branchAddress, authorization: authorization },
+    { name: 'V\u0169 Th\u1ecb T\u00e2m', title: 'Gi\u00e1m \u0111\u1ed1c Ph\u00f2ng giao d\u1ecbch', unit: 'Chi nh\u00e1nh H\u00f2a B\u00ecnh - Ph\u00f2ng giao d\u1ecbch L\u01b0\u01a1ng S\u01a1n', address: '\u0110\u01b0\u1eddng Tr\u1ea7n Ph\u00fa, x\u00e3 L\u01b0\u01a1ng S\u01a1n, t\u1ec9nh Ph\u00fa Th\u1ecd', authorization: authorization },
+    { name: 'Nguy\u1ec5n Th\u1ecb Thu H\u01b0\u01a1ng', title: 'Gi\u00e1m \u0111\u1ed1c Ph\u00f2ng giao d\u1ecbch', unit: 'Chi nh\u00e1nh H\u00f2a B\u00ecnh', address: branchAddress, authorization: authorization },
+    { name: 'Ho\u00e0ng Th\u1ecb Minh', title: 'Gi\u00e1m \u0111\u1ed1c Ph\u00f2ng giao d\u1ecbch', unit: 'Chi nh\u00e1nh H\u00f2a B\u00ecnh - Ph\u00f2ng giao d\u1ecbch S\u00f4ng \u0110\u00e0', address: '', authorization: authorization },
+    { name: 'Nguy\u1ec5n Thanh T\u00f9ng', title: 'Gi\u00e1m \u0111\u1ed1c Ph\u00f2ng giao d\u1ecbch', unit: 'Chi nh\u00e1nh H\u00f2a B\u00ecnh - Ph\u00f2ng giao d\u1ecbch Cao Phong', address: '', authorization: authorization },
+    { name: 'Nguy\u1ec5n Th\u1ecb Ho\u00e0i Thanh', title: 'Gi\u00e1m \u0111\u1ed1c Ph\u00f2ng giao d\u1ecbch', unit: 'Chi nh\u00e1nh H\u00f2a B\u00ecnh - Ph\u00f2ng giao d\u1ecbch Tr\u1ea7n H\u01b0ng \u0110\u1ea1o', address: '', authorization: authorization },
+    { name: 'Qu\u00e1ch Th\u1ecb Thu H\u00e0', title: 'Gi\u00e1m \u0111\u1ed1c Ph\u00f2ng giao d\u1ecbch', unit: 'Chi nh\u00e1nh H\u00f2a B\u00ecnh - Ph\u00f2ng giao d\u1ecbch Ph\u01b0\u01a1ng L\u00e2m', address: '', authorization: authorization }
+  ];
+}
+
 function normalizeContractMapValues_(map) {
   Object.keys(map).forEach(function(key) {
     map[key] = cleanContractText_(map[key]);
@@ -620,6 +772,13 @@ function parseContractDateInput_(value) {
   return result;
 }
 
+function formatContractSequence_(value) {
+  const text = cleanContractText_(value).trim();
+  if (!text) return '01';
+  if (/^\d+$/.test(text)) return text.padStart(2, '0');
+  return text;
+}
+
 function calculateValuationTotalForContract_(contract) {
   const land = parseMoneyNumber_(contract && contract.valuation_land_amount);
   const house = parseMoneyNumber_(contract && contract.valuation_house_amount);
@@ -634,16 +793,17 @@ function parseMoneyNumber_(value) {
 
 function normalizeDateToken_(value) {
   value = cleanContractText_(value).trim();
-  if (!value || /^\.+$/.test(value)) return '';
+  if (!value) return '';
+  if (/^\.+$/.test(value)) return '...';
   if (/^\d$/.test(value)) return '0' + value;
   return value;
 }
 
 function addExcelCompatibilityPlaceholders_(map, finalData) {
   const contract = finalData.contract_info || {};
-  const secured = finalData.secured_parties || [];
-  const obligors = finalData.obligors || [];
-  const assets = finalData.assets || [];
+  const secured = (finalData.secured_parties || []).map(cleanContractPerson_);
+  const obligors = (finalData.obligors || []).map(cleanContractPerson_);
+  const assets = (finalData.assets || []).map(cleanContractAsset_);
   const firstAsset = assets[0] || {};
   const re = firstAsset.real_estate || {};
   const mv = firstAsset.movable || {};
@@ -657,8 +817,8 @@ function addExcelCompatibilityPlaceholders_(map, finalData) {
   map.ngay_lap_hop_dong_ngay = map.ngay_lap_hop_dong_ngay || day;
   map.ngay_lap_hop_dong_thang = map.ngay_lap_hop_dong_thang || month;
   map.ngay_lap_hop_dong_nam = map.ngay_lap_hop_dong_nam || year;
-  map.nhan_so_vao_so = 'So vao so cap GCN';
-  map.ghi_chu_label = re.post_issue_changes ? 'Ghi chu:' : '';
+  map.nhan_so_vao_so = 'S\u1ed1 v\u00e0o s\u1ed5 c\u1ea5p GCN';
+  map.ghi_chu_label = '';
   map.chuc_vu_nguoi_ky_ngan_hang = map.chuc_vu_nguoi_ky_ngan_hang || '';
   map.don_vi_quan_ly_khach_hang = map.don_vi_quan_ly_khach_hang || '';
   map.dia_chi_don_vi_ngan_hang = map.dia_chi_don_vi_ngan_hang || '';
@@ -670,7 +830,7 @@ function addExcelCompatibilityPlaceholders_(map, finalData) {
     excel_th_ch_p_r2c2: map.cif_khach_hang,
     excel_th_ch_p_r3c2: map.ben_duoc_bao_dam_1_ho_ten,
     excel_th_ch_p_r3c4: map.ben_duoc_bao_dam_1_ngay_sinh,
-    excel_th_ch_p_r4c1: map.ben_duoc_bao_dam_1_loai_giay_to || 'CCCD so',
+    excel_th_ch_p_r4c1: buildIdDocumentLabelForContract_(obligors[0] || {}),
     excel_th_ch_p_r4c2: map.ben_duoc_bao_dam_1_so_giay_to,
     excel_th_ch_p_r5c1: 'do',
     excel_th_ch_p_r5c2: map.ben_duoc_bao_dam_1_noi_cap,
@@ -693,7 +853,7 @@ function addExcelCompatibilityPlaceholders_(map, finalData) {
     excel_th_ch_p_r27c2: map.tai_san_1_muc_dich_su_dung,
     excel_th_ch_p_r27c4: map.tai_san_1_thoi_han_su_dung,
     excel_th_ch_p_r27c6: map.tai_san_1_hinh_thuc_su_dung,
-    excel_th_ch_p_r28c2: map.tai_san_1_nguon_goc_su_dung,
+    excel_th_ch_p_r28c2: '',
     excel_th_ch_p_r28c3: map.ghi_chu_label,
     excel_th_ch_p_r28c4: '',
     excel_th_ch_p_r29c4: map.tai_san_1_thay_doi_sau_cap,
@@ -720,8 +880,8 @@ function addExcelCompatibilityPlaceholders_(map, finalData) {
     excel_so_tu_nhay_r48c6: '',
     excel_so_tu_nhay_r51c1: 'Ngay sinh',
     excel_so_tu_nhay_r51c3: secured.length > 1 ? 'Ngay sinh' : '',
-    excel_so_tu_nhay_r52c1: 'CCCD so',
-    excel_so_tu_nhay_r52c3: secured.length > 1 ? 'CCCD so' : '',
+    excel_so_tu_nhay_r52c1: buildIdDocumentLabelForContract_(secured[0] || {}),
+    excel_so_tu_nhay_r52c3: secured.length > 1 ? buildIdDocumentLabelForContract_(secured[1] || {}) : '',
     excel_so_tu_nhay_r53c1: 'do',
     excel_so_tu_nhay_r53c3: secured.length > 1 ? 'do' : '',
     excel_so_tu_nhay_r54c1: 'cap ngay',
@@ -738,7 +898,7 @@ function addExcelCompatibilityPlaceholders_(map, finalData) {
     excel_tc_t__r2c2: map.cif_khach_hang,
     excel_tc_t__r3c2: map.ben_duoc_bao_dam_1_ho_ten,
     excel_tc_t__r4c2: secured[0] && secured[0].gender === 'Nu' ? 'Ba' : 'Ong',
-    excel_tc_t__r6c1: 'CCCD so',
+    excel_tc_t__r6c1: buildIdDocumentLabelForContract_(obligors[0] || {}),
     excel_tc_t__r6c2: map.ben_duoc_bao_dam_1_so_giay_to,
     excel_tc_t__r7c1: 'do',
     excel_tc_t__r7c2: map.ben_duoc_bao_dam_1_noi_cap,
@@ -752,9 +912,9 @@ function addExcelCompatibilityPlaceholders_(map, finalData) {
     excel_tc_t__r18c2: map.ben_bao_dam_1_ngay_sinh,
     excel_tc_t__r18c3: secured.length > 1 ? 'Ngay sinh' : '',
     excel_tc_t__r18c4: map.ben_bao_dam_2_ngay_sinh || '',
-    excel_tc_t__r19c1: 'CCCD so',
+    excel_tc_t__r19c1: buildIdDocumentLabelForContract_(secured[0] || {}),
     excel_tc_t__r19c2: map.ben_bao_dam_1_so_giay_to,
-    excel_tc_t__r19c3: secured.length > 1 ? 'CCCD so' : '',
+    excel_tc_t__r19c3: secured.length > 1 ? buildIdDocumentLabelForContract_(secured[1] || {}) : '',
     excel_tc_t__r19c4: map.ben_bao_dam_2_so_giay_to || '',
     excel_tc_t__r20c1: 'do',
     excel_tc_t__r20c2: map.ben_bao_dam_1_noi_cap,
@@ -824,11 +984,9 @@ function buildPeopleLegalText_(people) {
   return (people || []).map(function(p, i) {
     const parts = [
       (i + 1) + '. ' + (p.full_name || ''),
-      p.date_of_birth ? 'sinh ngay ' + p.date_of_birth : '',
-      p.id_number ? (p.id_document_type || 'Giay to tuy than') + ' so ' + p.id_number : '',
-      p.id_issue_date ? 'cap ngay ' + p.id_issue_date : '',
-      p.id_issue_place ? 'tai ' + p.id_issue_place : '',
-      (p.current_address_final || p.permanent_address) ? 'Dia chi' + (p.current_address_final || p.permanent_address) : ''
+      p.date_of_birth ? 'sinh ng\u00e0y ' + p.date_of_birth : '',
+      p.id_number ? buildIdDocumentLabelForContract_(p) + ' ' + buildPersonIdIssuePhrase_(p) : '',
+      (p.current_address_final || p.permanent_address) ? '\u0110\u1ecba ch\u1ec9: ' + (p.current_address_final || p.permanent_address) : ''
     ].filter(Boolean);
     return parts.join(', ');
   }).join('\n');
@@ -1084,16 +1242,27 @@ function replaceLiteral_(body, oldText, newText) {
   body.replaceText(escapeRegex_(oldText), sanitizeReplacementText_(newText || ''));
 }
 
+function replaceNextLiteral_(body, oldText, newText) {
+  if (!oldText) return false;
+  const range = body.findText(escapeRegex_(oldText));
+  if (!range) return false;
+  range.getElement().asText().deleteText(range.getStartOffset(), range.getEndOffsetInclusive());
+  range.getElement().asText().insertText(range.getStartOffset(), newText || '');
+  return true;
+}
+
 function cleanContractPerson_(person) {
   person = person || {};
+  const idDocumentType = normalizeIdDocumentTypeForContract_(person.id_document_type);
+  const idIssuePlace = normalizeIdIssuePlaceForContract_(person.id_issue_place) || defaultIssuePlaceForIdDocument_(idDocumentType, person.id_number);
   return {
     full_name: cleanContractText_(person.full_name),
     date_of_birth: cleanContractText_(person.date_of_birth),
     gender: cleanContractText_(person.gender),
-    id_document_type: cleanContractText_(person.id_document_type) || 'CCCD',
+    id_document_type: idDocumentType,
     id_number: cleanContractText_(person.id_number),
     id_issue_date: cleanContractText_(person.id_issue_date),
-    id_issue_place: cleanContractText_(person.id_issue_place),
+    id_issue_place: idIssuePlace,
     permanent_address: cleanContractText_(person.permanent_address),
     current_address_final: cleanContractText_(person.current_address_final)
   };
@@ -1103,14 +1272,14 @@ function cleanContractAsset_(asset) {
   asset = asset || {};
   asset.real_estate = asset.real_estate || {};
   return {
-    asset_type: cleanContractText_(asset.asset_type),
+    asset_type: normalizeAssetTypeForContract_(asset.asset_type),
     owner_name: cleanContractText_(asset.owner_name),
     owner_identity_summary: cleanContractText_(asset.owner_identity_summary),
     certificate_title: cleanContractText_(asset.certificate_title),
     real_estate: {
-      certificate_number: cleanContractText_(asset.real_estate.certificate_number),
+      certificate_number: normalizeCertificateNumberForContract_(asset.real_estate.certificate_number, asset.real_estate.registry_number),
       registry_number: cleanContractText_(asset.real_estate.registry_number),
-      issuing_authority: cleanContractText_(asset.real_estate.issuing_authority),
+      issuing_authority: normalizeIssuingAuthorityForContract_(asset.real_estate.issuing_authority),
       issue_date: cleanContractText_(asset.real_estate.issue_date),
       land_plot_number: cleanContractText_(asset.real_estate.land_plot_number),
       map_sheet_number: cleanContractText_(asset.real_estate.map_sheet_number),
@@ -1119,9 +1288,9 @@ function cleanContractAsset_(asset) {
       usage_form: cleanContractText_(asset.real_estate.usage_form),
       usage_purpose: cleanContractText_(asset.real_estate.usage_purpose),
       usage_term: cleanContractText_(asset.real_estate.usage_term),
-      usage_origin: cleanContractText_(asset.real_estate.usage_origin),
+      usage_origin: '',
       attached_assets: cleanContractText_(asset.real_estate.attached_assets),
-      post_issue_changes: cleanContractText_(asset.real_estate.post_issue_changes)
+      post_issue_changes: normalizePostIssueChangesForContract_(asset.real_estate.post_issue_changes)
     }
   };
 }
@@ -1138,7 +1307,7 @@ function buildPersonNameForContract_(person) {
 }
 
 function buildPersonNamesForContract_(people) {
-  return (people || []).map(buildPersonNameForContract_).filter(Boolean).join(' - ');
+  return joinVietnameseList_((people || []).map(buildPersonNameForContract_).filter(Boolean));
 }
 
 function buildPeopleDefinitionText03b_(people) {
@@ -1152,7 +1321,7 @@ function buildPeopleDefinitionText03b_(people) {
       parts.push(idText);
     }
     return buildPersonNameForContract_(person) + (parts.length ? ' (' + parts.join(', ') + ')' : '');
-  }).filter(Boolean).join(' - ');
+  }).filter(Boolean).join(' v\u00e0 ');
   return text || '................................';
 }
 
@@ -1188,7 +1357,7 @@ function numberToVietnameseCurrencyText_(value) {
 }
 
 function numberToVietnameseWords_(number) {
-  if (number === 0) return 'Không';
+  if (number === 0) return 'Kh\u00f4ng';
   const units = ['', 'ngh\u00ecn', 'tri\u1ec7u', 't\u1ef7', 'ngh\u00ecn t\u1ef7', 'tri\u1ec7u t\u1ef7'];
   const parts = [];
   let n = Math.floor(number);
