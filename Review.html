@@ -1063,8 +1063,8 @@
 
     function renderContractDraftInfoForm() {
       const fields = [
-        { path: 'contract_info.asset_type', label: 'Loai tai san', type: 'select', options: ['', 'Bat dong san', 'Dong san'] },
-        { path: 'contract_info.contract_type', label: 'Loai hop dong', type: 'select', options: ['', 'Ben bao dam the chap cho chinh nghia vu cua minh', 'Ben bao dam the chap cho nghia vu cua ben thu ba'] },
+        { path: 'contract_info.asset_type', label: 'Loại tài sản', type: 'select', options: ['', 'Bất động sản', 'Động sản'], inferred: inferAssetTypeForDraft, disabled: true },
+        { path: 'contract_info.contract_type', label: 'Loại hợp đồng', type: 'select', options: ['', 'Bên bảo đảm thế chấp cho chính nghĩa vụ của mình', 'Bên bảo đảm thế chấp cho nghĩa vụ của bên thứ ba'], inferred: inferContractTypeForDraft, disabled: true },
         { path: 'contract_info.asset_count', label: 'So luong tai san bao dam', type: 'text' },
         { path: 'contract_info.valuation_land_amount', label: 'Gia tri dat', type: 'money' },
         { path: 'contract_info.valuation_house_amount', label: 'Gia tri nha', type: 'money' },
@@ -1079,12 +1079,13 @@
         { path: 'contract_info.actual_house_asset', label: 'T\u00e0i s\u1ea3n l\u00e0 nh\u00e0 th\u1ef1c t\u1ebf n\u1ebfu sai kh\u00e1c v\u1edbi b\u00eca \u0111\u1ea5t', type: 'textarea', dependsOn: 'contract_info.actual_asset_differs_from_certificate', showWhen: 'C\u00f3' }
       ];
       const inputs = fields.map(f => {
-        const value = getReviewFieldFinalValue(f.path);
+        const value = f.inferred ? f.inferred() : getReviewFieldFinalValue(f.path);
         const attrs = ' data-draft-path="' + escapeAttr(f.path) + '"' +
           (f.dependsOn ? ' data-draft-depends-on="' + escapeAttr(f.dependsOn) + '" data-draft-show-when="' + escapeAttr(f.showWhen || '') + '"' : '') +
           (f.affectsVisibility ? ' onchange="updateDraftConditionalFields()"' : '') +
           (f.type === 'money' ? ' inputmode="numeric" oninput="formatMoneyInput(this); updateMoneyFields()"' : '') +
-          (f.readonly ? ' readonly' : '');
+          (f.readonly ? ' readonly' : '') +
+          (f.disabled ? ' disabled' : '');
         const wrapperAttrs = f.dependsOn ? ' data-draft-field-wrapper data-depends-on="' + escapeAttr(f.dependsOn) + '" data-show-when="' + escapeAttr(f.showWhen || '') + '"' : ' data-draft-field-wrapper';
         if (f.type === 'select') {
           const opts = (f.options || []).map(option => '<option value="' + escapeAttr(option) + '"' + (normalizePlainText(option) === normalizePlainText(value) ? ' selected' : '') + '>' + escapeHtml(option || '-- Chon --') + '</option>').join('');
@@ -1105,6 +1106,39 @@
       const field = getByPathClient(reviewData, path);
       if (field && typeof field === 'object' && Object.prototype.hasOwnProperty.call(field, 'final_value')) return field.final_value || '';
       return '';
+    }
+
+    function inferAssetTypeForDraft() {
+      const current = getReviewFieldFinalValue('contract_info.asset_type');
+      if (current) {
+        const norm = normalizePlainText(current);
+        if (norm.indexOf('real estate') >= 0 || norm.indexOf('bat dong san') >= 0) return 'Bất động sản';
+        if (norm.indexOf('movable') >= 0 || norm.indexOf('dong san') >= 0) return 'Động sản';
+        return current;
+      }
+      const first = (reviewData.assets || [])[0] || {};
+      const raw = getFieldValueClient(first.asset_type) ||
+        getFieldValueClient(first.real_estate && first.real_estate.certificate_number) ||
+        getFieldValueClient(first.movable && first.movable.registration_number);
+      const norm = normalizePlainText(raw);
+      if (norm.indexOf('movable') >= 0 || norm.indexOf('dong san') >= 0) return 'Động sản';
+      return 'Bất động sản';
+    }
+
+    function inferContractTypeForDraft() {
+      return hasObligorUploadForDraft()
+        ? 'Bên bảo đảm thế chấp cho nghĩa vụ của bên thứ ba'
+        : 'Bên bảo đảm thế chấp cho chính nghĩa vụ của mình';
+    }
+
+    function hasObligorUploadForDraft() {
+      return (reviewData.ocr_results || []).some(item => item && item.group === 'obligor');
+    }
+
+    function getFieldValueClient(field) {
+      if (!field) return '';
+      if (typeof field === 'object' && Object.prototype.hasOwnProperty.call(field, 'final_value')) return field.final_value || '';
+      return field || '';
     }
 
     function getByPathClient(root, path) {
@@ -1194,6 +1228,8 @@
         const path = input.getAttribute('data-draft-path');
         values[path] = input.classList.contains('money-input') ? unformatMoney(input.value) : (input.value || '');
       });
+      values['contract_info.asset_type'] = inferAssetTypeForDraft();
+      values['contract_info.contract_type'] = inferContractTypeForDraft();
       const total = calculateMoneyTotal();
       values['contract_info.valuation_total_amount'] = total ? String(total) : '';
       values['contract_info.valuation_amount'] = total ? String(total) : '';

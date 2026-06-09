@@ -3,7 +3,19 @@ function applyTemplateDecisionToReviewJson(reviewJson) {
   ensureTemplateDecisionFields_(reviewJson);
   const contract = reviewJson.contract_info;
   const differs = normalizeYesNo_(getFieldFinalValue_(contract.actual_asset_differs_from_certificate));
-  const sameParty = isObligorSameAsSecuredParty_(reviewJson.secured_parties || [], reviewJson.obligors || []);
+  const hasObligorUpload = hasOcrGroupForTemplateDecision_(reviewJson, 'obligor');
+  const sameParty = hasObligorUpload ? false : true;
+  setFieldValues_(
+    contract.contract_type,
+    hasObligorUpload
+      ? 'B\u00ean b\u1ea3o \u0111\u1ea3m th\u1ebf ch\u1ea5p cho ngh\u0129a v\u1ee5 c\u1ee7a b\u00ean th\u1ee9 ba'
+      : 'B\u00ean b\u1ea3o \u0111\u1ea3m th\u1ebf ch\u1ea5p cho ch\u00ednh ngh\u0129a v\u1ee5 c\u1ee7a m\u00ecnh',
+    'TEMPLATE_DECISION',
+    0.95
+  );
+  if (contract.asset_type) {
+    setFieldValues_(contract.asset_type, inferAssetTypeForTemplateDecision_(reviewJson), 'TEMPLATE_DECISION', 0.95);
+  }
 
   const template4 = sameParty
     ? '03a_bds_chinh_chu'
@@ -96,6 +108,21 @@ function collectPersonIds_(people) {
   return (people || []).map(function(person) {
     return normalizeId_(getFieldFinalValue_(person.id_number));
   }).filter(Boolean).sort();
+}
+
+function hasOcrGroupForTemplateDecision_(reviewJson, group) {
+  return (reviewJson.ocr_results || []).some(function(item) {
+    return item && item.group === group;
+  });
+}
+
+function inferAssetTypeForTemplateDecision_(reviewJson) {
+  const assets = reviewJson.assets || [];
+  const first = assets[0] || {};
+  const raw = getFieldFinalValue_(first.asset_type) || getFieldFinalValue_(first.real_estate && first.real_estate.certificate_number);
+  const text = removeVietnameseAccents_(String(raw || '').toLowerCase());
+  if (text.indexOf('movable') >= 0 || text.indexOf('dong san') >= 0) return '\u0110\u1ed9ng s\u1ea3n';
+  return 'B\u1ea5t \u0111\u1ed9ng s\u1ea3n';
 }
 
 function getFieldFinalValue_(field) {

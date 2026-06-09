@@ -442,7 +442,7 @@ function applyTemplate03bValuationBlock_(body, values) {
 }
 
 function applyMoneyWordsStyle03b_(body) {
-  const range = body.findText('\\(b\\u1eb1ng ch\\u1eef:[^)]+\\)');
+  const range = body.findText('\\(bằng chữ:[^)]+\\)');
   if (!range) return;
   const text = range.getElement().asText();
   text.setBold(range.getStartOffset(), range.getEndOffsetInclusive(), false);
