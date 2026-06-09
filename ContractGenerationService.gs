@@ -654,6 +654,9 @@ function normalizeIdIssuePlaceForContract_(value) {
 function defaultIssuePlaceForIdDocument_(documentType, idNumber) {
   if (!cleanContractText_(idNumber)) return '';
   const text = removeVietnameseAccents_(cleanContractText_(documentType)).toLowerCase();
+  if (text.indexOf('can cuoc cong dan') >= 0 || /\bcccd\b/.test(text)) {
+    return 'C\u1ee5c C\u1ea3nh s\u00e1t qu\u1ea3n l\u00fd h\u00e0nh ch\u00ednh v\u1ec1 tr\u1eadt t\u1ef1 x\u00e3 h\u1ed9i';
+  }
   if (text.indexOf('can cuoc') >= 0) return 'B\u1ed9 C\u00f4ng an';
   return '';
 }
