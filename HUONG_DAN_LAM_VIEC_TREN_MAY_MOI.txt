@@ -1,0 +1,162 @@
+HUONG DAN LAM VIEC TREN MAY MOI - HDTC OCR REVIEW
+=================================================
+
+Muc tieu:
+- Lay code tu GitHub ve may moi.
+- Ket noi lai voi Google Apps Script project hien tai.
+- Co the sua code, push len Apps Script, va dong bo nguoc lai GitHub.
+
+Repo GitHub:
+https://github.com/thanhbinh231019911/HDTC-OCR-Review-Giai-doan-1.git
+
+
+I. CAI CONG CU CAN THIET
+------------------------
+
+1. Cai Git:
+https://git-scm.com/downloads
+
+2. Cai Node.js ban LTS:
+https://nodejs.org
+
+3. Mo PowerShell va cai Google Apps Script CLI:
+
+npm install -g @google/clasp
+
+
+II. CLONE PROJECT TU GITHUB
+---------------------------
+
+Mo PowerShell tai thu muc muon luu project, vi du:
+
+cd "C:\Users\ADMIN\Documents"
+
+Clone repo:
+
+git clone https://github.com/thanhbinh231019911/HDTC-OCR-Review-Giai-doan-1.git
+
+Di vao thu muc project:
+
+cd HDTC-OCR-Review-Giai-doan-1
+
+Cai thu vien local:
+
+npm install
+
+
+III. DANG NHAP GOOGLE APPS SCRIPT
+---------------------------------
+
+Dang nhap clasp:
+
+clasp login
+
+Trinh duyet se mo ra.
+Dang nhap dung tai khoan Google dang so huu Apps Script project.
+
+Kiem tra ket noi:
+
+clasp status
+
+Neu thay danh sach file .gs, .html, .json thi da ket noi dung.
+
+Luu y:
+- API key OpenAI, Cloud Vision nam trong Script Properties tren Google Apps Script.
+- Khong can nhap lai API key neu van dung cung Apps Script project.
+- Khong dua API key vao GitHub.
+
+
+IV. QUY TRINH LAM VIEC HANG NGAY
+--------------------------------
+
+Truoc khi sua code, lay ban moi nhat tu GitHub:
+
+git pull
+
+Sau khi sua code, day len Google Apps Script:
+
+clasp push
+
+Neu co sua Review.html, ReviewWebApp.gs, hoac logic web app, deploy lai:
+
+clasp deploy --description "update from new machine"
+
+Sau khi test on, commit len GitHub:
+
+git add .
+git commit -m "Mo ta thay doi"
+git push
+
+
+V. KHI NAO CAN CLASP PULL
+-------------------------
+
+Chi dung lenh nay khi nghi tren Google Apps Script co code moi hon GitHub:
+
+clasp pull
+
+Can can than vi clasp pull co the ghi de file local.
+Truoc khi pull nen chay:
+
+git status
+
+Neu co file dang sua do, nen commit hoac backup truoc.
+
+
+VI. LUU Y VE THU MUC GOOGLE DRIVE
+---------------------------------
+
+Code project nam tren GitHub.
+Google Drive chi nen dung de luu:
+- Bo mau Word.
+- File ho so upload.
+- File OCR text.
+- File JSON.
+- File hop dong da xuat.
+
+Khong nen dung Google Drive lam noi dong bo code chinh vi co the gay lech file, loi font, hoac ghi de ngoai y muon.
+
+
+VII. KHI GAP LOI THUONG GAP
+---------------------------
+
+1. Loi "clasp is not recognized":
+Chay lai:
+
+npm install -g @google/clasp
+
+Sau do dong mo lai PowerShell.
+
+2. Loi chua dang nhap Google:
+
+clasp login
+
+3. Loi khong push duoc GitHub:
+Kiem tra dang nhap GitHub hoac Git Credential Manager.
+Co the chay:
+
+git pull
+git push
+
+4. Loi Apps Script khong nhan file moi:
+Chay:
+
+clasp push
+
+5. Loi Web App van hien giao dien cu:
+Can deploy lai:
+
+clasp deploy --description "redeploy web app"
+
+Sau do kiem tra deployment/web app URL neu co thay doi.
+
+
+VIII. NGUYEN TAC LAM VIEC
+-------------------------
+
+- Truoc khi sua: git pull
+- Sua xong: clasp push
+- Test on: git add, git commit, git push
+- Khong commit API key, token, file .env, .clasprc.json
+- Khong sua song song tren nhieu may neu chua git pull/git push dong bo.
+
