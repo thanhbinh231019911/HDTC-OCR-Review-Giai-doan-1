@@ -42,6 +42,8 @@ function saveContractDraftInfo(caseId, token, values) {
     'contract_info.asset_count': true,
     'contract_info.valuation_amount': true,
     'contract_info.bank_signer': true,
+    'contract_info.bank_signer_title': true,
+    'contract_info.bank_unit_address': true,
     'contract_info.dispute_court': true,
     'contract_info.cif_customer': true,
     'contract_info.contract_date': true,

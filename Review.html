@@ -245,8 +245,12 @@
     .contract-panel { background: #fff; border: 1px solid var(--line); border-radius: 6px; padding: 14px; }
     .contract-panel h2 { margin: 0 0 10px; font-size: 16px; }
     .draft-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 10px 12px; margin: 12px 0; }
+    .draft-section { margin: 12px 0 14px; }
+    .draft-section h4 { margin: 0 0 8px; font-size: 13px; }
+    .draft-grid.compact { grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }
     .draft-field label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 4px; }
     .draft-field input, .draft-field select, .draft-field textarea { width: 100%; box-sizing: border-box; border: 1px solid var(--line); border-radius: 6px; padding: 8px; font: inherit; background: #fff; }
+    .draft-field input:disabled, .draft-field select:disabled { background: #f1f5f9; color: #475569; }
     .draft-field textarea { min-height: 68px; resize: vertical; }
     .draft-actions { display: flex; align-items: center; gap: 10px; margin: 8px 0 14px; }
     .draft-status { color: var(--muted); font-size: 13px; }
@@ -1062,46 +1066,76 @@
     }
 
     function renderContractDraftInfoForm() {
-      const fields = [
-        { path: 'contract_info.asset_type', label: 'Loại tài sản', type: 'select', options: ['', 'Bất động sản', 'Động sản'], inferred: inferAssetTypeForDraft, disabled: true },
-        { path: 'contract_info.contract_type', label: 'Loại hợp đồng', type: 'select', options: ['', 'Bên bảo đảm thế chấp cho chính nghĩa vụ của mình', 'Bên bảo đảm thế chấp cho nghĩa vụ của bên thứ ba'], inferred: inferContractTypeForDraft, disabled: true },
-        { path: 'contract_info.asset_count', label: 'So luong tai san bao dam', type: 'text' },
-        { path: 'contract_info.valuation_land_amount', label: 'Gia tri dat', type: 'money' },
-        { path: 'contract_info.valuation_house_amount', label: 'Gia tri nha', type: 'money' },
-        { path: 'contract_info.valuation_total_amount', label: 'Tong gia tri tai san', type: 'money_total', readonly: true },
-        { path: 'contract_info.bank_signer', label: 'Người ký hợp đồng tại ngân hàng', type: 'select', options: ['', 'Lương Quang Minh', 'Lê Phi Long', 'Đinh Thị Loan', 'Bùi Tự Cường', 'Vũ Thị Tâm', 'Nguyễn Thị Thu Hương', 'Hoàng Thị Minh', 'Nguyễn Thanh Tùng', 'Nguyễn Thị Hoài Thanh', 'Quách Thị Thu Hà'] },
-        { path: 'contract_info.dispute_court', label: 'Tòa án xử lý tranh chấp', type: 'select', options: ['', 'Tòa án nhân dân khu vực 12 - Phú Thọ', 'Tòa án nhân dân khu vực 13 - Phú Thọ'] },
-        { path: 'contract_info.cif_customer', label: 'CIF khach hang', type: 'text' },
-        { path: 'contract_info.contract_date', label: 'Ngay hop dong', type: 'text', placeholder: '.../.../2026 hoac 07/06/2026' },
-        { path: 'contract_info.contract_sequence', label: 'So thu tu hop dong', type: 'text', placeholder: '01' },
-        { path: 'contract_info.actual_asset_differs_from_certificate', label: 'T\u00e0i s\u1ea3n th\u1ef1c t\u1ebf c\u00f3 kh\u00e1c th\u00f4ng tin tr\u00ean b\u00eca \u0111\u1ea5t kh\u00f4ng?', type: 'select', options: ['Kh\u00f4ng', 'C\u00f3'], affectsVisibility: true },
-        { path: 'contract_info.actual_asset_difference_description', label: 'M\u00f4 t\u1ea3 ph\u1ea7n sai kh\u00e1c', type: 'textarea', dependsOn: 'contract_info.actual_asset_differs_from_certificate', showWhen: 'C\u00f3' },
-        { path: 'contract_info.actual_house_asset', label: 'T\u00e0i s\u1ea3n l\u00e0 nh\u00e0 th\u1ef1c t\u1ebf n\u1ebfu sai kh\u00e1c v\u1edbi b\u00eca \u0111\u1ea5t', type: 'textarea', dependsOn: 'contract_info.actual_asset_differs_from_certificate', showWhen: 'C\u00f3' }
+      const sections = [
+        {
+          title: 'Th\u00f4ng tin h\u1ed3 s\u01a1',
+          fields: [
+            { path: 'contract_info.asset_type', label: 'Lo\u1ea1i t\u00e0i s\u1ea3n', type: 'select', options: ['', 'B\u1ea5t \u0111\u1ed9ng s\u1ea3n', '\u0110\u1ed9ng s\u1ea3n'], inferred: inferAssetTypeForDraft, disabled: true },
+            { path: 'contract_info.contract_type', label: 'Lo\u1ea1i h\u1ee3p \u0111\u1ed3ng', type: 'select', options: ['', 'B\u00ean b\u1ea3o \u0111\u1ea3m th\u1ebf ch\u1ea5p cho ch\u00ednh ngh\u0129a v\u1ee5 c\u1ee7a m\u00ecnh', 'B\u00ean b\u1ea3o \u0111\u1ea3m th\u1ebf ch\u1ea5p cho ngh\u0129a v\u1ee5 c\u1ee7a b\u00ean th\u1ee9 ba'], inferred: inferContractTypeForDraft, disabled: true },
+            { path: 'contract_info.asset_count', label: 'S\u1ed1 l\u01b0\u1ee3ng t\u00e0i s\u1ea3n b\u1ea3o \u0111\u1ea3m', type: 'text' }
+          ]
+        },
+        {
+          title: 'Gi\u00e1 tr\u1ecb t\u00e0i s\u1ea3n \u0111\u1ecbnh gi\u00e1',
+          fields: [
+            { path: 'contract_info.valuation_total_amount', label: 'Gi\u00e1 tr\u1ecb t\u1ed5ng', type: 'money_total', readonly: true },
+            { path: 'contract_info.valuation_land_amount', label: 'Gi\u00e1 tr\u1ecb \u0111\u1ea5t', type: 'money' },
+            { path: 'contract_info.valuation_house_amount', label: 'Gi\u00e1 tr\u1ecb nh\u00e0', type: 'money' },
+            { path: 'contract_info.actual_asset_differs_from_certificate', label: 'T\u00e0i s\u1ea3n th\u1ef1c t\u1ebf c\u00f3 kh\u00e1c th\u00f4ng tin tr\u00ean b\u00eca \u0111\u1ea5t kh\u00f4ng?', type: 'select', options: ['Kh\u00f4ng', 'C\u00f3'], affectsVisibility: true }
+          ]
+        },
+        {
+          title: 'Ng\u01b0\u1eddi k\u00fd',
+          fields: [
+            { path: 'contract_info.bank_signer', label: 'Ng\u01b0\u1eddi k\u00fd h\u1ee3p \u0111\u1ed3ng t\u1ea1i ng\u00e2n h\u00e0ng', type: 'select', options: getBankSignerProfileNamesForDraft(), onChange: 'syncBankSignerDraftFields()' },
+            { path: 'contract_info.bank_signer_title', label: 'Ch\u1ee9c v\u1ee5', type: 'text', inferred: inferBankSignerTitleForDraft, readonly: true },
+            { path: 'contract_info.bank_unit_address', label: '\u0110\u1ecba ch\u1ec9 \u0111\u01a1n v\u1ecb', type: 'text', inferred: inferBankSignerAddressForDraft }
+          ]
+        },
+        {
+          title: 'Th\u00f4ng tin c\u00f2n l\u1ea1i',
+          fields: [
+            { path: 'contract_info.dispute_court', label: 'T\u00f2a \u00e1n x\u1eed l\u00fd tranh ch\u1ea5p', type: 'select', options: ['', 'T\u00f2a \u00e1n nh\u00e2n d\u00e2n khu v\u1ef1c 12 - Ph\u00fa Th\u1ecd', 'T\u00f2a \u00e1n nh\u00e2n d\u00e2n khu v\u1ef1c 13 - Ph\u00fa Th\u1ecd'] },
+            { path: 'contract_info.cif_customer', label: 'CIF kh\u00e1ch h\u00e0ng', type: 'text' },
+            { path: 'contract_info.contract_date', label: 'Ng\u00e0y h\u1ee3p \u0111\u1ed3ng', type: 'text', placeholder: '.../.../2026 ho\u1eb7c 07/06/2026' },
+            { path: 'contract_info.contract_sequence', label: 'S\u1ed1 th\u1ee9 t\u1ef1 h\u1ee3p \u0111\u1ed3ng', type: 'text', placeholder: '01' },
+            { path: 'contract_info.actual_asset_difference_description', label: 'M\u00f4 t\u1ea3 ph\u1ea7n sai kh\u00e1c', type: 'textarea', dependsOn: 'contract_info.actual_asset_differs_from_certificate', showWhen: 'C\u00f3' },
+            { path: 'contract_info.actual_house_asset', label: 'T\u00e0i s\u1ea3n l\u00e0 nh\u00e0 th\u1ef1c t\u1ebf n\u1ebfu sai kh\u00e1c v\u1edbi b\u00eca \u0111\u1ea5t', type: 'textarea', dependsOn: 'contract_info.actual_asset_differs_from_certificate', showWhen: 'C\u00f3' }
+          ]
+        }
       ];
-      const inputs = fields.map(f => {
-        const value = f.inferred ? f.inferred() : getReviewFieldFinalValue(f.path);
-        const attrs = ' data-draft-path="' + escapeAttr(f.path) + '"' +
-          (f.dependsOn ? ' data-draft-depends-on="' + escapeAttr(f.dependsOn) + '" data-draft-show-when="' + escapeAttr(f.showWhen || '') + '"' : '') +
-          (f.affectsVisibility ? ' onchange="updateDraftConditionalFields()"' : '') +
-          (f.type === 'money' ? ' inputmode="numeric" oninput="formatMoneyInput(this); updateMoneyFields()"' : '') +
-          (f.readonly ? ' readonly' : '') +
-          (f.disabled ? ' disabled' : '');
-        const wrapperAttrs = f.dependsOn ? ' data-draft-field-wrapper data-depends-on="' + escapeAttr(f.dependsOn) + '" data-show-when="' + escapeAttr(f.showWhen || '') + '"' : ' data-draft-field-wrapper';
-        if (f.type === 'select') {
-          const opts = (f.options || []).map(option => '<option value="' + escapeAttr(option) + '"' + (normalizePlainText(option) === normalizePlainText(value) ? ' selected' : '') + '>' + escapeHtml(option || '-- Chon --') + '</option>').join('');
-          return '<div class="draft-field"' + wrapperAttrs + '><label>' + escapeHtml(f.label) + '</label><select' + attrs + '>' + opts + '</select></div>';
-        }
-        if (f.type === 'textarea') {
-          return '<div class="draft-field"' + wrapperAttrs + '><label>' + escapeHtml(f.label) + '</label><textarea' + attrs + '>' + escapeHtml(value) + '</textarea></div>';
-        }
-        return '<div class="draft-field"' + wrapperAttrs + '><label>' + escapeHtml(f.label) + '</label><input' + attrs + ' value="' + escapeAttr(value) + '" placeholder="' + escapeAttr(f.placeholder || '') + '"></div>';
+      const html = sections.map(section => {
+        const inputs = section.fields.map(renderContractDraftField).join('');
+        return '<div class="draft-section"><h4>' + escapeHtml(section.title) + '</h4><div class="draft-grid compact">' + inputs + '</div></div>';
       }).join('');
-      return '<section class="template-category"><h3>Thong tin soan thao hop dong</h3>' +
-        '<div class="draft-grid">' + inputs + '</div>' +
-        '<div class="draft-actions"><button id="saveContractDraftButton" class="action primary" onclick="saveContractDraftInfo()">Luu thong tin soan thao</button><span id="contractDraftStatus" class="draft-status"></span></div>' +
+      return '<section class="template-category"><h3>Th\u00f4ng tin so\u1ea1n th\u1ea3o h\u1ee3p \u0111\u1ed3ng</h3>' +
+        html +
+        '<div class="draft-actions"><button id="saveContractDraftButton" class="action primary" onclick="saveContractDraftInfo()">L\u01b0u th\u00f4ng tin so\u1ea1n th\u1ea3o</button><span id="contractDraftStatus" class="draft-status"></span></div>' +
         '</section>';
     }
 
+    function renderContractDraftField(f) {
+      const value = f.inferred ? f.inferred() : getReviewFieldFinalValue(f.path);
+      const events = [
+        f.affectsVisibility ? 'updateDraftConditionalFields()' : '',
+        f.onChange || ''
+      ].filter(Boolean).join('; ');
+      const attrs = ' data-draft-path="' + escapeAttr(f.path) + '"' +
+        (f.dependsOn ? ' data-draft-depends-on="' + escapeAttr(f.dependsOn) + '" data-draft-show-when="' + escapeAttr(f.showWhen || '') + '"' : '') +
+        (events ? ' onchange="' + escapeAttr(events) + '"' : '') +
+        (f.type === 'money' ? ' inputmode="numeric" oninput="formatMoneyInput(this); updateMoneyFields()"' : '') +
+        (f.readonly ? ' readonly' : '') +
+        (f.disabled ? ' disabled' : '');
+      const wrapperAttrs = f.dependsOn ? ' data-draft-field-wrapper data-depends-on="' + escapeAttr(f.dependsOn) + '" data-show-when="' + escapeAttr(f.showWhen || '') + '"' : ' data-draft-field-wrapper';
+      if (f.type === 'select') {
+        const opts = (f.options || []).map(option => '<option value="' + escapeAttr(option) + '"' + (normalizePlainText(option) === normalizePlainText(value) ? ' selected' : '') + '>' + escapeHtml(option || '-- Ch\u1ecdn --') + '</option>').join('');
+        return '<div class="draft-field"' + wrapperAttrs + '><label>' + escapeHtml(f.label) + '</label><select' + attrs + '>' + opts + '</select></div>';
+      }
+      if (f.type === 'textarea') {
+        return '<div class="draft-field"' + wrapperAttrs + '><label>' + escapeHtml(f.label) + '</label><textarea' + attrs + '>' + escapeHtml(value) + '</textarea></div>';
+      }
+      return '<div class="draft-field"' + wrapperAttrs + '><label>' + escapeHtml(f.label) + '</label><input' + attrs + ' value="' + escapeAttr(value) + '" placeholder="' + escapeAttr(f.placeholder || '') + '"></div>';
+    }
     function getReviewFieldFinalValue(path) {
       const field = getByPathClient(reviewData, path);
       if (field && typeof field === 'object' && Object.prototype.hasOwnProperty.call(field, 'final_value')) return field.final_value || '';
@@ -1112,8 +1146,8 @@
       const current = getReviewFieldFinalValue('contract_info.asset_type');
       if (current) {
         const norm = normalizePlainText(current);
-        if (norm.indexOf('real estate') >= 0 || norm.indexOf('bat dong san') >= 0) return 'Bất động sản';
-        if (norm.indexOf('movable') >= 0 || norm.indexOf('dong san') >= 0) return 'Động sản';
+        if (norm.indexOf('real estate') >= 0 || norm.indexOf('bat dong san') >= 0) return 'B\u1ea5t \u0111\u1ed9ng s\u1ea3n';
+        if (norm.indexOf('movable') >= 0 || norm.indexOf('dong san') >= 0) return '\u0110\u1ed9ng s\u1ea3n';
         return current;
       }
       const first = (reviewData.assets || [])[0] || {};
@@ -1121,18 +1155,60 @@
         getFieldValueClient(first.real_estate && first.real_estate.certificate_number) ||
         getFieldValueClient(first.movable && first.movable.registration_number);
       const norm = normalizePlainText(raw);
-      if (norm.indexOf('movable') >= 0 || norm.indexOf('dong san') >= 0) return 'Động sản';
-      return 'Bất động sản';
+      if (norm.indexOf('movable') >= 0 || norm.indexOf('dong san') >= 0) return '\u0110\u1ed9ng s\u1ea3n';
+      return 'B\u1ea5t \u0111\u1ed9ng s\u1ea3n';
     }
 
     function inferContractTypeForDraft() {
       return hasObligorUploadForDraft()
-        ? 'Bên bảo đảm thế chấp cho nghĩa vụ của bên thứ ba'
-        : 'Bên bảo đảm thế chấp cho chính nghĩa vụ của mình';
+        ? 'B\u00ean b\u1ea3o \u0111\u1ea3m th\u1ebf ch\u1ea5p cho ngh\u0129a v\u1ee5 c\u1ee7a b\u00ean th\u1ee9 ba'
+        : 'B\u00ean b\u1ea3o \u0111\u1ea3m th\u1ebf ch\u1ea5p cho ch\u00ednh ngh\u0129a v\u1ee5 c\u1ee7a m\u00ecnh';
     }
-
     function hasObligorUploadForDraft() {
       return (reviewData.ocr_results || []).some(item => item && item.group === 'obligor');
+    }
+
+    function getBankSignerProfilesForDraft() {
+      const branchAddress = '\u0110\u01b0\u1eddng L\u00ea Th\u00e1nh T\u00f4ng, ph\u01b0\u1eddng H\u00f2a B\u00ecnh, t\u1ec9nh Ph\u00fa Th\u1ecd';
+      return [
+        { name: 'L\u01b0\u01a1ng Quang Minh', title: 'Gi\u00e1m \u0111\u1ed1c', address: branchAddress },
+        { name: 'L\u00ea Phi Long', title: 'Ph\u00f3 Gi\u00e1m \u0111\u1ed1c', address: branchAddress },
+        { name: '\u0110inh Th\u1ecb Loan', title: 'Ph\u00f3 Gi\u00e1m \u0111\u1ed1c', address: branchAddress },
+        { name: 'B\u00f9i T\u1ef1 C\u01b0\u1eddng', title: 'Ph\u00f3 Gi\u00e1m \u0111\u1ed1c', address: branchAddress },
+        { name: 'V\u0169 Th\u1ecb T\u00e2m', title: 'Gi\u00e1m \u0111\u1ed1c Ph\u00f2ng giao d\u1ecbch L\u01b0\u01a1ng S\u01a1n', address: '\u0110\u01b0\u1eddng Tr\u1ea7n Ph\u00fa, x\u00e3 L\u01b0\u01a1ng S\u01a1n, t\u1ec9nh Ph\u00fa Th\u1ecd' },
+        { name: 'Nguy\u1ec5n Th\u1ecb Thu H\u01b0\u01a1ng', title: 'Tr\u01b0\u1edfng ph\u00f2ng Kh\u00e1ch h\u00e0ng c\u00e1 nh\u00e2n', address: branchAddress },
+        { name: 'Ho\u00e0ng Th\u1ecb Minh', title: 'Gi\u00e1m \u0111\u1ed1c Ph\u00f2ng giao d\u1ecbch S\u00f4ng \u0110\u00e0', address: '' },
+        { name: 'Nguy\u1ec5n Thanh T\u00f9ng', title: 'Gi\u00e1m \u0111\u1ed1c Ph\u00f2ng giao d\u1ecbch Cao Phong', address: '' },
+        { name: 'Nguy\u1ec5n Th\u1ecb Ho\u00e0i Thanh', title: 'Gi\u00e1m \u0111\u1ed1c Ph\u00f2ng giao d\u1ecbch Tr\u1ea7n H\u01b0ng \u0110\u1ea1o', address: '' },
+        { name: 'Qu\u00e1ch Th\u1ecb Thu H\u00e0', title: 'Gi\u00e1m \u0111\u1ed1c Ph\u00f2ng giao d\u1ecbch Ph\u01b0\u01a1ng L\u00e2m', address: '' }
+      ];
+    }
+
+    function getBankSignerProfileNamesForDraft() {
+      return [''].concat(getBankSignerProfilesForDraft().map(profile => profile.name));
+    }
+
+    function getSelectedBankSignerProfileForDraft() {
+      const selected = getReviewFieldFinalValue('contract_info.bank_signer') ||
+        ((document.querySelector('[data-draft-path="contract_info.bank_signer"]') || {}).value || '');
+      const target = normalizePlainText(selected);
+      return getBankSignerProfilesForDraft().filter(profile => normalizePlainText(profile.name) === target)[0] || {};
+    }
+
+    function inferBankSignerTitleForDraft() {
+      return getReviewFieldFinalValue('contract_info.bank_signer_title') || getSelectedBankSignerProfileForDraft().title || '';
+    }
+
+    function inferBankSignerAddressForDraft() {
+      return getReviewFieldFinalValue('contract_info.bank_unit_address') || getSelectedBankSignerProfileForDraft().address || '';
+    }
+
+    function syncBankSignerDraftFields() {
+      const profile = getSelectedBankSignerProfileForDraft();
+      const title = document.querySelector('[data-draft-path="contract_info.bank_signer_title"]');
+      const address = document.querySelector('[data-draft-path="contract_info.bank_unit_address"]');
+      if (title) title.value = profile.title || '';
+      if (address) address.value = profile.address || '';
     }
 
     function getFieldValueClient(field) {
@@ -1230,6 +1306,8 @@
       });
       values['contract_info.asset_type'] = inferAssetTypeForDraft();
       values['contract_info.contract_type'] = inferContractTypeForDraft();
+      values['contract_info.bank_signer_title'] = (document.querySelector('[data-draft-path="contract_info.bank_signer_title"]') || {}).value || inferBankSignerTitleForDraft();
+      values['contract_info.bank_unit_address'] = (document.querySelector('[data-draft-path="contract_info.bank_unit_address"]') || {}).value || inferBankSignerAddressForDraft();
       const total = calculateMoneyTotal();
       values['contract_info.valuation_total_amount'] = total ? String(total) : '';
       values['contract_info.valuation_amount'] = total ? String(total) : '';

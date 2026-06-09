@@ -40,7 +40,7 @@ function generateContractsForCase(caseId, token, templateCodes) {
   data = ensureTemplateDecisionFields_(data);
   data = applyOverridesToReviewJson(data, getOverrides(caseId));
   data = applyTemplateDecisionToReviewJson(data);
-  fillMissingPersonIssueDatesFromReviewOcr_(data);
+  fillMissingPersonIssueDatesFromReviewOcr_(data, caseId);
   const finalData = buildFinalConfirmedData(data);
   const templates = getContractTemplateConfigs_().filter(function(tpl) {
     return templateCodes.indexOf(tpl.code) >= 0;
@@ -360,6 +360,7 @@ function applyTemplate03bReplacements_(doc, values, finalData) {
   applyTemplate03bValuationBlock_(body, values);
   applyMoneyWordsStyle03b_(body);
   normalizeJoinedPersonNamesInBody_(body, secured);
+  boldContractPersonNames_(body, secured.concat(obligors));
 
   replaceLiteral_(body, 'T\u00f2a \u00e1n nh\u00e2n d\u00e2n khu v\u1ef1c 13 \u2013 Ph\u00fa Th\u1ecd', values.toa_an_tranh_chap || '');
   replaceLiteral_(body, 'H\u1ee3p \u0111\u1ed3ng n\u00e0y \u0111\u01b0\u1ee3c l\u1eadp th\u00e0nh 05 b\u1ea3n', 'H\u1ee3p \u0111\u1ed3ng n\u00e0y \u0111\u01b0\u1ee3c l\u1eadp th\u00e0nh ' + buildContractCopyCount_(finalData) + ' b\u1ea3n');
@@ -430,13 +431,38 @@ function applyTemplate03bAssetBlock_(body, asset) {
   replaceLiteral_(body, 'M\u1ee5c \u0111\u00edch s\u1eed d\u1ee5ng: \u0110\u1ea5t \u1edf t\u1ea1i n\u00f4ng th\u00f4n (ONT)', 'M\u1ee5c \u0111\u00edch s\u1eed d\u1ee5ng: ' + (re.usage_purpose || ''));
   replaceLiteral_(body, 'Th\u1eddi h\u1ea1n s\u1eed d\u1ee5ng: L\u00e2u d\u00e0i', 'Th\u1eddi h\u1ea1n s\u1eed d\u1ee5ng: ' + (re.usage_term || ''));
   replaceLiteral_(body, 'Ngu\u1ed3n g\u1ed1c s\u1eed d\u1ee5ng: Nh\u00e0 n\u01b0\u1edbc giao \u0111\u1ea5t c\u00f3 thu ti\u1ec1n s\u1eed d\u1ee5ng \u0111\u1ea5t', '');
+  removeTemplate03bOptionalAssetLines_(body, re);
 }
 
 function applyTemplate03bBankBlock_(body, values) {
-  replaceLiteral_(body, '- Ph\u00f2ng giao d\u1ecbch L\u01b0\u01a1ng S\u01a1n', values.don_vi_quan_ly_khach_hang || '');
+  replaceLiteral_(body, '- Ph\u00f2ng giao d\u1ecbch L\u01b0\u01a1ng S\u01a1n', buildBankUnitSuffixForTemplate03b_(values.don_vi_quan_ly_khach_hang || ''));
   replaceLiteral_(body, '\u0110\u01b0\u1eddng Tr\u1ea7n Ph\u00fa, x\u00e3 L\u01b0\u01a1ng S\u01a1n, t\u1ec9nh Ph\u00fa Th\u1ecd', values.dia_chi_don_vi_ngan_hang || '');
   replaceLiteral_(body, 'B\u00e0 V\u0169 Th\u1ecb T\u00e2m', values.nguoi_ky_ngan_hang || '');
   replaceLiteral_(body, 'Gi\u00e1m \u0111\u1ed1c Ph\u00f2ng giao d\u1ecbch L\u01b0\u01a1ng S\u01a1n', values.chuc_vu_nguoi_ky_ngan_hang || '');
+}
+
+function buildBankUnitSuffixForTemplate03b_(unit) {
+  unit = cleanContractText_(unit).trim();
+  const prefix = 'Chi nh\u00e1nh H\u00f2a B\u00ecnh - ';
+  if (unit.indexOf(prefix) === 0) return '- ' + unit.slice(prefix.length);
+  if (unit === 'Chi nh\u00e1nh H\u00f2a B\u00ecnh') return '';
+  return unit;
+}
+
+function removeTemplate03bOptionalAssetLines_(body, realEstate) {
+  const shouldRemoveNote = !cleanContractText_(realEstate && realEstate.post_issue_changes);
+  for (let i = body.getNumChildren() - 1; i >= 0; i--) {
+    const child = body.getChild(i);
+    if (child.getType && child.getType() !== DocumentApp.ElementType.PARAGRAPH) continue;
+    const text = child.asParagraph().getText() || '';
+    const normalized = removeVietnameseAccents_(text).toLowerCase();
+    const compact = normalized.replace(/\s+/g, ' ').trim();
+    const removeSource = compact === '-' || compact.match(/^-?\s*nguon goc su dung\s*:?/);
+    const removeNote = shouldRemoveNote && compact.match(/^-?\s*ghi chu\s*:?/);
+    if (removeSource || removeNote) {
+      body.removeChild(child);
+    }
+  }
 }
 
 function applyTemplate03bValuationBlock_(body, values) {
@@ -503,9 +529,9 @@ function buildContractPlaceholderMap_(finalData) {
     gia_tri_dinh_gia: valuationTotal || cleanContractText_(contract.valuation_amount),
     tong_gia_tri_tai_san: valuationTotal || cleanContractText_(contract.valuation_amount),
     nguoi_ky_ngan_hang: bankSigner.name,
-    chuc_vu_nguoi_ky_ngan_hang: bankSigner.title,
+    chuc_vu_nguoi_ky_ngan_hang: cleanContractText_(contract.bank_signer_title) || bankSigner.title,
     don_vi_quan_ly_khach_hang: bankSigner.unit,
-    dia_chi_don_vi_ngan_hang: bankSigner.address,
+    dia_chi_don_vi_ngan_hang: cleanContractText_(contract.bank_unit_address) || bankSigner.address,
     van_ban_uy_quyen_ngan_hang: bankSigner.authorization,
     toa_an_tranh_chap: disputeCourt,
     tai_san_la_nha_thuc_te: cleanContractText_(contract.actual_house_asset),
@@ -617,7 +643,7 @@ function cleanContractText_(value) {
   return String(value);
 }
 
-function fillMissingPersonIssueDatesFromReviewOcr_(reviewJson) {
+function fillMissingPersonIssueDatesFromReviewOcr_(reviewJson, caseId) {
   const textByGroup = {};
   (reviewJson.ocr_results || []).forEach(function(item) {
     if (!item || !item.group) return;
@@ -627,13 +653,43 @@ function fillMissingPersonIssueDatesFromReviewOcr_(reviewJson) {
       text: item.text_preview || ''
     });
   });
+  appendFullOcrTextForIssueDateFallback_(textByGroup, caseId);
   fillMissingIssueDatesForPeople_(reviewJson.secured_parties || [], textByGroup.secured_party || []);
   fillMissingIssueDatesForPeople_(reviewJson.obligors || [], textByGroup.obligor || []);
 }
 
+function appendFullOcrTextForIssueDateFallback_(textByGroup, caseId) {
+  if (!caseId) return;
+  try {
+    const rows = getRowsByCaseId_(SHEETS.OCR_RESULTS, caseId);
+    rows.forEach(function(row) {
+      const group = normalizeOcrGroupForContract_(row['File Name'] || '');
+      if (!group) return;
+      textByGroup[group] = textByGroup[group] || [];
+      textByGroup[group].push({
+        file_name: row['File Name'] || '',
+        text: row['OCR Text'] || ''
+      });
+    });
+  } catch (err) {
+    console.warn('Cannot read full OCR text for issue date fallback: ' + err);
+  }
+}
+
+function normalizeOcrGroupForContract_(fileName) {
+  const name = String(fileName || '');
+  if (name.indexOf('secured_party__') === 0) return 'secured_party';
+  if (name.indexOf('obligor__') === 0) return 'obligor';
+  return '';
+}
+
 function fillMissingIssueDatesForPeople_(people, ocrItems) {
   (people || []).forEach(function(person) {
-    if (!person || !person.id_issue_date || getReviewFieldValueForContract_(person.id_issue_date)) return;
+    if (!person) return;
+    if (!person.id_issue_date || typeof person.id_issue_date !== 'object' || !person.id_issue_date.hasOwnProperty('final_value')) {
+      person.id_issue_date = makeField('Ng\u00e0y c\u1ea5p', '', '', '', 'OCR', '');
+    }
+    if (getReviewFieldValueForContract_(person.id_issue_date)) return;
     const id = normalizeDigitsForContract_(getReviewFieldValueForContract_(person.id_number));
     if (!id) return;
     for (let i = 0; i < ocrItems.length; i++) {
@@ -672,7 +728,7 @@ function extractIssueDateFromContractOcrText_(text) {
     if (match) return normalizeContractDateValue_(match[1]);
   }
   const normalized = removeVietnameseAccents_(text).toLowerCase();
-  const idx = normalized.indexOf('date of issue');
+  const idx = Math.max(normalized.indexOf('date of issue'), normalized.indexOf('ngay cap'), normalized.indexOf('cap ngay'));
   if (idx >= 0) {
     const date = text.slice(idx, idx + 100).match(/(\d{1,2}[\/.\-]\d{1,2}[\/.\-]\d{2,4})/);
     if (date) return normalizeContractDateValue_(date[1]);
@@ -819,12 +875,12 @@ function getBankSignerProfilesForContract_() {
     { name: 'L\u00ea Phi Long', title: 'Ph\u00f3 Gi\u00e1m \u0111\u1ed1c', unit: 'Chi nh\u00e1nh H\u00f2a B\u00ecnh', address: branchAddress, authorization: authorization },
     { name: '\u0110inh Th\u1ecb Loan', title: 'Ph\u00f3 Gi\u00e1m \u0111\u1ed1c', unit: 'Chi nh\u00e1nh H\u00f2a B\u00ecnh', address: branchAddress, authorization: authorization },
     { name: 'B\u00f9i T\u1ef1 C\u01b0\u1eddng', title: 'Ph\u00f3 Gi\u00e1m \u0111\u1ed1c', unit: 'Chi nh\u00e1nh H\u00f2a B\u00ecnh', address: branchAddress, authorization: authorization },
-    { name: 'V\u0169 Th\u1ecb T\u00e2m', title: 'Gi\u00e1m \u0111\u1ed1c Ph\u00f2ng giao d\u1ecbch', unit: 'Chi nh\u00e1nh H\u00f2a B\u00ecnh - Ph\u00f2ng giao d\u1ecbch L\u01b0\u01a1ng S\u01a1n', address: '\u0110\u01b0\u1eddng Tr\u1ea7n Ph\u00fa, x\u00e3 L\u01b0\u01a1ng S\u01a1n, t\u1ec9nh Ph\u00fa Th\u1ecd', authorization: authorization },
-    { name: 'Nguy\u1ec5n Th\u1ecb Thu H\u01b0\u01a1ng', title: 'Gi\u00e1m \u0111\u1ed1c Ph\u00f2ng giao d\u1ecbch', unit: 'Chi nh\u00e1nh H\u00f2a B\u00ecnh', address: branchAddress, authorization: authorization },
-    { name: 'Ho\u00e0ng Th\u1ecb Minh', title: 'Gi\u00e1m \u0111\u1ed1c Ph\u00f2ng giao d\u1ecbch', unit: 'Chi nh\u00e1nh H\u00f2a B\u00ecnh - Ph\u00f2ng giao d\u1ecbch S\u00f4ng \u0110\u00e0', address: '', authorization: authorization },
-    { name: 'Nguy\u1ec5n Thanh T\u00f9ng', title: 'Gi\u00e1m \u0111\u1ed1c Ph\u00f2ng giao d\u1ecbch', unit: 'Chi nh\u00e1nh H\u00f2a B\u00ecnh - Ph\u00f2ng giao d\u1ecbch Cao Phong', address: '', authorization: authorization },
-    { name: 'Nguy\u1ec5n Th\u1ecb Ho\u00e0i Thanh', title: 'Gi\u00e1m \u0111\u1ed1c Ph\u00f2ng giao d\u1ecbch', unit: 'Chi nh\u00e1nh H\u00f2a B\u00ecnh - Ph\u00f2ng giao d\u1ecbch Tr\u1ea7n H\u01b0ng \u0110\u1ea1o', address: '', authorization: authorization },
-    { name: 'Qu\u00e1ch Th\u1ecb Thu H\u00e0', title: 'Gi\u00e1m \u0111\u1ed1c Ph\u00f2ng giao d\u1ecbch', unit: 'Chi nh\u00e1nh H\u00f2a B\u00ecnh - Ph\u00f2ng giao d\u1ecbch Ph\u01b0\u01a1ng L\u00e2m', address: '', authorization: authorization }
+    { name: 'V\u0169 Th\u1ecb T\u00e2m', title: 'Gi\u00e1m \u0111\u1ed1c Ph\u00f2ng giao d\u1ecbch L\u01b0\u01a1ng S\u01a1n', unit: 'Chi nh\u00e1nh H\u00f2a B\u00ecnh - Ph\u00f2ng giao d\u1ecbch L\u01b0\u01a1ng S\u01a1n', address: '\u0110\u01b0\u1eddng Tr\u1ea7n Ph\u00fa, x\u00e3 L\u01b0\u01a1ng S\u01a1n, t\u1ec9nh Ph\u00fa Th\u1ecd', authorization: authorization },
+    { name: 'Nguy\u1ec5n Th\u1ecb Thu H\u01b0\u01a1ng', title: 'Tr\u01b0\u1edfng ph\u00f2ng Kh\u00e1ch h\u00e0ng c\u00e1 nh\u00e2n', unit: 'Chi nh\u00e1nh H\u00f2a B\u00ecnh', address: branchAddress, authorization: authorization },
+    { name: 'Ho\u00e0ng Th\u1ecb Minh', title: 'Gi\u00e1m \u0111\u1ed1c Ph\u00f2ng giao d\u1ecbch S\u00f4ng \u0110\u00e0', unit: 'Chi nh\u00e1nh H\u00f2a B\u00ecnh - Ph\u00f2ng giao d\u1ecbch S\u00f4ng \u0110\u00e0', address: '', authorization: authorization },
+    { name: 'Nguy\u1ec5n Thanh T\u00f9ng', title: 'Gi\u00e1m \u0111\u1ed1c Ph\u00f2ng giao d\u1ecbch Cao Phong', unit: 'Chi nh\u00e1nh H\u00f2a B\u00ecnh - Ph\u00f2ng giao d\u1ecbch Cao Phong', address: '', authorization: authorization },
+    { name: 'Nguy\u1ec5n Th\u1ecb Ho\u00e0i Thanh', title: 'Gi\u00e1m \u0111\u1ed1c Ph\u00f2ng giao d\u1ecbch Tr\u1ea7n H\u01b0ng \u0110\u1ea1o', unit: 'Chi nh\u00e1nh H\u00f2a B\u00ecnh - Ph\u00f2ng giao d\u1ecbch Tr\u1ea7n H\u01b0ng \u0110\u1ea1o', address: '', authorization: authorization },
+    { name: 'Qu\u00e1ch Th\u1ecb Thu H\u00e0', title: 'Gi\u00e1m \u0111\u1ed1c Ph\u00f2ng giao d\u1ecbch Ph\u01b0\u01a1ng L\u00e2m', unit: 'Chi nh\u00e1nh H\u00f2a B\u00ecnh - Ph\u00f2ng giao d\u1ecbch Ph\u01b0\u01a1ng L\u00e2m', address: '', authorization: authorization }
   ];
 }
 
@@ -1417,6 +1473,18 @@ function normalizeJoinedPersonNamesInBody_(body, people) {
   const second = buildPersonNameForContract_(people[1]);
   const joined = buildPersonNamesForContract_(people);
   if (first && second) replaceLiteral_(body, first + ' - ' + second, joined);
+}
+
+function boldContractPersonNames_(body, people) {
+  (people || []).forEach(function(person) {
+    const name = toVietnameseTitleCase_(person && person.full_name || '');
+    if (!name) return;
+    let range = body.findText(escapeRegex_(name));
+    while (range) {
+      range.getElement().asText().setBold(range.getStartOffset(), range.getEndOffsetInclusive(), true);
+      range = body.findText(escapeRegex_(name), range);
+    }
+  });
 }
 
 function toVietnameseTitleCase_(value) {

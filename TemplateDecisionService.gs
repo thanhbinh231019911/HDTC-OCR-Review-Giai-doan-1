@@ -66,6 +66,8 @@ function ensureTemplateDecisionFields_(reviewJson) {
     valuation_land_amount: 'Gi\u00e1 tr\u1ecb \u0111\u1ea5t',
     valuation_house_amount: 'Gi\u00e1 tr\u1ecb nh\u00e0',
     valuation_total_amount: 'T\u1ed5ng gi\u00e1 tr\u1ecb t\u00e0i s\u1ea3n',
+    bank_signer_title: 'Ch\u1ee9c v\u1ee5 ng\u01b0\u1eddi k\u00fd',
+    bank_unit_address: '\u0110\u1ecba ch\u1ec9 \u0111\u01a1n v\u1ecb ng\u00e2n h\u00e0ng',
     contract_draft_saved: '\u0110\u00e3 l\u01b0u th\u00f4ng tin so\u1ea1n th\u1ea3o h\u1ee3p \u0111\u1ed3ng',
     requires_template_5: 'C\u1ea7n l\u1eadp th\u00eam m\u1eabu 5',
     reason_requires_template_5: 'L\u00fd do c\u1ea7n l\u1eadp th\u00eam m\u1eabu 5',
