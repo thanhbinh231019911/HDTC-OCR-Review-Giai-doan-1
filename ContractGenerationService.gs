@@ -40,6 +40,7 @@ function generateContractsForCase(caseId, token, templateCodes) {
   data = ensureTemplateDecisionFields_(data);
   data = applyOverridesToReviewJson(data, getOverrides(caseId));
   data = applyTemplateDecisionToReviewJson(data);
+  fillMissingPersonIssueDatesFromReviewOcr_(data);
   const finalData = buildFinalConfirmedData(data);
   const templates = getContractTemplateConfigs_().filter(function(tpl) {
     return templateCodes.indexOf(tpl.code) >= 0;
@@ -349,12 +350,16 @@ function applyTemplate03bReplacements_(doc, values, finalData) {
   replaceLiteral_(body,
     '\u201cNg\u01b0\u1eddi c\u00f3 ngh\u0129a v\u1ee5 \u0111\u01b0\u1ee3c b\u1ea3o \u0111\u1ea3m\u201d l\u00e0 \u00d4ng Ph\u1ea1m Ki\u00ean C\u01b0\u1eddng (sinh ng\u00e0y 18/01/1973, CCCD s\u1ed1 017073005698 do CCS QLHCVTTXH c\u1ea5p ng\u00e0y 18/06/2023)',
     '\u201cNg\u01b0\u1eddi c\u00f3 ngh\u0129a v\u1ee5 \u0111\u01b0\u1ee3c b\u1ea3o \u0111\u1ea3m\u201d l\u00e0 ' + buildPeopleDefinitionText03b_(obligors));
+  replaceLiteral_(body,
+    'ngh\u0129a v\u1ee5 c\u1ee7a \u00d4ng Ph\u1ea1m Ki\u00ean C\u01b0\u1eddng tr\u00ean c\u01a1 s\u1edf',
+    'ngh\u0129a v\u1ee5 c\u1ee7a ' + (obligorNames || '................................') + ' tr\u00ean c\u01a1 s\u1edf');
 
   applyTemplate03bSecuredPartyBlock_(body, secured);
   applyTemplate03bAssetBlock_(body, firstAsset);
   applyTemplate03bBankBlock_(body, values);
   applyTemplate03bValuationBlock_(body, values);
   applyMoneyWordsStyle03b_(body);
+  normalizeJoinedPersonNamesInBody_(body, secured);
 
   replaceLiteral_(body, 'T\u00f2a \u00e1n nh\u00e2n d\u00e2n khu v\u1ef1c 13 \u2013 Ph\u00fa Th\u1ecd', values.toa_an_tranh_chap || '');
   replaceLiteral_(body, 'H\u1ee3p \u0111\u1ed3ng n\u00e0y \u0111\u01b0\u1ee3c l\u1eadp th\u00e0nh 05 b\u1ea3n', 'H\u1ee3p \u0111\u1ed3ng n\u00e0y \u0111\u01b0\u1ee3c l\u1eadp th\u00e0nh ' + buildContractCopyCount_(finalData) + ' b\u1ea3n');
@@ -397,7 +402,7 @@ function applyTemplate03bSecuredPartyBlock_(body, secured) {
   samples.forEach(function(sample, index) {
     const person = secured[index] || {};
     replaceNextLiteral_(body, 'CCCD s\u1ed1', buildIdDocumentLabelForContract_(person));
-    replaceLiteral_(body, sample.name, person.full_name || '');
+    replaceLiteral_(body, sample.name, toVietnameseTitleCase_(person.full_name || ''));
     replaceLiteral_(body, sample.dob, person.date_of_birth || '');
     replaceLiteral_(body,
       sample.id + ' do ' + sample.issuePlace + ' c\u1ea5p ng\u00e0y ' + sample.issueDate,
@@ -610,6 +615,78 @@ function cleanContractText_(value) {
     }).filter(Boolean).join('; ');
   }
   return String(value);
+}
+
+function fillMissingPersonIssueDatesFromReviewOcr_(reviewJson) {
+  const textByGroup = {};
+  (reviewJson.ocr_results || []).forEach(function(item) {
+    if (!item || !item.group) return;
+    textByGroup[item.group] = textByGroup[item.group] || [];
+    textByGroup[item.group].push({
+      file_name: item.file_name || '',
+      text: item.text_preview || ''
+    });
+  });
+  fillMissingIssueDatesForPeople_(reviewJson.secured_parties || [], textByGroup.secured_party || []);
+  fillMissingIssueDatesForPeople_(reviewJson.obligors || [], textByGroup.obligor || []);
+}
+
+function fillMissingIssueDatesForPeople_(people, ocrItems) {
+  (people || []).forEach(function(person) {
+    if (!person || !person.id_issue_date || getReviewFieldValueForContract_(person.id_issue_date)) return;
+    const id = normalizeDigitsForContract_(getReviewFieldValueForContract_(person.id_number));
+    if (!id) return;
+    for (let i = 0; i < ocrItems.length; i++) {
+      const text = ocrItems[i].text || '';
+      if (normalizeDigitsForContract_(text).indexOf(id) < 0) continue;
+      const issueDate = extractIssueDateFromContractOcrText_(text);
+      if (issueDate) {
+        person.id_issue_date.ai_value = issueDate;
+        person.id_issue_date.final_value = issueDate;
+        person.id_issue_date.source = ocrItems[i].file_name || person.id_issue_date.source || 'OCR';
+        person.id_issue_date.confidence = person.id_issue_date.confidence || 0.78;
+        return;
+      }
+    }
+  });
+}
+
+function getReviewFieldValueForContract_(field) {
+  if (!field) return '';
+  if (typeof field === 'object' && Object.prototype.hasOwnProperty.call(field, 'final_value')) return field.final_value || field.ai_value || '';
+  return field || '';
+}
+
+function normalizeDigitsForContract_(value) {
+  return String(value || '').replace(/\D/g, '');
+}
+
+function extractIssueDateFromContractOcrText_(text) {
+  text = String(text || '');
+  const patterns = [
+    /(?:ngày\s*cấp|ngay\s*cap|date\s*of\s*issue)\D{0,30}(\d{1,2}[\/.\-]\d{1,2}[\/.\-]\d{2,4})/i,
+    /(?:cấp\s*ngày|cap\s*ngay)\D{0,30}(\d{1,2}[\/.\-]\d{1,2}[\/.\-]\d{2,4})/i
+  ];
+  for (let i = 0; i < patterns.length; i++) {
+    const match = text.match(patterns[i]);
+    if (match) return normalizeContractDateValue_(match[1]);
+  }
+  const normalized = removeVietnameseAccents_(text).toLowerCase();
+  const idx = normalized.indexOf('date of issue');
+  if (idx >= 0) {
+    const date = text.slice(idx, idx + 100).match(/(\d{1,2}[\/.\-]\d{1,2}[\/.\-]\d{2,4})/);
+    if (date) return normalizeContractDateValue_(date[1]);
+  }
+  return '';
+}
+
+function normalizeContractDateValue_(value) {
+  value = String(value || '').trim();
+  let match = value.match(/^(\d{4})[-\/.](\d{1,2})[-\/.](\d{1,2})$/);
+  if (match) return String(match[3]).padStart(2, '0') + '/' + String(match[2]).padStart(2, '0') + '/' + match[1];
+  match = value.match(/^(\d{1,2})[-\/.](\d{1,2})[-\/.](\d{2,4})$/);
+  if (match) return String(match[1]).padStart(2, '0') + '/' + String(match[2]).padStart(2, '0') + '/' + (match[3].length === 2 ? '20' + match[3] : match[3]);
+  return value;
 }
 
 function joinVietnameseList_(items) {
@@ -1306,7 +1383,7 @@ function getPersonHonorific_(person) {
 
 function buildPersonNameForContract_(person) {
   if (!person || !person.full_name) return '';
-  return getPersonHonorific_(person) + ' ' + person.full_name;
+  return getPersonHonorific_(person) + ' ' + toVietnameseTitleCase_(person.full_name);
 }
 
 function buildPersonNamesForContract_(people) {
@@ -1318,9 +1395,7 @@ function buildPeopleDefinitionText03b_(people) {
     const parts = [];
     if (person.date_of_birth) parts.push('sinh ng\u00e0y ' + person.date_of_birth);
     if (person.id_number) {
-      let idText = (person.id_document_type || 'CCCD') + ' s\u1ed1 ' + person.id_number;
-      if (person.id_issue_place) idText += ' do ' + person.id_issue_place;
-      if (person.id_issue_date) idText += ' c\u1ea5p ng\u00e0y ' + person.id_issue_date;
+      let idText = buildIdDocumentLabelForContract_(person) + ' ' + buildPersonIdIssuePhrase_(person);
       parts.push(idText);
     }
     return buildPersonNameForContract_(person) + (parts.length ? ' (' + parts.join(', ') + ')' : '');
@@ -1334,6 +1409,20 @@ function buildPersonIdIssuePhrase_(person) {
   if (person.id_issue_place) text += ' do ' + person.id_issue_place;
   if (person.id_issue_date) text += ' c\u1ea5p ng\u00e0y ' + person.id_issue_date;
   return text;
+}
+
+function normalizeJoinedPersonNamesInBody_(body, people) {
+  if (!people || people.length < 2) return;
+  const first = buildPersonNameForContract_(people[0]);
+  const second = buildPersonNameForContract_(people[1]);
+  const joined = buildPersonNamesForContract_(people);
+  if (first && second) replaceLiteral_(body, first + ' - ' + second, joined);
+}
+
+function toVietnameseTitleCase_(value) {
+  return cleanContractText_(value).toLowerCase().replace(/(^|[\s\-])([^\s\-])/g, function(match, prefix, char) {
+    return prefix + char.toUpperCase();
+  });
 }
 
 function buildShortContractDate_(values) {

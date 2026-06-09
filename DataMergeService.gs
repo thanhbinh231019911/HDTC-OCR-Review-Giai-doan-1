@@ -179,6 +179,7 @@ function normalizePerson_(person, idHintsByFile, ocrTextByFile) {
   normalizePersonDocumentTypeClean_(normalized, ocrTextByFile || {});
   normalizeGenderFromIdentityNumber_(normalized);
   normalizeIdIssuePlaceCleanApply_(normalized, ocrTextByFile || {});
+  inferPersonIssueDateFromOcr_(normalized, ocrTextByFile || {});
   normalizePersonDates_(normalized);
   return normalized;
 }
@@ -785,6 +786,58 @@ function normalizePersonDates_(person) {
     person.marriage_registration && person.marriage_registration.registration_date,
     person.marital_status_certificate && person.marital_status_certificate.confirmation_date
   ].forEach(normalizeDateField_);
+}
+
+function inferPersonIssueDateFromOcr_(person, ocrTextByFile) {
+  const field = person && person.id_issue_date;
+  if (!field || (field.final_value || field.ai_value)) return;
+  const sources = collectSourceFilesFromObject_(person);
+  for (let i = 0; i < sources.length; i++) {
+    const inferred = extractIssueDateFromIdentityOcr_(ocrTextByFile[sources[i]] || '');
+    if (inferred) {
+      field.ai_value = inferred;
+      field.final_value = inferred;
+      field.source = sources[i];
+      field.confidence = field.confidence || 0.78;
+      return;
+    }
+  }
+  const id = normalizeId_(person.id_number && person.id_number.final_value);
+  if (!id) return;
+  const fileNames = Object.keys(ocrTextByFile || {});
+  for (let j = 0; j < fileNames.length; j++) {
+    const text = ocrTextByFile[fileNames[j]] || '';
+    if (normalizeId_(text).indexOf(id) < 0) continue;
+    const inferred = extractIssueDateFromIdentityOcr_(text);
+    if (inferred) {
+      field.ai_value = inferred;
+      field.final_value = inferred;
+      field.source = fileNames[j];
+      field.confidence = field.confidence || 0.78;
+      return;
+    }
+  }
+}
+
+function extractIssueDateFromIdentityOcr_(text) {
+  text = String(text || '');
+  if (!text) return '';
+  const patterns = [
+    /(?:ngày\s*cấp|ngay\s*cap|date\s*of\s*issue)\D{0,30}(\d{1,2}[\/.\-]\d{1,2}[\/.\-]\d{2,4})/i,
+    /(?:cấp\s*ngày|cap\s*ngay)\D{0,30}(\d{1,2}[\/.\-]\d{1,2}[\/.\-]\d{2,4})/i
+  ];
+  for (let i = 0; i < patterns.length; i++) {
+    const match = text.match(patterns[i]);
+    if (match) return normalizeDateValue_(match[1]);
+  }
+  const normalized = removeVietnameseAccents_(text).toLowerCase();
+  const idx = normalized.indexOf('date of issue');
+  if (idx >= 0) {
+    const tail = text.slice(idx, idx + 100);
+    const date = tail.match(/(\d{1,2}[\/.\-]\d{1,2}[\/.\-]\d{2,4})/);
+    if (date) return normalizeDateValue_(date[1]);
+  }
+  return '';
 }
 
 function normalizeAssetDates_(asset) {
