@@ -1,0 +1,12 @@
+node_modules/
+.analysis/
+
+# Local credentials and environment files
+.clasprc.json
+.env
+.env.*
+
+# Logs and OS files
+*.log
+.DS_Store
+Thumbs.db

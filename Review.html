@@ -1,0 +1,1305 @@
+<!doctype html>
+<html>
+<head>
+  <base target="_top">
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <style>
+    :root {
+      --bg: #f7f8fa;
+      --panel: #ffffff;
+      --line: #d9dee7;
+      --text: #17202a;
+      --muted: #637083;
+      --accent: #1769aa;
+      --danger: #b3261e;
+      --warn: #8a5a00;
+      --ok: #146c43;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: Arial, Helvetica, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      font-size: 14px;
+    }
+    header {
+      position: sticky;
+      top: 0;
+      z-index: 2;
+      background: var(--panel);
+      border-bottom: 1px solid var(--line);
+      padding: 12px 20px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+    h1 { margin: 0; font-size: 18px; font-weight: 700; }
+    main { max-width: 1320px; margin: 0 auto; padding: 16px 20px 32px; }
+    nav {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-bottom: 14px;
+    }
+    nav button, .action {
+      border: 1px solid var(--line);
+      background: var(--panel);
+      color: var(--text);
+      border-radius: 6px;
+      padding: 8px 10px;
+      cursor: pointer;
+      min-height: 36px;
+    }
+    nav button.active, .primary {
+      border-color: var(--accent);
+      background: var(--accent);
+      color: #fff;
+    }
+    .danger { color: var(--danger); }
+    .section { display: none; }
+    .section.active { display: block; }
+    .summary {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 10px;
+      margin-bottom: 14px;
+    }
+    .metric {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      padding: 10px;
+    }
+    .metric span { display: block; color: var(--muted); font-size: 12px; margin-bottom: 4px; }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      background: var(--panel);
+      border: 1px solid var(--line);
+      table-layout: fixed;
+    }
+    th, td {
+      border-bottom: 1px solid var(--line);
+      padding: 8px;
+      vertical-align: top;
+      word-wrap: break-word;
+      overflow-wrap: anywhere;
+    }
+    th {
+      text-align: left;
+      background: #eef2f6;
+      color: #263241;
+      font-size: 12px;
+    }
+    td small { color: var(--muted); display: block; margin-top: 4px; }
+    .toolbar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+    .issues {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 12px;
+      margin-bottom: 16px;
+    }
+    .issue-box {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      padding: 10px;
+      min-height: 80px;
+    }
+    .issue-box h2 { font-size: 15px; margin: 0 0 8px; }
+    .issue-box ul { margin: 0; padding-left: 18px; }
+    dialog {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      width: min(720px, calc(100vw - 32px));
+      padding: 0;
+    }
+    dialog form { padding: 16px; }
+    textarea, input {
+      width: 100%;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      padding: 8px;
+      font: inherit;
+    }
+    textarea { min-height: 120px; resize: vertical; }
+    .modal-actions {
+      display: flex;
+      justify-content: flex-end;
+      gap: 8px;
+      margin-top: 12px;
+    }
+    .loading { padding: 24px; background: var(--panel); border: 1px solid var(--line); border-radius: 6px; }
+    .review-split {
+      display: grid;
+      grid-template-columns: minmax(280px, 38%) minmax(0, 62%);
+      gap: 12px;
+      align-items: start;
+      max-width: 100%;
+      overflow: hidden;
+    }
+    .source-panel {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      padding: 10px;
+      position: sticky;
+      top: 82px;
+      overflow: hidden;
+      min-width: 0;
+      max-width: 100%;
+    }
+    .source-tabs { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
+    .source-tabs button {
+      border: 1px solid var(--line);
+      background: #fff;
+      border-radius: 6px;
+      padding: 6px 8px;
+      cursor: pointer;
+      font-size: 12px;
+    }
+    .source-tabs button.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+    .image-stage {
+      min-height: 360px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: #f1f4f8;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      overflow: auto;
+      padding: 8px;
+      text-align: center;
+    }
+    .image-stage img { display: block; max-width: 100%; height: auto; }
+    .data-panel { min-width: 0; }
+    .entity-review { margin-bottom: 16px; }
+    .entity-review h2 { margin: 0 0 8px; font-size: 16px; }
+    .image-list { display: grid; grid-template-columns: 1fr; gap: 10px; }
+    .source-image-card {
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      background: #fff;
+      padding: 8px;
+      overflow: hidden;
+      min-width: 0;
+    }
+    .source-image-title {
+      font-size: 12px;
+      color: var(--muted);
+      margin-bottom: 6px;
+      overflow-wrap: anywhere;
+    }
+    .source-image-frame {
+      height: 520px;
+      max-height: 70vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: #f1f4f8;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      overflow: hidden;
+      min-width: 0;
+      width: 100%;
+    }
+    .source-image-tools { display: flex; gap: 6px; margin-bottom: 6px; }
+    .source-image-tools button { border: 1px solid var(--line); background: #fff; border-radius: 6px; padding: 4px 8px; cursor: pointer; }
+    .source-image-frame img { display: block; max-width: 100%; max-height: 100%; width: auto; height: auto; object-fit: contain; transform-origin: center center; transition: transform .12s ease; }
+    .source-image-frame img.rotate-90 { transform: rotate(90deg) scale(.78); }
+    .source-image-frame img.rotate-180 { transform: rotate(180deg); }
+    .source-image-frame img.rotate-270 { transform: rotate(270deg) scale(.78); }
+
+
+    @media (max-width: 760px) {
+      header { align-items: flex-start; flex-direction: column; }
+      table, thead, tbody, th, td, tr { display: block; }
+      thead { display: none; }
+      tr { border-bottom: 2px solid var(--line); }
+      td { border-bottom: 1px solid #edf0f4; }
+      .review-split { grid-template-columns: 1fr; }
+      .source-panel { position: static; }
+      td::before {
+        content: attr(data-label);
+        display: block;
+        color: var(--muted);
+        font-size: 12px;
+        margin-bottom: 2px;
+      }
+    }
+  
+    .asset-doc { border: 1px solid var(--line); background: #fff; border-radius: 6px; overflow: hidden; }
+    .asset-doc-section { padding: 12px 14px; border-bottom: 1px solid var(--line); }
+    .asset-doc-section:last-child { border-bottom: 0; }
+    .asset-doc-section h3 { margin: 0 0 10px; font-size: 15px; }
+    .asset-doc-grid { display: grid; grid-template-columns: 190px 1fr; gap: 8px 12px; }
+    .asset-doc-label { color: var(--muted); }
+    .asset-doc-value { font-weight: 600; white-space: pre-wrap; }
+    .asset-doc-lines { line-height: 1.55; white-space: pre-wrap; }
+    .asset-doc-line { margin: 2px 0; }
+    .asset-doc-edit { margin-top: 12px; }
+    .contract-generation { max-width: 1200px; margin: 16px auto 40px; }
+    .contract-panel { background: #fff; border: 1px solid var(--line); border-radius: 6px; padding: 14px; }
+    .contract-panel h2 { margin: 0 0 10px; font-size: 16px; }
+    .draft-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 10px 12px; margin: 12px 0; }
+    .draft-field label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 4px; }
+    .draft-field input, .draft-field select, .draft-field textarea { width: 100%; box-sizing: border-box; border: 1px solid var(--line); border-radius: 6px; padding: 8px; font: inherit; background: #fff; }
+    .draft-field textarea { min-height: 68px; resize: vertical; }
+    .draft-actions { display: flex; align-items: center; gap: 10px; margin: 8px 0 14px; }
+    .draft-status { color: var(--muted); font-size: 13px; }
+    .template-category { margin: 14px 0 16px; }
+    .template-category h3 { margin: 0 0 8px; font-size: 14px; }
+    .template-list { display: grid; grid-template-columns: 1fr; gap: 8px; margin: 10px 0; }
+    .template-item { border: 1px solid var(--line); border-radius: 6px; padding: 10px; display: grid; grid-template-columns: 22px minmax(0, 1fr); gap: 8px; align-items: start; }
+    .template-item input[type="checkbox"] { width: 16px !important; height: 16px !important; min-width: 16px; max-width: 16px; margin: 2px 0 0; padding: 0; flex: 0 0 16px; }
+    .template-item span { display: block; min-width: 0; overflow-wrap: anywhere; }
+    .template-item.disabled { color: var(--muted); background: #f8fafc; }
+    .template-item small { display: block; color: var(--muted); margin-top: 4px; }
+    .generated-result { margin-top: 10px; }
+    .generated-item { border: 1px solid var(--line); border-radius: 6px; padding: 10px; margin-top: 8px; background: #fff; }
+    .generated-item strong { display: block; margin-bottom: 6px; }
+    .generated-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
+    .download-link { display: inline-block; padding: 8px 10px; border-radius: 6px; background: var(--primary); color: #fff; text-decoration: none; }
+    @media (max-width: 760px) { .asset-doc-grid { grid-template-columns: 1fr; } }
+  </style>
+</head>
+<body>
+  <header>
+    <div>
+      <h1>Review h&#7891; s&#417; OCR</h1>
+      <div id="caseLine"></div>
+    </div>
+    <div class="toolbar">
+      <button class="action" onclick="reloadData()">T&#7843;i l&#7841;i</button>
+      <button id="confirmReviewButton" class="action primary" onclick="confirmReview(false)">X&#225;c nh&#7853;n d&#7919; li&#7879;u</button>
+    </div>
+  </header>
+  <main>
+    <div id="loading" class="loading">&#272;ang t&#7843;i d&#7919; li&#7879;u...</div>
+    <div id="app" style="display:none">
+      <div class="summary">
+        <div class="metric"><span>Tr&#7841;ng th&#225;i validation</span><strong id="validationStatus"></strong></div>
+        <div class="metric"><span>Tr&#432;&#7901;ng thi&#7871;u</span><strong id="missingCount"></strong></div>
+        <div class="metric"><span>M&#226;u thu&#7851;n</span><strong id="conflictCount"></strong></div>
+        <div class="metric"><span>C&#7843;nh b&#225;o</span><strong id="warningCount"></strong></div>
+      </div>
+      <nav id="tabs"></nav>
+      <section id="issues" class="issues"></section>
+      <section id="content"></section>
+      <section id="contractGeneration" class="contract-generation"></section>
+    </div>
+  </main>
+
+  <dialog id="editDialog">
+    <form method="dialog">
+      <h2 id="editTitle">S&#7917;a d&#7919; li&#7879;u</h2>
+      <label>Gi&#225; tr&#7883; m&#7899;i</label>
+      <textarea id="editValue"></textarea>
+      <label>L&#253; do ch&#7881;nh s&#7917;a</label>
+      <input id="editReason" placeholder="Kh&#244;ng b&#7855;t bu&#7897;c">
+      <div class="modal-actions">
+        <button class="action" value="cancel">H&#7911;y</button>
+        <button class="action primary" type="button" onclick="saveEdit()">L&#432;u</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="ocrDialog">
+    <form method="dialog">
+      <h2 id="ocrTitle">OCR text</h2>
+      <textarea id="ocrText" readonly></textarea>
+      <div class="modal-actions">
+        <button class="action" value="cancel">&#272;&#243;ng</button>
+      </div>
+    </form>
+  </dialog>
+
+  <script>
+    const CASE_ID = '<?= caseId ?>';
+    const TOKEN = '<?= token ?>';
+    let reviewData = null;
+    let currentEditPath = '';
+    let imageCache = {};
+    let confirmBusy = false;
+    let generateBusy = false;
+
+    function vi(key) {
+      const map = {
+        missing: '\u0054\u0072\u01b0\u1edd\u006e\u0067 \u0074\u0068\u0069\u1ebf\u0075',
+        conflicts: '\u004d\u00e2\u0075 \u0074\u0068\u0075\u1eab\u006e',
+        warnings: '\u0043\u1ea3\u006e\u0068 \u0062\u00e1\u006f',
+        none: '\u004b\u0068\u00f4\u006e\u0067 \u0063\u00f3',
+        contractTab: '\u0054\u0068\u00f4\u006e\u0067 \u0074\u0069\u006e \u0068\u1ee3\u0070 \u0111\u1ed3\u006e\u0067',
+        securedTab: '\u0042\u00ea\u006e \u0062\u1ea3\u006f \u0111\u1ea3\u006d',
+        obligorTab: '\u0042\u00ea\u006e \u0111\u01b0\u1ee3\u0063 \u0062\u1ea3\u006f \u0111\u1ea3\u006d',
+        assetTab: '\u0054\u00e0\u0069 \u0073\u1ea3\u006e',
+        lowConfidence: '\u004f\u0043\u0052/AI \u0063\u00f3 \u0111\u1ed9 \u0074\u0069\u006e \u0063\u1ead\u0079 \u0074\u0068\u1ea5\u0070, \u0063\u1ea7\u006e \u006b\u0069\u1ec3\u006d \u0074\u0072\u0061 \u0074\u0068\u1ee7 \u0063\u00f4\u006e\u0067',
+        fieldsToCheck: '\u0043\u00e1\u0063 \u0074\u0072\u01b0\u1edd\u006e\u0067 \u0063\u1ea7\u006e \u006b\u0069\u1ec3\u006d \u0074\u0072\u0061',
+        field: '\u0054\u0072\u01b0\u1edd\u006e\u0067',
+        manual: '\u0053\u1eeda \u0074\u0068\u1ee7 \u0063\u00f4\u006e\u0067',
+        final: '\u0043\u0075\u1ed1\u0069 \u0063\u00f9\u006e\u0067',
+        source: '\u004e\u0067\u0075\u1ed3\u006e',
+        action: '\u0054\u0068\u0061\u006f \u0074\u00e1\u0063',
+        edit: '\u0053\u1eeda \u0111\u1ed5\u0069',
+        confirm: '\u0058\u00e1\u0063 \u006e\u0068\u1ead\u006e'
+      };
+      return map[key] || key;
+    }
+
+    async function api(action, payload) {
+      const body = Object.assign({ action, caseId: CASE_ID, token: TOKEN }, payload || {});
+      return new Promise((resolve, reject) => {
+        google.script.run
+          .withSuccessHandler(resolve)
+          .withFailureHandler(err => reject(new Error(err && err.message ? err.message : String(err))))
+          .reviewApi(body);
+      });
+    }
+
+    async function reloadData() {
+      document.getElementById('loading').style.display = 'block';
+      document.getElementById('app').style.display = 'none';
+      try {
+        reviewData = await api('getReview');
+        render();
+      } catch (err) {
+        document.getElementById('loading').textContent = err.message;
+      }
+    }
+
+    function render() {
+      document.getElementById('loading').style.display = 'none';
+      document.getElementById('app').style.display = 'block';
+      document.getElementById('caseLine').textContent = reviewData.case_id || CASE_ID;
+      document.getElementById('validationStatus').textContent = reviewData.validation.status;
+      document.getElementById('missingCount').textContent = reviewData.validation.missing_fields.length;
+      document.getElementById('conflictCount').textContent = reviewData.validation.conflicts.length;
+      document.getElementById('warningCount').textContent = reviewData.validation.warnings.length;
+      if (isReviewConfirmed()) {
+        showContractPage();
+        return;
+      }
+      showReviewPage();
+    }
+
+    function isReviewConfirmed() {
+      return String(reviewData && reviewData.review && reviewData.review.status || '').indexOf('REVIEW_CONFIRMED') >= 0;
+    }
+
+    function showReviewPage() {
+      document.querySelector('.summary').style.display = '';
+      document.getElementById('tabs').style.display = '';
+      document.getElementById('issues').style.display = '';
+      document.getElementById('content').style.display = '';
+      document.getElementById('contractGeneration').innerHTML = '';
+      renderIssues();
+      renderTabs();
+      showTab('secured');
+      setConfirmBusy(false);
+    }
+
+    function showContractPage() {
+      document.querySelector('.summary').style.display = 'none';
+      document.getElementById('tabs').style.display = 'none';
+      document.getElementById('issues').style.display = 'none';
+      document.getElementById('content').style.display = 'none';
+      setConfirmBusy(false);
+      renderContractGeneration(true);
+      setTimeout(function() { window.scrollTo({ top: 0, behavior: 'smooth' }); }, 50);
+    }
+
+    function setConfirmBusy(busy) {
+      confirmBusy = busy;
+      const btn = document.getElementById('confirmReviewButton');
+      if (!btn) return;
+      btn.disabled = busy || isReviewConfirmed();
+      btn.textContent = busy ? 'Dang xac nhan...' : (isReviewConfirmed() ? 'Da xac nhan du lieu' : 'Xac nhan du lieu');
+    }
+
+    function renderIssues() {
+      const el = document.getElementById('issues');
+      el.innerHTML = [
+        issueBox(vi('missing'), reviewData.validation.missing_fields),
+        issueBox(vi('conflicts'), reviewData.validation.conflicts),
+        warningIssueBox(vi('warnings'), reviewData.validation.warnings)
+      ].join('');
+    }
+
+    function issueBox(title, items) {
+      const list = (items || []).map(i => '<li><strong>' + escapeHtml(issueTitle(i)) + '</strong>: ' + escapeHtml(issueMessage(i)) + '</li>').join('');
+      return '<div class="issue-box"><h2>' + title + '</h2>' + (list ? '<ul>' + list + '</ul>' : '<div>' + vi('none') + '</div>') + '</div>';
+    }
+
+    function warningIssueBox(title, items) {
+      const groups = groupWarnings(items || []);
+      if (!groups.length) return '<div class="issue-box"><h2>' + title + '</h2><div>' + vi('none') + '</div></div>';
+      const html = groups.map(group => {
+        const children = group.items.map(item => '<li>' + escapeHtml(issueTitle(item)) + '</li>').join('');
+        return '<li><strong>' + escapeHtml(group.title) + '</strong>' + (children ? '<div class="issue-subtitle">' + vi('fieldsToCheck') + ':</div><ul>' + children + '</ul>' : '') + '</li>';
+      }).join('');
+      return '<div class="issue-box"><h2>' + title + '</h2><ul>' + html + '</ul></div>';
+    }
+
+    function groupWarnings(items) {
+      const buckets = {};
+      (items || []).forEach(item => {
+        const msg = issueMessage(item);
+        const key = normalizeWarningMessage(msg);
+        buckets[key] = buckets[key] || { title: key, items: [] };
+        buckets[key].items.push(item);
+      });
+      return Object.keys(buckets).map(key => buckets[key]);
+    }
+
+    function normalizeWarningMessage(message) {
+      const plain = removeVietnameseMarks(message).toLowerCase();
+      if (plain.indexOf('ocr/ai') >= 0) return vi('lowConfidence');
+      return humanizeIssueText(message);
+    }
+
+    function issueTitle(issue) {
+      const path = issue && issue.field_path ? issue.field_path : '';
+      const label = issue && issue.label ? issue.label : '';
+      if (path) return humanFieldPath(path);
+      if (label && !looksCorruptedText(label) && !looksLikeJsonPath(label)) return label;
+      return humanFieldPath(label || '');
+    }
+
+    function issueMessage(issue) {
+      const msg = issue && issue.message ? issue.message : (issue && issue.severity ? issue.severity : '');
+      return humanizeIssueText(msg);
+    }
+
+    function looksLikeJsonPath(value) {
+      return /^(contract_info|secured_parties|obligors|assets)\b/.test(String(value || ''));
+    }
+
+    function humanizeIssueText(value) {
+      let text = String(value || '');
+      const paths = text.match(/\b(?:contract_info|secured_parties|obligors|assets)(?:\[\d+\])?(?:\.[a-zA-Z0-9_]+)*/g) || [];
+      paths.forEach(path => { text = text.replaceAll(path, humanFieldPath(path)); });
+      return text;
+    }
+
+    function humanFieldPath(path) {
+      path = String(path || '');
+      const indexMatch = path.match(/\[(\d+)\]/);
+      const number = indexMatch ? Number(indexMatch[1]) + 1 : '';
+      const normalized = path.replace(/\[\d+\]/g, '[]');
+      const labels = {
+        'contract_info.contract_type': 'Loai hop dong ' + number,
+        'contract_info.asset_type': 'Loai tai san ' + number,
+        'contract_info.valuation_amount': 'Gia tri dinh gia ' + number,
+        'contract_info.bank_signer': 'Nguoi ky tai ngan hang ' + number,
+        'contract_info.dispute_court': 'Toa an xu ly tranh chap ' + number,
+        'secured_parties[].full_name': 'Ho ten ben bao dam ' + number,
+        'secured_parties[].date_of_birth': 'Ngay sinh ben bao dam ' + number,
+        'secured_parties[].id_document_type': 'Loai giay to tuy than ben bao dam ' + number,
+        'secured_parties[].id_number': 'So giay to tuy than ben bao dam ' + number,
+        'secured_parties[].id_issue_date': 'Ngay cap giay to tuy than ben bao dam ' + number,
+        'secured_parties[].id_issue_place': 'Noi cap giay to tuy than ben bao dam ' + number,
+        'secured_parties[].permanent_address': 'Dia chi thuong tru ben bao dam ' + number,
+        'secured_parties[].gender': 'Gioi tinh ben bao dam ' + number,
+        'secured_parties[].nationality': 'Quoc tich ben bao dam ' + number,
+        'secured_parties[].origin_place': 'Que quan ben bao dam ' + number,
+        'obligors[].full_name': 'Ho ten ben duoc bao dam ' + number,
+        'obligors[].date_of_birth': 'Ngay sinh ben duoc bao dam ' + number,
+        'obligors[].id_document_type': 'Loai giay to tuy than ben duoc bao dam ' + number,
+        'obligors[].id_number': 'So giay to tuy than ben duoc bao dam ' + number,
+        'obligors[].id_issue_date': 'Ngay cap giay to tuy than ben duoc bao dam ' + number,
+        'obligors[].id_issue_place': 'Noi cap giay to tuy than ben duoc bao dam ' + number,
+        'obligors[].permanent_address': 'Dia chi thuong tru ben duoc bao dam ' + number,
+        'obligors[].gender': 'Gioi tinh ben duoc bao dam ' + number,
+        'obligors[].nationality': 'Quoc tich ben duoc bao dam ' + number,
+        'obligors[].origin_place': 'Que quan ben duoc bao dam ' + number,
+        'assets[].asset_type': 'Loại tài sản ' + number,
+        'assets[].certificate_title': 'Tên Giấy chứng nhận tài sản ' + number,
+        'assets[].owner_name': 'Chủ sở hữu/chủ sử dụng tài sản ' + number,
+        'assets[].owner_identity_summary': 'Chủ sở hữu/chủ sử dụng và giấy tờ tùy thân ' + number,
+        'assets[].owner_id_document_type': 'Loại giấy tờ tùy thân chủ sở hữu/chủ sử dụng tài sản ' + number,
+        'assets[].owner_id_number': 'Số giấy tờ tùy thân chủ sở hữu/chủ sử dụng tài sản ' + number,
+        'assets[].real_estate.certificate_number': 'Số giấy chứng nhận tài sản ' + number,
+        'assets[].real_estate.registry_number': 'Số vào sổ cấp GCN tài sản ' + number,
+        'assets[].real_estate.issuing_authority': 'Cơ quan cấp GCN tài sản ' + number,
+        'assets[].real_estate.issue_date': 'Ngày cấp GCN tài sản ' + number,
+        'assets[].real_estate.land_plot_number': 'Số thửa tài sản ' + number,
+        'assets[].real_estate.map_sheet_number': 'Tờ bản đồ tài sản ' + number,
+        'assets[].real_estate.land_address': 'Địa chỉ thửa đất ' + number,
+        'assets[].real_estate.area': 'Diện tích ' + number,
+        'assets[].real_estate.usage_form': 'Hình thức sử dụng ' + number,
+        'assets[].real_estate.usage_purpose': 'Mục đích sử dụng ' + number,
+        'assets[].real_estate.usage_term': 'Thời hạn sử dụng ' + number,
+        'assets[].real_estate.attached_assets': 'Tài sản gắn liền với đất ' + number,
+        'assets[].real_estate.post_issue_changes': 'Nội dung thay đổi sau cấp giấy tài sản ' + number,
+        'assets[].movable.chassis_number': 'So khung tai san ' + number,
+        'assets[].movable.engine_number': 'So may tai san ' + number
+      };
+      const label = labels[normalized];
+      return label ? label.trim() : path;
+    }
+
+    function looksCorruptedText(value) {
+      const text = String(value || '');
+      return text.indexOf('?') >= 0 || text.indexOf('?') >= 0 || text.indexOf('?') >= 0 || text.indexOf('?') >= 0;
+    }
+
+    function renderTabs() {
+      const tabs = [
+        ['secured', vi('securedTab')],
+        ['obligors', vi('obligorTab')],
+        ['assets', vi('assetTab')],
+        ['ocr', 'OCR']
+      ];
+      document.getElementById('tabs').innerHTML = tabs.map(t => `<button id="tab-${t[0]}" onclick="showTab('${t[0]}')">${t[1]}</button>`).join('');
+    }
+
+    function showTab(tab) {
+      document.querySelectorAll('nav button').forEach(b => b.classList.remove('active'));
+      document.getElementById('tab-' + tab).classList.add('active');
+      if (tab === 'secured') renderPeople('content', reviewData.secured_parties || [], 'secured_parties', 'secured_party');
+      if (tab === 'obligors') renderPeople('content', reviewData.obligors || [], 'obligors', 'obligor');
+      if (tab === 'assets') renderAssets('content', 'asset');
+      if (tab === 'ocr') renderOcr('content');
+    }
+
+    function renderPeople(targetId, people, root, group) {
+      people = sortPeopleForDisplay(people || [], group);
+      const html = people.map((p, i) => {
+        const title = escapeHtml((p.full_name && p.full_name.final_value) || 'Nguoi ' + (i + 1));
+        const files = getFilesForObject(p, group);
+        return '<div class="entity-review"><h2>' + title + '</h2>' + compareLayoutHtml(group + '-person-' + i, files, fieldTable(sortPersonFields(flattenFields(p, root + '[' + i + ']')))) + '</div>';
+      }).join('');
+      document.getElementById(targetId).innerHTML = html || '<div class="loading">Khong co du lieu.</div>';
+      hydrateAllSourceImages();
+    }
+
+    function sortPeopleForDisplay(people, group) {
+      if (group !== 'secured_party') return people || [];
+      const order = getAssetOwnerNameOrder();
+      if (!order.length) return people || [];
+      return (people || []).slice().sort((a, b) => ownerOrderIndex(a, order) - ownerOrderIndex(b, order));
+    }
+
+    function getAssetOwnerNameOrder() {
+      const first = (reviewData.assets || [])[0] || {};
+      const summary = valueOf(first.owner_identity_summary) || valueOf(first.owner_name);
+      return summary.split(';').map(part => normalizeNameForDisplay(part.split('-')[0].split(',')[0])).filter(Boolean);
+    }
+
+    function ownerOrderIndex(person, order) {
+      const name = normalizeNameForDisplay(person && person.full_name && person.full_name.final_value);
+      const idx = order.findIndex(item => item && name && (item.indexOf(name) >= 0 || name.indexOf(item) >= 0));
+      return idx >= 0 ? idx : 999;
+    }
+
+    function normalizeNameForDisplay(value) {
+      return removeVietnameseMarks(value).toUpperCase().replace(/[^A-Z0-9]+/g, ' ').replace(/\s+/g, ' ').trim();
+    }
+
+    function sortPersonFields(fields) {
+      const priority = ['full_name', 'date_of_birth', 'id_document_type', 'id_number', 'id_issue_date', 'id_issue_place', 'permanent_address'];
+      return (fields || []).slice().sort((a, b) => fieldPriority(a.path, priority) - fieldPriority(b.path, priority));
+    }
+
+    function fieldPriority(path, priority) {
+      const key = String(path || '').split('.').pop();
+      const idx = priority.indexOf(key);
+      return idx >= 0 ? idx : 100;
+    }
+
+    function renderAssets(targetId, group) {
+      const html = (reviewData.assets || []).map((a, i) => {
+        const files = getFilesForObject(a, group);
+        return '<div class="entity-review"><h2>' + t('Tai san ') + (i + 1) + '</h2>' + compareLayoutHtml(group + '-asset-' + i, files, assetCertificateHtml(a, i)) + '</div>';
+      }).join('');
+      document.getElementById(targetId).innerHTML = html || '<div class="loading">Khong co du lieu.</div>';
+      hydrateAllSourceImages();
+    }
+
+
+    function assetCertificateHtml(asset, index) {
+      const root = 'assets[' + index + ']';
+      const re = asset.real_estate || {};
+      const ocrText = getAssetOcrText();
+      const important = [
+        [t('Loai GCN'), valueOf(asset.certificate_title) || inferCertificateTitleFromText(ocrText)],
+        [t('So GCN'), valueOf(re.certificate_number) || inferCertificateNumberFromText(ocrText)],
+        [t('So vao so'), valueOf(re.registry_number) || inferRegistryNumberFromText(ocrText)],
+        [t('Ngay cap'), valueOf(re.issue_date)],
+        [t('Noi cap'), titleCaseAgency(valueOf(re.issuing_authority))]
+      ];
+      const lines = [];
+      lines.push('<div class="asset-doc">');
+      lines.push('<section class="asset-doc-section"><h3>' + t('1. Thong tin chung') + '</h3><div class="asset-doc-grid">');
+      important.forEach(row => {
+        lines.push('<div class="asset-doc-label">' + escapeHtml(row[0]) + '</div><div class="asset-doc-value">' + escapeHtml(row[1] || '') + '</div>');
+      });
+      lines.push('</div></section>');
+      lines.push('<section class="asset-doc-section"><h3>' + t('2. Thong tin theo giay chung nhan') + '</h3><div class="asset-doc-lines">');
+      lines.push('<div class="asset-doc-line"><strong>1. ' + t('Nguoi su dung dat, chu so huu tai san gan lien voi dat') + ':</strong></div>');
+      ownerLines(asset).forEach(line => lines.push('<div class="asset-doc-line">' + escapeHtml(line) + '</div>'));
+      lines.push('<div class="asset-doc-line"><strong>2. ' + t('Thong tin thua dat') + ':</strong></div>');
+      lines.push('<div class="asset-doc-line">a. ' + t('Thua dat so') + ': ' + escapeHtml(valueOf(re.land_plot_number)) + '    ' + t('to ban do so') + ': ' + escapeHtml(valueOf(re.map_sheet_number)) + '</div>');
+      lines.push('<div class="asset-doc-line">b. ' + t('Dien tich') + ': ' + escapeHtml(valueOf(re.area)) + '</div>');
+      lines.push('<div class="asset-doc-line">c. ' + t('Loai dat') + ': ' + escapeHtml(valueOf(re.usage_purpose)) + '</div>');
+      lines.push('<div class="asset-doc-line">d. ' + t('Thoi han su dung') + ': ' + escapeHtml(valueOf(re.usage_term)) + '</div>');
+      lines.push('<div class="asset-doc-line">\u0111. ' + t('Hinh thuc su dung') + ': ' + escapeHtml(valueOf(re.usage_form)) + '</div>');
+      lines.push('<div class="asset-doc-line">e. ' + t('Dia chi') + ': ' + escapeHtml(valueOf(re.land_address)) + '</div>');
+      lines.push('<div class="asset-doc-line"><strong>3. ' + t('Thong tin tai san gan lien voi dat') + ':</strong></div>');
+      lines.push('<div class="asset-doc-line">a. ' + t('Ten tai san') + ': ' + escapeHtml(valueOrDash(valueOf(re.attached_assets))) + '</div>');
+      lines.push('<div class="asset-doc-line">b. ' + t('Dien tich su dung') + ': ' + escapeHtml(valueOrDash('')) + '</div>');
+      lines.push('<div class="asset-doc-line">c. ' + t('Hinh thuc so huu') + ': ' + escapeHtml(valueOrDash('')) + '</div>');
+      lines.push('<div class="asset-doc-line">d. ' + t('Thoi han so huu') + ': ' + escapeHtml(valueOrDash('')) + '</div>');
+      lines.push('<div class="asset-doc-line">\u0111. ' + t('Dia chi') + ': ' + escapeHtml(valueOrDash('')) + '</div>');
+      lines.push('</div><div class="asset-doc-edit">' + fieldTable(flattenFields(asset, root)) + '</div></section>');
+      lines.push('</div>');
+      return lines.join('');
+    }
+
+    function t(value) {
+      const map = {
+        'Tai san ': '\u0054\u00e0\u0069 \u0073\u1ea3\u006e ',
+        'Loai GCN': '\u004c\u006f\u1ea1\u0069 GCN',
+        'So GCN': '\u0053\u1ed1 GCN',
+        'So vao so': '\u0053\u1ed1 \u0076\u00e0\u006f \u0073\u1ed5',
+        'Ngay cap': '\u004e\u0067\u00e0\u0079 \u0063\u1ea5\u0070',
+        'Noi cap': '\u004e\u01a1\u0069 \u0063\u1ea5\u0070',
+        '1. Thong tin chung': '1. \u0054\u0068\u00f4\u006e\u0067 \u0074\u0069\u006e \u0063\u0068\u0075\u006e\u0067',
+        '2. Thong tin theo giay chung nhan': '2. \u0054\u0068\u00f4\u006e\u0067 \u0074\u0069\u006e \u0074\u0068\u0065\u006f \u0067\u0069\u1ea5\u0079 \u0063\u0068\u1ee9\u006e\u0067 \u006e\u0068\u1ead\u006e',
+        'Nguoi su dung dat, chu so huu tai san gan lien voi dat': '\u004e\u0067\u01b0\u1edd\u0069 \u0073\u1eed \u0064\u1ee5\u006e\u0067 \u0111\u1ea5\u0074, \u0063\u0068\u1ee7 \u0073\u1edf \u0068\u1eef\u0075 \u0074\u00e0\u0069 \u0073\u1ea3\u006e \u0067\u1eaf\u006e \u006c\u0069\u1ec1\u006e \u0076\u1edb\u0069 \u0111\u1ea5\u0074',
+        'Thong tin thua dat': '\u0054\u0068\u00f4\u006e\u0067 \u0074\u0069\u006e \u0074\u0068\u1eeda \u0111\u1ea5\u0074',
+        'Thua dat so': '\u0054\u0068\u1eeda \u0111\u1ea5\u0074 \u0073\u1ed1',
+        'to ban do so': '\u0074\u1edd \u0062\u1ea3\u006e \u0111\u1ed3 \u0073\u1ed1',
+        'Dien tich': '\u0044\u0069\u1ec7\u006e \u0074\u00ed\u0063\u0068',
+        'Loai dat': '\u004c\u006f\u1ea1\u0069 \u0111\u1ea5\u0074',
+        'Thoi han su dung': '\u0054\u0068\u1eddi \u0068\u1ea1\u006e \u0073\u1eed \u0064\u1ee5\u006e\u0067',
+        'Hinh thuc su dung': '\u0048\u00ec\u006e\u0068 \u0074\u0068\u1ee9\u0063 \u0073\u1eed \u0064\u1ee5\u006e\u0067',
+        'Dia chi': '\u0110\u1ecb\u0061 \u0063\u0068\u1ec9',
+        'Thong tin tai san gan lien voi dat': '\u0054\u0068\u00f4\u006e\u0067 \u0074\u0069\u006e \u0074\u00e0\u0069 \u0073\u1ea3\u006e \u0067\u1eaf\u006e \u006c\u0069\u1ec1\u006e \u0076\u1edb\u0069 \u0111\u1ea5\u0074',
+        'Ten tai san': '\u0054\u00ea\u006e \u0074\u00e0\u0069 \u0073\u1ea3\u006e',
+        'Dien tich su dung': '\u0044\u0069\u1ec7\u006e \u0074\u00ed\u0063\u0068 \u0073\u1eed \u0064\u1ee5\u006e\u0067',
+        'Hinh thuc so huu': '\u0048\u00ec\u006e\u0068 \u0074\u0068\u1ee9\u0063 \u0073\u1edf \u0068\u1eef\u0075',
+        'Thoi han so huu': '\u0054\u0068\u1eddi \u0068\u1ea1\u006e \u0073\u1edf \u0068\u1eef\u0075'
+      };
+      return map[value] || value;
+    }
+
+    function valueOf(field) {
+      if (!field) return '';
+      if (typeof field === 'object' && Object.prototype.hasOwnProperty.call(field, 'final_value')) return cleanValue(field.final_value);
+      return cleanValue(field);
+    }
+
+    function valueOrDash(value) {
+      value = cleanValue(value);
+      return value || '-/-';
+    }
+
+    function ownerLines(asset) {
+      const summary = valueOf(asset.owner_identity_summary);
+      if (summary) return summary.split(';').map(v => v.trim()).filter(Boolean);
+      const names = valueOf(asset.owner_name).split(';').map(v => v.trim()).filter(Boolean);
+      const ids = valueOf(asset.owner_id_number).split(';').map(v => v.trim()).filter(Boolean);
+      const docTypes = valueOf(asset.owner_id_document_type).split(';').map(v => v.trim()).filter(Boolean);
+      if (!names.length && !ids.length) return [''];
+      const max = Math.max(names.length, ids.length);
+      const out = [];
+      for (let i = 0; i < max; i++) {
+        const name = names[i] || names[0] || '';
+        const docType = docTypes[i] || docTypes[0] || 'giay to tuy than';
+        const id = ids[i] || '';
+        out.push((name ? name : '') + (id ? ', ' + docType + ': ' + id : ''));
+      }
+      return out;
+    }
+
+    function getAssetOcrText() {
+      return (reviewData.ocr_results || []).filter(o => o.group === 'asset').map(o => o.text_preview || '').join('\n');
+    }
+
+    function inferCertificateTitleFromText(text) {
+      const clean = removeVietnameseMarks(text).toUpperCase();
+      if (clean.indexOf('QUYEN SU DUNG DAT QUYEN SO HUU NHA O VA TAI SAN KHAC GAN LIEN VOI DAT') >= 0) return 'Giay chung nhan quyen su dung dat, quyen so huu nha o va tai san khac gan lien voi dat';
+      if (clean.indexOf('QUYEN SU DUNG DAT QUYEN SO HUU TAI SAN GAN LIEN VOI DAT') >= 0) return 'Giay chung nhan quyen su dung dat, quyen so huu tai san gan lien voi dat';
+      if (clean.indexOf('QUYEN SU DUNG DAT') >= 0) return 'Giay chung nhan quyen su dung dat';
+      return '';
+    }
+
+    function inferCertificateNumberFromText(text) {
+      const matches = String(text || '').match(/\b[A-Z]{1,3}\s*[0-9]{6,9}\b/g) || [];
+      return matches.length ? matches[0].replace(/\s+/g, ' ').trim() : '';
+    }
+
+    function inferRegistryNumberFromText(text) {
+      const raw = String(text || '');
+      const normalized = removeVietnameseMarks(raw).replace(/\s+/g, ' ');
+      const direct = normalized.match(/(?:so vao so|vao so cap gcn|so cap gcn|registry)[^A-Z0-9]{0,20}([A-Z]{1,5}\s*[0-9][A-Z0-9.\\/-]{1,20})/i);
+      if (direct) return direct[1].replace(/\s+/g, ' ').trim();
+      const candidates = normalized.match(/\b(?:CS|CT|CN|CH|CL|HX|VP|DC|DL)[0-9][A-Z0-9.\\/-]{1,20}\b/gi) || [];
+      return candidates.length ? candidates[0].trim() : '';
+    }
+
+    function titleCaseAgency(value) {
+      value = cleanValue(value);
+      if (!value) return '';
+      let text = value.toLocaleLowerCase('vi-VN');
+      text = text.charAt(0).toLocaleUpperCase('vi-VN') + text.slice(1);
+      ['huyện', 'quận', 'thành phố', 'thị xã', 'tỉnh', 'xã', 'phường', 'thị trấn'].forEach(prefix => {
+        const re = new RegExp('(' + prefix + '\\s+)([a-zà-ỹ]+)(\\s+([a-zà-ỹ]+))?', 'gi');
+        text = text.replace(re, function(match, p1, w1, p3, w2) {
+          return p1 + capitalizeViWord(w1) + (p3 ? ' ' + capitalizeViWord(w2) : '');
+        });
+      });
+      return text;
+    }
+
+    function capitalizeViWord(word) {
+      word = String(word || '');
+      return word ? word.charAt(0).toLocaleUpperCase('vi-VN') + word.slice(1).toLocaleLowerCase('vi-VN') : '';
+    }
+
+    function removeVietnameseMarks(value) {
+      return String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\u0111/g, 'd').replace(/\u0110/g, 'D');
+    }
+
+    function compareLayoutHtml(scopeId, files, dataHtml) {
+      return '<div class="review-split"><aside class="source-panel"><div class="image-list">' + sourceImagesHtml(scopeId, files) + '</div></aside><section class="data-panel">' + dataHtml + '</section></div>';
+    }
+
+    function sourceImagesHtml(scopeId, files) {
+      files = sortSourceFiles(files || []);
+      if (!files.length) return '<div>Khong co</div>';
+      return files.map((file, i) => '<div class="source-image-card"><div class="source-image-title">' + escapeHtml(file.file_name) + '</div><div class="source-image-tools"><button onclick="rotateReviewImage(\'imgframe-' + escapeAttr(scopeId) + '-' + i + '\', -90)">Xoay trai</button><button onclick="rotateReviewImage(\'imgframe-' + escapeAttr(scopeId) + '-' + i + '\', 90)">Xoay phai</button></div><div class="source-image-frame" id="imgframe-' + escapeAttr(scopeId) + '-' + i + '" data-file-id="' + escapeAttr(file.file_id) + '" data-file-name="' + escapeAttr(file.file_name) + '" data-ocr-rotation="' + escapeAttr(file.orientation_degrees || 0) + '">Dang tai anh...</div></div>').join('');
+    }
+
+    function sortSourceFiles(files) {
+      return (files || []).slice().sort((a, b) => fileSideRank(a) - fileSideRank(b) || String(a.file_name || '').localeCompare(String(b.file_name || '')));
+    }
+
+    function fileSideRank(file) {
+      const text = removeVietnameseMarks(((file && file.file_name) || '') + ' ' + ((file && file.text_preview) || '')).toLowerCase();
+      if (text.indexOf('ngay cap') >= 0 || text.indexOf('date of issue') >= 0 || text.indexOf('noi cu tru') >= 0 || text.indexOf('place of residence') >= 0 || text.indexOf('idvnm') >= 0) return 2;
+      if (text.indexOf('ho va ten') >= 0 || text.indexOf('full name') >= 0 || text.indexOf('ngay sinh') >= 0 || text.indexOf('date of birth') >= 0) return 1;
+      return 1;
+    }
+
+    function getFilesForObject(obj, group) {
+      const groupFiles = getFilesByGroup(group);
+      if (group === 'asset') return groupFiles;
+      const id = normalizeReviewId(obj && obj.id_number && obj.id_number.final_value);
+      if (!id) return [];
+      return groupFiles.filter(file => (file.id_numbers || []).map(normalizeReviewId).indexOf(id) >= 0 || normalizeReviewId(file.text_preview || '').indexOf(id) >= 0);
+    }
+
+    function normalizeReviewId(value) {
+      return String(value || '').replace(/\D/g, '');
+    }
+    function getFilesByGroup(group) {
+      return (reviewData.ocr_results || []).filter(f => f.group === group);
+    }
+
+    async function hydrateAllSourceImages() {
+      const frames = Array.from(document.querySelectorAll('.source-image-frame[data-file-id]'));
+      for (const frame of frames) {
+        const fileId = frame.getAttribute('data-file-id');
+        const fileName = frame.getAttribute('data-file-name');
+        try {
+          const preview = imageCache[fileId] || await api('getCaseImagePreview', { fileId });
+          imageCache[fileId] = preview;
+          if (preview.is_image && preview.data_url) {
+            frame.innerHTML = '<img src="' + preview.data_url + '" alt="' + escapeAttr(preview.file_name || fileName) + '" data-rotation="0" onload="autoOrientReviewImage(this)">';
+          } else {
+            frame.innerHTML = '<div>File nay khong phai anh preview truc tiep.<br>' + escapeHtml(fileName) + '<br>Vao tab OCR de xem text.</div>';
+          }
+        } catch (err) {
+          frame.textContent = err.message;
+        }
+      }
+    }
+
+    function autoOrientReviewImage(img) {
+      const frame = img.closest('.source-image-frame');
+      const degrees = Number(frame && frame.getAttribute('data-ocr-rotation') || 0);
+      setReviewImageRotation(img, degrees);
+    }
+
+    function rotateReviewImage(frameId, delta) {
+      const frame = document.getElementById(frameId);
+      const img = frame && frame.querySelector('img');
+      if (!img) return;
+      const current = Number(img.getAttribute('data-rotation') || 0);
+      setReviewImageRotation(img, current + delta);
+    }
+
+    function setReviewImageRotation(img, degrees) {
+      const normalized = ((degrees % 360) + 360) % 360;
+      img.setAttribute('data-rotation', normalized);
+      img.classList.remove('rotate-90', 'rotate-180', 'rotate-270');
+      if (normalized) img.classList.add('rotate-' + normalized);
+    }
+    function renderOcr(targetId) {
+      const rows = (reviewData.ocr_results || []).map((o, i) => `<tr><td data-label="File">${escapeHtml(o.file_name)}</td><td data-label="Nhóm">${escapeHtml(o.group)}</td><td data-label="Trạng thái">${escapeHtml(o.status)}</td><td data-label="Confidence">${escapeHtml(o.confidence)}</td><td data-label="OCR text"><button class="action" onclick="openOcrPreview(${i})">${o.has_text ? 'Xem OCR' : 'Xem lỗi'}</button></td></tr>`).join('');
+      document.getElementById(targetId).innerHTML = `<table><thead><tr><th>File</th><th>Nhóm</th><th>Trạng thái</th><th>Confidence</th><th>OCR text</th></tr></thead><tbody>${rows}</tbody></table>`;
+    }
+
+    function renderFieldTable(targetId, fields) {
+      document.getElementById(targetId).innerHTML = fieldTable(fields);
+    }
+
+    function fieldTable(fields) {
+      fields = (fields || []).filter(shouldShowField);
+      const rows = fields.map(f => {
+        const d = displayFieldValues(f);
+        return `
+        <tr>
+          <td data-label="${vi('field')}">${escapeHtml(humanFieldPath(f.path) || f.label)}<small>${escapeHtml(f.path)}</small></td>
+          <td data-label="OCR/AI">${escapeHtml(d.ai_value)}</td>
+          <td data-label="Form">${escapeHtml(d.form_value)}</td>
+          <td data-label="${vi('manual')}">${escapeHtml(d.manual_value)}</td>
+          <td data-label="${vi('final')}"><strong>${escapeHtml(d.final_value)}</strong></td>
+          <td data-label="${vi('source')}">${escapeHtml(f.source)}<small>${escapeHtml(f.confidence)}</small></td>
+          <td data-label="${vi('action')}">
+            <button class="action" onclick="openEdit('${escapeAttr(f.path)}')">${vi('edit')}</button>
+          </td>
+        </tr>`;
+      }).join('');
+      if (!rows) return '<div class="loading">' + vi('none') + '</div>'; 
+      return `<table><thead><tr><th>${vi('field')}</th><th>OCR/AI</th><th>Form</th><th>${vi('manual')}</th><th>${vi('final')}</th><th>${vi('source')}</th><th>${vi('action')}</th></tr></thead><tbody>${rows}</tbody></table>`;
+    }
+
+    function displayFieldValues(field) {
+      const out = Object.assign({}, field || {});
+      const owner = getOwnerDerivedDisplay(field && field.path);
+      if (owner) {
+        out.ai_value = owner;
+        if (!out.manual_value) out.final_value = owner;
+      }
+      return out;
+    }
+
+    function getOwnerDerivedDisplay(path) {
+      const m = String(path || '').match(/^assets\[(\d+)\]\.(owner_name|owner_id_document_type|owner_id_number)$/);
+      if (!m) return '';
+      const asset = (reviewData.assets || [])[Number(m[1])] || {};
+      const parts = parseOwnerIdentitySummary(valueOf(asset.owner_identity_summary));
+      if (!parts.length) return '';
+      if (m[2] === 'owner_name') return parts.map(p => p.name).filter(Boolean).join('; ');
+      if (m[2] === 'owner_id_document_type') return parts.map(p => p.docType).filter(Boolean).join('; ');
+      if (m[2] === 'owner_id_number') return parts.map(p => p.id).filter(Boolean).join('; ');
+      return '';
+    }
+
+    function parseOwnerIdentitySummary(value) {
+      return String(value || '').split(';').map(item => {
+        const text = item.trim();
+        if (!text) return null;
+        const idMatch = text.match(/(\d{12}|\d{9})/);
+        const id = idMatch ? idMatch[1] : '';
+        let beforeId = id ? text.slice(0, text.indexOf(id)).trim() : text;
+        beforeId = beforeId.replace(/[,:-]+\s*$/g, '').trim();
+        const parts = beforeId.split(/\s+-\s+/);
+        const name = (parts[0] || '').trim();
+        const docType = (parts.slice(1).join(' - ') || beforeId.replace(name, '') || '').replace(/\bso\b$/i, '').trim();
+        return { name, docType, id };
+      }).filter(Boolean);
+    }
+
+    function shouldShowField(field) {
+      if (!field || isHiddenReviewPath(field.path)) return false;
+      if (isAlwaysVisibleReviewPath(field.path)) return true;
+      return Boolean(cleanValue(field.ai_value) || cleanValue(field.form_value) || cleanValue(field.manual_value) || cleanValue(field.final_value));
+    }
+
+    function isAlwaysVisibleReviewPath(path) {
+      return [
+        /^assets\[\d+\]\.real_estate\.registry_number$/
+      ].some(re => re.test(String(path || '')));
+    }
+
+    function cleanValue(value) {
+      return String(value == null ? '' : value).trim();
+    }
+
+    function flattenFields(obj, path) {
+      const out = [];
+      walk(obj, path, out);
+      return out;
+    }
+
+    function walk(obj, path, out) {
+      if (!obj || typeof obj !== 'object') return;
+      if (Object.prototype.hasOwnProperty.call(obj, 'final_value')) {
+        out.push(Object.assign({ path }, obj));
+        return;
+      }
+      Object.keys(obj).forEach(k => {
+        if (k === 'roles') return;
+        const nextPath = path ? `${path}.${k}` : k;
+        if (isHiddenReviewPath(nextPath)) return;
+        walk(obj[k], nextPath, out);
+      });
+    }
+
+    function isHiddenReviewPath(path) {
+      return ['.spouse', '.marriage_registration', '.marital_status_certificate', '.marital_status', '.real_estate.owner_or_user'].some(part => String(path || '').indexOf(part) >= 0);
+    }
+
+    function getField(path) {
+      return path.split('.').reduce((acc, part) => {
+        if (!acc) return null;
+        const m = part.match(/^(.+)\[(\d+)\]$/);
+        return m ? (acc[m[1]] || [])[Number(m[2])] : acc[part];
+      }, reviewData);
+    }
+
+    function openEdit(path) {
+      currentEditPath = path;
+      const field = getField(path);
+      document.getElementById('editTitle').textContent = vi('edit') + ': ' + (humanFieldPath(path) || field.label || path);
+      document.getElementById('editValue').value = field.final_value || '';
+      document.getElementById('editReason').value = '';
+      document.getElementById('editDialog').showModal();
+    }
+
+    function openOcrPreview(index) {
+      const item = (reviewData.ocr_results || [])[index] || {};
+      document.getElementById('ocrTitle').textContent = item.file_name || 'OCR text';
+      document.getElementById('ocrText').value = item.text_preview || 'Không có OCR text trong dữ liệu Review.';
+      document.getElementById('ocrDialog').showModal();
+    }
+
+    async function saveEdit() {
+      try {
+        reviewData = await api('saveOverride', {
+          fieldPath: currentEditPath,
+          newValue: document.getElementById('editValue').value,
+          reason: document.getElementById('editReason').value
+        });
+        document.getElementById('editDialog').close();
+        render();
+      } catch (err) {
+        alert(err.message);
+      }
+    }
+
+    async function confirmField(path) {
+      try {
+        reviewData = await api('confirmField', { fieldPath: path });
+        render();
+      } catch (err) {
+        alert(err.message);
+      }
+    }
+
+    async function confirmReview(forceConfirm) {
+      if (confirmBusy) return;
+      setConfirmBusy(true);
+      try {
+        const result = await api('confirmReview', { forceConfirm });
+        if (result.requires_force) {
+          setConfirmBusy(false);
+          if (confirm(result.message + '\nVan xac nhan voi canh bao?')) return confirmReview(true);
+          return;
+        }
+        reviewData = result.data;
+        render();
+      } catch (err) {
+        setConfirmBusy(false);
+        alert(err.message);
+      }
+    }
+
+    async function renderContractGeneration(fullPage) {
+      const el = document.getElementById('contractGeneration');
+      if (!el || !reviewData || !reviewData.review) return;
+      const status = String(reviewData.review.status || '');
+      if (status.indexOf('REVIEW_CONFIRMED') < 0) {
+        el.innerHTML = '';
+        return;
+      }
+      const draftSaved = normalizePlainText(getReviewFieldFinalValue('contract_info.contract_draft_saved')) === 'yes';
+      if (!draftSaved) {
+        el.innerHTML = '<div class="contract-panel"><h2>Soan thao hop dong</h2>' +
+          '<div>Du lieu OCR da duoc xac nhan. Nhap thong tin soan thao hop dong va bam Luu thong tin soan thao de hien danh sach bieu mau.</div>' +
+          renderContractDraftInfoForm() +
+          '<button class="action" onclick="showReviewPage()">Quay lai xem du lieu</button>' +
+          '</div>';
+        updateDraftConditionalFields();
+        updateMoneyFields();
+        return;
+      }
+      el.innerHTML = '<div class="contract-panel"><h2>Soan thao hop dong</h2><div>Dang tai danh sach mau...</div></div>';
+      try {
+        const templates = await api('listContractTemplates');
+        const categories = groupContractTemplates(templates || []);
+        const categoryHtml = categories.map(category => {
+          const items = category.templates.map(tpl => {
+          const disabled = !tpl.configured || !tpl.mapping_ready;
+          const reason = !tpl.configured ? 'Chua cau hinh Google Docs template ID' : (!tpl.mapping_ready ? 'Chua lien ket du lieu OCR, tam thoi khong cho xuat de tranh file trong' : (!tpl.applicable ? 'Khong khuyen nghi cho loai ho so hien tai, nhung van co the chon' : 'Phu hop loai ho so hien tai'));
+          return '<label class="template-item' + (disabled ? ' disabled' : '') + '">' +
+            '<input type="checkbox" class="contract-template-choice" value="' + escapeAttr(tpl.code) + '"' + (disabled ? ' disabled' : '') + '>' +
+            '<span><strong>' + escapeHtml(tpl.name) + '</strong><small>' + escapeHtml(reason) + '</small></span>' +
+            '</label>';
+          }).join('');
+          return '<section class="template-category"><h3>' + escapeHtml(category.label) + '</h3>' +
+            '<div class="template-list">' + items + '</div></section>';
+        }).join('');
+        el.innerHTML = '<div class="contract-panel"><h2>Soan thao hop dong</h2>' +
+          '<div>Du lieu OCR da duoc xac nhan. Nhap thong tin soan thao hop dong, sau do chon mot hoac nhieu mau Word can xuat.</div>' +
+          renderContractDraftInfoForm() +
+          (categoryHtml || '<div>Khong co mau.</div>') +
+          '<button id="generateContractsButton" class="action primary" onclick="generateSelectedContracts()">Tai/xuat mau da chon</button>' +
+          '<button class="action" style="margin-left:8px" onclick="showReviewPage()">Quay lai xem du lieu</button>' +
+          '<div id="generatedResult" class="generated-result"></div></div>';
+        updateDraftConditionalFields();
+        updateMoneyFields();
+      } catch (err) {
+        el.innerHTML = '<div class="contract-panel"><h2>Soan thao hop dong</h2><div>' + escapeHtml(err.message) + '</div></div>';
+      }
+    }
+
+    function renderContractDraftInfoForm() {
+      const fields = [
+        { path: 'contract_info.asset_type', label: 'Loai tai san', type: 'select', options: ['', 'Bat dong san', 'Dong san'] },
+        { path: 'contract_info.contract_type', label: 'Loai hop dong', type: 'select', options: ['', 'Ben bao dam the chap cho chinh nghia vu cua minh', 'Ben bao dam the chap cho nghia vu cua ben thu ba'] },
+        { path: 'contract_info.asset_count', label: 'So luong tai san bao dam', type: 'text' },
+        { path: 'contract_info.valuation_land_amount', label: 'Gia tri dat', type: 'money' },
+        { path: 'contract_info.valuation_house_amount', label: 'Gia tri nha', type: 'money' },
+        { path: 'contract_info.valuation_total_amount', label: 'Tong gia tri tai san', type: 'money_total', readonly: true },
+        { path: 'contract_info.bank_signer', label: 'Nguoi ky hop dong tai ngan hang', type: 'select', options: ['', 'Ong A', 'Ong B', 'Ong C', 'Ba D'] },
+        { path: 'contract_info.dispute_court', label: 'Toa an xu ly tranh chap', type: 'select', options: ['', 'Toa khu vuc A', 'Toa khu vuc B'] },
+        { path: 'contract_info.cif_customer', label: 'CIF khach hang', type: 'text' },
+        { path: 'contract_info.contract_date', label: 'Ngay hop dong', type: 'text', placeholder: '.../.../2026 hoac 07/06/2026' },
+        { path: 'contract_info.contract_sequence', label: 'So thu tu hop dong', type: 'text', placeholder: '01' },
+        { path: 'contract_info.actual_asset_differs_from_certificate', label: 'T\u00e0i s\u1ea3n th\u1ef1c t\u1ebf c\u00f3 kh\u00e1c th\u00f4ng tin tr\u00ean b\u00eca \u0111\u1ea5t kh\u00f4ng?', type: 'select', options: ['Kh\u00f4ng', 'C\u00f3'], affectsVisibility: true },
+        { path: 'contract_info.actual_asset_difference_description', label: 'M\u00f4 t\u1ea3 ph\u1ea7n sai kh\u00e1c', type: 'textarea', dependsOn: 'contract_info.actual_asset_differs_from_certificate', showWhen: 'C\u00f3' },
+        { path: 'contract_info.actual_house_asset', label: 'T\u00e0i s\u1ea3n l\u00e0 nh\u00e0 th\u1ef1c t\u1ebf n\u1ebfu sai kh\u00e1c v\u1edbi b\u00eca \u0111\u1ea5t', type: 'textarea', dependsOn: 'contract_info.actual_asset_differs_from_certificate', showWhen: 'C\u00f3' }
+      ];
+      const inputs = fields.map(f => {
+        const value = getReviewFieldFinalValue(f.path);
+        const attrs = ' data-draft-path="' + escapeAttr(f.path) + '"' +
+          (f.dependsOn ? ' data-draft-depends-on="' + escapeAttr(f.dependsOn) + '" data-draft-show-when="' + escapeAttr(f.showWhen || '') + '"' : '') +
+          (f.affectsVisibility ? ' onchange="updateDraftConditionalFields()"' : '') +
+          (f.type === 'money' ? ' inputmode="numeric" oninput="formatMoneyInput(this); updateMoneyFields()"' : '') +
+          (f.readonly ? ' readonly' : '');
+        const wrapperAttrs = f.dependsOn ? ' data-draft-field-wrapper data-depends-on="' + escapeAttr(f.dependsOn) + '" data-show-when="' + escapeAttr(f.showWhen || '') + '"' : ' data-draft-field-wrapper';
+        if (f.type === 'select') {
+          const opts = (f.options || []).map(option => '<option value="' + escapeAttr(option) + '"' + (normalizePlainText(option) === normalizePlainText(value) ? ' selected' : '') + '>' + escapeHtml(option || '-- Chon --') + '</option>').join('');
+          return '<div class="draft-field"' + wrapperAttrs + '><label>' + escapeHtml(f.label) + '</label><select' + attrs + '>' + opts + '</select></div>';
+        }
+        if (f.type === 'textarea') {
+          return '<div class="draft-field"' + wrapperAttrs + '><label>' + escapeHtml(f.label) + '</label><textarea' + attrs + '>' + escapeHtml(value) + '</textarea></div>';
+        }
+        return '<div class="draft-field"' + wrapperAttrs + '><label>' + escapeHtml(f.label) + '</label><input' + attrs + ' value="' + escapeAttr(value) + '" placeholder="' + escapeAttr(f.placeholder || '') + '"></div>';
+      }).join('');
+      return '<section class="template-category"><h3>Thong tin soan thao hop dong</h3>' +
+        '<div class="draft-grid">' + inputs + '</div>' +
+        '<div class="draft-actions"><button id="saveContractDraftButton" class="action primary" onclick="saveContractDraftInfo()">Luu thong tin soan thao</button><span id="contractDraftStatus" class="draft-status"></span></div>' +
+        '</section>';
+    }
+
+    function getReviewFieldFinalValue(path) {
+      const field = getByPathClient(reviewData, path);
+      if (field && typeof field === 'object' && Object.prototype.hasOwnProperty.call(field, 'final_value')) return field.final_value || '';
+      return '';
+    }
+
+    function getByPathClient(root, path) {
+      return String(path || '').split('.').reduce((acc, part) => {
+        if (acc == null) return undefined;
+        return acc[part];
+      }, root);
+    }
+
+    async function saveContractDraftInfo() {
+      const btn = document.getElementById('saveContractDraftButton');
+      const status = document.getElementById('contractDraftStatus');
+      const values = collectContractDraftInfoValues();
+      if (btn) {
+        btn.disabled = true;
+        btn.textContent = 'Dang luu...';
+      }
+      if (status) status.textContent = '';
+      try {
+        values['contract_info.contract_draft_saved'] = 'YES';
+        reviewData = await api('saveContractDraftInfo', { values });
+        if (status) status.textContent = 'Da luu thong tin soan thao.';
+        await renderContractGeneration(true);
+      } catch (err) {
+        if (status) status.textContent = err.message;
+      } finally {
+        const newBtn = document.getElementById('saveContractDraftButton');
+        if (newBtn) {
+          newBtn.disabled = false;
+          newBtn.textContent = 'Luu thong tin soan thao';
+        }
+      }
+    }
+
+    function groupContractTemplates(templates) {
+      const groups = [
+        { key: 'bds', label: 'Hop dong the chap bat dong san', templates: [] },
+        { key: 'dong_san', label: 'Hop dong the chap dong san', templates: [] },
+        { key: 'khac', label: 'Bieu mau khac', templates: [] }
+      ];
+      templates.forEach(tpl => {
+        const text = normalizePlainText((tpl.asset_type || '') + ' ' + (tpl.code || '') + ' ' + (tpl.name || ''));
+        if (text.indexOf('bat dong san') >= 0 || text.indexOf('bds') >= 0) groups[0].templates.push(tpl);
+        else if (text.indexOf('dong san') >= 0) groups[1].templates.push(tpl);
+        else groups[2].templates.push(tpl);
+      });
+      return groups.filter(group => group.templates.length);
+    }
+
+    async function generateSelectedContracts() {
+      if (generateBusy) return;
+      const resultEl = document.getElementById('generatedResult');
+      const btn = document.getElementById('generateContractsButton');
+      const codes = Array.from(document.querySelectorAll('.contract-template-choice:checked')).map(input => input.value);
+      if (!codes.length) {
+        alert('Vui long chon it nhat mot mau da duoc cau hinh.');
+        return;
+      }
+      generateBusy = true;
+      if (btn) {
+        btn.disabled = true;
+        btn.textContent = 'Dang xuat file...';
+      }
+      resultEl.textContent = 'Dang soan thao va xuat file. Vui long khong bam lai trong luc he thong xu ly...';
+      try {
+        const draftValues = collectContractDraftInfoValues();
+        if (Object.keys(draftValues).length) {
+          reviewData = await api('saveContractDraftInfo', { values: draftValues });
+        }
+        const result = await api('generateContracts', { templateCodes: codes });
+        resultEl.innerHTML = renderGeneratedContractsResult(result);
+        autoDownloadGeneratedDocs(result);
+      } catch (err) {
+        resultEl.textContent = err.message;
+      } finally {
+        generateBusy = false;
+        if (btn) {
+          btn.disabled = false;
+          btn.textContent = 'Xuat mau da chon';
+        }
+      }
+    }
+
+    function collectContractDraftInfoValues() {
+      const values = {};
+      document.querySelectorAll('[data-draft-path]').forEach(input => {
+        const path = input.getAttribute('data-draft-path');
+        values[path] = input.classList.contains('money-input') ? unformatMoney(input.value) : (input.value || '');
+      });
+      const total = calculateMoneyTotal();
+      values['contract_info.valuation_total_amount'] = total ? String(total) : '';
+      values['contract_info.valuation_amount'] = total ? String(total) : '';
+      if (normalizePlainText(values['contract_info.actual_asset_differs_from_certificate']) !== 'co') {
+        values['contract_info.actual_asset_difference_description'] = '';
+        values['contract_info.actual_house_asset'] = '';
+      } else if (!values['contract_info.actual_house_asset']) {
+        values['contract_info.actual_house_asset'] = values['contract_info.actual_asset_difference_description'] || '';
+      }
+      return values;
+    }
+
+    function formatMoneyInput(input) {
+      const digits = unformatMoney(input.value);
+      input.value = formatMoney(digits);
+    }
+
+    function updateMoneyFields() {
+      document.querySelectorAll('[data-draft-path="contract_info.valuation_land_amount"], [data-draft-path="contract_info.valuation_house_amount"], [data-draft-path="contract_info.valuation_total_amount"]').forEach(input => {
+        input.classList.add('money-input');
+        if (input.value) input.value = formatMoney(unformatMoney(input.value));
+      });
+      const totalInput = document.querySelector('[data-draft-path="contract_info.valuation_total_amount"]');
+      if (totalInput) totalInput.value = formatMoney(calculateMoneyTotal());
+    }
+
+    function calculateMoneyTotal() {
+      const land = Number(unformatMoney((document.querySelector('[data-draft-path="contract_info.valuation_land_amount"]') || {}).value || '')) || 0;
+      const house = Number(unformatMoney((document.querySelector('[data-draft-path="contract_info.valuation_house_amount"]') || {}).value || '')) || 0;
+      return land + house;
+    }
+
+    function unformatMoney(value) {
+      return String(value || '').replace(/[^\d]/g, '');
+    }
+
+    function formatMoney(value) {
+      const digits = String(value || '').replace(/[^\d]/g, '');
+      return digits ? digits.replace(/\B(?=(\d{3})+(?!\d))/g, '.') : '';
+    }
+
+    function updateDraftConditionalFields() {
+      document.querySelectorAll('[data-draft-field-wrapper][data-depends-on]').forEach(wrapper => {
+        const dependsOn = wrapper.getAttribute('data-depends-on');
+        const showWhen = wrapper.getAttribute('data-show-when') || '';
+        const controller = document.querySelector('[data-draft-path="' + cssEscape(dependsOn) + '"]');
+        const shouldShow = controller && normalizePlainText(controller.value) === normalizePlainText(showWhen);
+        wrapper.style.display = shouldShow ? '' : 'none';
+        if (!shouldShow) {
+          wrapper.querySelectorAll('[data-draft-path]').forEach(input => { input.value = ''; });
+        }
+      });
+    }
+
+    function cssEscape(value) {
+      if (window.CSS && CSS.escape) return CSS.escape(value);
+      return String(value || '').replace(/"/g, '\\"');
+    }
+
+    function renderGeneratedContractsResult(result) {
+      const parts = ['<div><strong>Da xu ly xong.</strong></div>'];
+      if (result.email_sent_to) parts.push('<div>Da gui email toi: ' + escapeHtml(result.email_sent_to) + '</div>');
+      (result.generated || []).forEach(item => {
+        const status = item.status === 'DONE' ? 'Thanh cong' : 'Loi';
+        let actions = '';
+        if (item.docx_download_url || item.docx_url) {
+          const url = item.docx_download_url || item.docx_url;
+          actions = '<div class="generated-actions"><a class="download-link" download target="_blank" href="' + escapeAttr(url) + '">Tai DOCX</a></div>';
+        }
+        parts.push('<div class="generated-item"><strong>' + escapeHtml(item.template_name || item.template_code || '') + ': ' + escapeHtml(status) + '</strong>' +
+          (item.error ? '<div>' + escapeHtml(item.error) + '</div>' : '') + actions + '</div>');
+      });
+      return parts.join('');
+    }
+
+    function autoDownloadGeneratedDocs(result) {
+      const done = (result.generated || []).filter(item => item.status === 'DONE' && (item.docx_download_url || item.docx_url));
+      if (!done.length) return;
+      done.forEach((item, index) => {
+        const a = document.createElement('a');
+        a.href = item.docx_download_url || item.docx_url;
+        a.download = '';
+        a.target = '_blank';
+        a.style.display = 'none';
+        document.body.appendChild(a);
+        setTimeout(function() {
+        a.click();
+        document.body.removeChild(a);
+        }, 300 + index * 700);
+      });
+    }
+
+    function normalizePlainText(value) {
+      return String(value || '')
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .replace(/đ/g, 'd')
+        .replace(/Đ/g, 'D')
+        .toLowerCase();
+    }
+
+    function escapeHtml(value) {
+      return String(value == null ? '' : value).replace(/[&<>"']/g, s => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[s]));
+    }
+    function escapeAttr(value) { return escapeHtml(value).replace(/`/g, '&#96;'); }
+    reloadData();
+  </script>
+</body>
+</html>
