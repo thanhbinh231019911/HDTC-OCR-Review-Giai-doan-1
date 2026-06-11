@@ -140,6 +140,7 @@ function getExtractionJsonSchema_() {
       owner_identity_summary: field,
       owner_id_document_type: field,
       owner_id_number: field,
+      owner_address: field,
       real_estate: {
         type: 'object',
         additionalProperties: false,
@@ -152,16 +153,22 @@ function getExtractionJsonSchema_() {
           owner_or_user: field,
           owner_id_document_type: field,
           owner_id_number: field,
+          owner_address: field,
           land_plot_number: field,
           map_sheet_number: field,
           land_address: field,
           area: field,
+          area_in_words: field,
           usage_form: field,
           usage_purpose: field,
           usage_term: field,
           usage_origin: field,
           attached_assets: field,
-          post_issue_changes: field
+          post_issue_changes: field,
+          certificate_info_raw_text: field,
+          certificate_owner_raw_text: field,
+          certificate_land_raw_text: field,
+          certificate_attached_raw_text: field
         }
       },
       movable: {

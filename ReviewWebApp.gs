@@ -34,6 +34,9 @@ function reviewApi(body) {
   if (action === 'getCaseImagePreview') {
     return getCaseImagePreview(body.caseId, body.token, body.fileId);
   }
+  if (action === 'getCaseOcrText') {
+    return getCaseOcrText(body.caseId, body.token, body.fileId, body.fileName);
+  }
   if (action === 'listContractTemplates') {
     return listContractTemplatesForReview(body.caseId, body.token);
   }

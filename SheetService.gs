@@ -86,13 +86,23 @@ function getOverrides(caseId) {
     return {
       field_path: row['Field Path'],
       field_label: row['Field Label'],
-      old_value: row['Old Value'],
-      new_value: row['New Value'],
+      old_value: normalizeSheetCellForApp_(row['Old Value']),
+      new_value: normalizeSheetCellForApp_(row['New Value']),
       edited_by: row['Edited By'],
       edited_at: row['Edited At'],
       reason: row['Reason']
     };
   });
+}
+
+function normalizeSheetCellForApp_(value) {
+  if (Object.prototype.toString.call(value) === '[object Date]') {
+    return Utilities.formatDate(value, Session.getScriptTimeZone(), 'dd/MM/yyyy');
+  }
+  const text = String(value == null ? '' : value);
+  const iso = text.match(/^(\d{4})-(\d{2})-(\d{2})T/);
+  if (iso) return iso[3] + '/' + iso[2] + '/' + iso[1];
+  return text;
 }
 
 function getRowsByCaseId_(sheetName, caseId) {

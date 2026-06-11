@@ -426,11 +426,13 @@ function applyTemplate03bAssetBlock_(body, asset) {
   replaceLiteral_(body, 'Th\u1eeda \u0111\u1ea5t s\u1ed1: 353', 'Th\u1eeda \u0111\u1ea5t s\u1ed1: ' + (re.land_plot_number || ''));
   replaceLiteral_(body, 'T\u1edd b\u1ea3n \u0111\u1ed3 s\u1ed1: F-48-116(146-b-IV)', 'T\u1edd b\u1ea3n \u0111\u1ed3 s\u1ed1: ' + (re.map_sheet_number || ''));
   replaceLiteral_(body, '\u0110\u1ecba ch\u1ec9 th\u1eeda \u0111\u1ea5t: x\u00e3 L\u01b0\u01a1ng S\u01a1n, t\u1ec9nh Ph\u00fa Th\u1ecd', '\u0110\u1ecba ch\u1ec9 th\u1eeda \u0111\u1ea5t: ' + (re.land_address || ''));
-  replaceLiteral_(body, 'Di\u1ec7n t\u00edch:  227,2 m2 (b\u1eb1ng ch\u1eef: Hai tr\u0103m hai m\u01b0\u01a1i b\u1ea3y ph\u1ea9y hai m\u00e9t vu\u00f4ng)', 'Di\u1ec7n t\u00edch: ' + (re.area || '') + ' m2');
+  replaceLiteral_(body, 'Di\u1ec7n t\u00edch:  227,2 m2 (b\u1eb1ng ch\u1eef: Hai tr\u0103m hai m\u01b0\u01a1i b\u1ea3y ph\u1ea9y hai m\u00e9t vu\u00f4ng)', 'Di\u1ec7n t\u00edch: ' + formatAreaForContract_(re.area));
   replaceLiteral_(body, 'H\u00ecnh th\u1ee9c s\u1eed d\u1ee5ng: S\u1eed d\u1ee5ng chung c\u1ee7a v\u1ee3 v\u00e0 ch\u1ed3ng', 'H\u00ecnh th\u1ee9c s\u1eed d\u1ee5ng: ' + (re.usage_form || ''));
   replaceLiteral_(body, 'M\u1ee5c \u0111\u00edch s\u1eed d\u1ee5ng: \u0110\u1ea5t \u1edf t\u1ea1i n\u00f4ng th\u00f4n (ONT)', 'M\u1ee5c \u0111\u00edch s\u1eed d\u1ee5ng: ' + (re.usage_purpose || ''));
   replaceLiteral_(body, 'Th\u1eddi h\u1ea1n s\u1eed d\u1ee5ng: L\u00e2u d\u00e0i', 'Th\u1eddi h\u1ea1n s\u1eed d\u1ee5ng: ' + (re.usage_term || ''));
   replaceLiteral_(body, 'Ngu\u1ed3n g\u1ed1c s\u1eed d\u1ee5ng: Nh\u00e0 n\u01b0\u1edbc giao \u0111\u1ea5t c\u00f3 thu ti\u1ec1n s\u1eed d\u1ee5ng \u0111\u1ea5t', '');
+  applyTemplate03bPostIssueChangesBlock_(body, re.post_issue_changes);
+  applyTemplate03bAttachedAssetBlock_(body, re.attached_assets);
   removeTemplate03bOptionalAssetLines_(body, re);
 }
 
@@ -449,20 +451,147 @@ function buildBankUnitSuffixForTemplate03b_(unit) {
   return unit;
 }
 
-function removeTemplate03bOptionalAssetLines_(body, realEstate) {
-  const shouldRemoveNote = !cleanContractText_(realEstate && realEstate.post_issue_changes);
+function replaceTemplate03bOptionalLiteral_(body, oldText, newText) {
+  if (newText) {
+    replaceLiteral_(body, oldText, newText);
+    return;
+  }
+  const range = body.findText(escapeRegex_(oldText));
+  if (!range) return;
+  const element = findParentTextBlockElement_(range.getElement());
+  if (element && element.getParent && element.getParent()) {
+    element.getParent().removeChild(element);
+  } else {
+    replaceLiteral_(body, oldText, '');
+  }
+}
+
+function applyTemplate03bAttachedAssetBlock_(body, attachedAssets) {
+  const heading = findTemplate03bAttachedAssetHeading_(body);
+  removeTemplate03bSampleAttachedAssetDetails_(body);
+  if (!heading) return;
+  if (isBlankContractValue_(attachedAssets)) {
+    setTemplate03bAttachedHeadingText_(heading, 'T\u00e0i s\u1ea3n g\u1eafn li\u1ec1n v\u1edbi \u0111\u1ea5t.', '2. T\u00e0i s\u1ea3n g\u1eafn li\u1ec1n v\u1edbi \u0111\u1ea5t.');
+    return;
+  }
+  setTemplate03bAttachedHeadingText_(heading, 'T\u00e0i s\u1ea3n g\u1eafn li\u1ec1n v\u1edbi \u0111\u1ea5t l\u00e0:', '2. T\u00e0i s\u1ea3n g\u1eafn li\u1ec1n v\u1edbi \u0111\u1ea5t l\u00e0:');
+  const parent = heading.getParent();
+  let insertAt = parent.getChildIndex(heading) + 1;
+  splitCertificateLinesForContract_(attachedAssets).forEach(function(line) {
+    parent.insertParagraph(insertAt, line);
+    insertAt++;
+  });
+}
+
+function setTemplate03bAttachedHeadingText_(heading, listItemText, paragraphText) {
+  if (heading.getType && heading.getType() === DocumentApp.ElementType.LIST_ITEM) {
+    heading.setText(listItemText);
+  } else {
+    heading.setText(paragraphText);
+  }
+}
+
+function applyTemplate03bPostIssueChangesBlock_(body, postIssueChanges) {
+  removeTemplate03bNoteLines_(body);
+  if (isBlankContractValue_(postIssueChanges)) return;
+  const anchor = findTemplate03bUsageTermLine_(body);
+  if (!anchor) return;
+  const parent = anchor.getParent();
+  parent.insertParagraph(parent.getChildIndex(anchor) + 1, '- Ghi ch\u00fa: ' + cleanContractText_(postIssueChanges));
+}
+
+function removeTemplate03bNoteLines_(body) {
   for (let i = body.getNumChildren() - 1; i >= 0; i--) {
     const child = body.getChild(i);
-    if (child.getType && child.getType() !== DocumentApp.ElementType.PARAGRAPH) continue;
-    const text = child.asParagraph().getText() || '';
-    const normalized = removeVietnameseAccents_(text).toLowerCase();
-    const compact = normalized.replace(/\s+/g, ' ').trim();
-    const removeSource = compact === '-' || compact.match(/^-?\s*nguon goc su dung\s*:?/);
-    const removeNote = shouldRemoveNote && compact.match(/^-?\s*ghi chu\s*:?/);
-    if (removeSource || removeNote) {
+    if (!isTextBlockElement_(child)) continue;
+    const compact = normalizeSearchTextForContract_(child.getText());
+    if (compact.indexOf('ghi chu') === 0 || compact.indexOf('ghi chu ngay') === 0) {
       body.removeChild(child);
     }
   }
+}
+
+function findTemplate03bUsageTermLine_(body) {
+  for (let i = 0; i < body.getNumChildren(); i++) {
+    const child = body.getChild(i);
+    if (!isTextBlockElement_(child)) continue;
+    if (normalizeSearchTextForContract_(child.getText()).indexOf('thoi han su dung') === 0) return child;
+  }
+  return null;
+}
+
+function findTemplate03bAttachedAssetHeading_(body) {
+  for (let i = 0; i < body.getNumChildren(); i++) {
+    const child = body.getChild(i);
+    if (!isTextBlockElement_(child)) continue;
+    const compact = normalizeSearchTextForContract_(child.getText());
+    if (compact === '2 tai san gan lien voi dat la' ||
+        compact === 'tai san gan lien voi dat la' ||
+        compact === '2 tai san gan lien voi dat' ||
+        compact === 'tai san gan lien voi dat') {
+      return child;
+    }
+  }
+  return null;
+}
+
+function removeTemplate03bSampleAttachedAssetDetails_(body) {
+  for (let i = body.getNumChildren() - 1; i >= 0; i--) {
+    const child = body.getChild(i);
+    if (!isTextBlockElement_(child)) continue;
+    const compact = normalizeSearchTextForContract_(child.getText());
+    const isSampleDetail =
+      compact.indexOf('loai nha o nha o rieng le') === 0 ||
+      compact.indexOf('dien tich xay dung 80 0 m2') === 0 ||
+      compact.indexOf('dien tich san 80 0 m2') === 0 ||
+      compact.indexOf('hinh thuc so huu so huu rieng') === 0 ||
+      compact.indexOf('so tang 01') === 0;
+    if (isSampleDetail) body.removeChild(child);
+  }
+}
+
+function splitCertificateLinesForContract_(value) {
+  return cleanContractText_(value)
+    .split(/\r?\n|;\s*(?=(?:-?\s*)?(?:Lo\u1ea1i|Di\u1ec7n|K\u1ebft|C\u1ea5p|S\u1ed1|N\u0103m|T\u1ed5ng)\b)/)
+    .map(function(line) { return line.replace(/\s+/g, ' ').trim(); })
+    .filter(function(line) { return !isBlankContractValue_(line); });
+}
+
+function formatAreaForContract_(value) {
+  const text = cleanContractText_(value);
+  if (!text) return '';
+  return /\bm\s*2\b|m\u00b2/i.test(text) ? text : text + ' m2';
+}
+
+function removeTemplate03bOptionalAssetLines_(body, realEstate) {
+  const shouldRemoveNote = isBlankContractValue_(realEstate && realEstate.post_issue_changes);
+  for (let i = body.getNumChildren() - 1; i >= 0; i--) {
+    const child = body.getChild(i);
+    if (!isTextBlockElement_(child)) continue;
+    const text = child.getText() || '';
+    const normalized = removeVietnameseAccents_(text).toLowerCase();
+    const compact = normalized.replace(/\s+/g, ' ').trim();
+    const isListItem = child.getType && child.getType() === DocumentApp.ElementType.LIST_ITEM;
+    const removeEmptyBullet = (isListItem && compact === '') || compact === '-' || compact === '- :' || compact === '\u2013';
+    const removeSource = compact.match(/^-?\s*nguon goc su dung\s*:?/);
+    const removeNote = compact.match(/^-?\s*ghi chu\s*:?/) && shouldRemoveNote;
+    if (removeEmptyBullet || removeSource || removeNote) {
+      body.removeChild(child);
+    }
+  }
+}
+
+function isTextBlockElement_(element) {
+  if (!element || !element.getType) return false;
+  const type = element.getType();
+  return type === DocumentApp.ElementType.PARAGRAPH || type === DocumentApp.ElementType.LIST_ITEM;
+}
+
+function findParentTextBlockElement_(element) {
+  while (element && element.getType && !isTextBlockElement_(element)) {
+    element = element.getParent();
+  }
+  return isTextBlockElement_(element) ? element : null;
 }
 
 function applyTemplate03bValuationBlock_(body, values) {
@@ -579,7 +708,7 @@ function buildContractPlaceholderMap_(finalData) {
     tai_san_1_muc_dich_su_dung: re.usage_purpose || '',
     tai_san_1_thoi_han_su_dung: re.usage_term || '',
     tai_san_1_nguon_goc_su_dung: '',
-    tai_san_1_tai_san_gan_lien: cleanContractText_(contract.actual_asset_difference_description) || cleanContractText_(contract.actual_house_asset) || re.attached_assets || '',
+    tai_san_1_tai_san_gan_lien: re.attached_assets || '',
     tai_san_1_thay_doi_sau_cap: re.post_issue_changes || '',
 
     dong_san_1_loai: mv.asset_category || firstAsset.asset_type || '',
@@ -643,6 +772,19 @@ function cleanContractText_(value) {
   return String(value);
 }
 
+function isBlankContractValue_(value) {
+  const raw = cleanContractText_(value).replace(/\s+/g, ' ').trim();
+  if (!raw) return true;
+  const text = normalizeSearchTextForContract_(raw);
+  return text === '' ||
+    raw === '-' ||
+    text === 'khong ro' ||
+    text.indexOf('de nghi sua thu cong') >= 0 ||
+    text.indexOf('khong co') >= 0 ||
+    text.indexOf('khong ghi nhan') >= 0 ||
+    text.indexOf('khong thay doi') >= 0;
+}
+
 function fillMissingPersonIssueDatesFromReviewOcr_(reviewJson, caseId) {
   const textByGroup = {};
   (reviewJson.ocr_results || []).forEach(function(item) {
@@ -654,8 +796,11 @@ function fillMissingPersonIssueDatesFromReviewOcr_(reviewJson, caseId) {
     });
   });
   appendFullOcrTextForIssueDateFallback_(textByGroup, caseId);
-  fillMissingIssueDatesForPeople_(reviewJson.secured_parties || [], textByGroup.secured_party || []);
-  fillMissingIssueDatesForPeople_(reviewJson.obligors || [], textByGroup.obligor || []);
+  const allPersonOcrItems = []
+    .concat(textByGroup.secured_party || [])
+    .concat(textByGroup.obligor || []);
+  fillMissingIssueDatesForPeople_(reviewJson.secured_parties || [], textByGroup.secured_party || [], allPersonOcrItems);
+  fillMissingIssueDatesForPeople_(reviewJson.obligors || [], textByGroup.obligor || [], allPersonOcrItems);
 }
 
 function appendFullOcrTextForIssueDateFallback_(textByGroup, caseId) {
@@ -683,26 +828,68 @@ function normalizeOcrGroupForContract_(fileName) {
   return '';
 }
 
-function fillMissingIssueDatesForPeople_(people, ocrItems) {
-  (people || []).forEach(function(person) {
+function fillMissingIssueDatesForPeople_(people, ocrItems, allOcrItems) {
+  allOcrItems = allOcrItems || [];
+  (people || []).forEach(function(person, index) {
     if (!person) return;
     if (!person.id_issue_date || typeof person.id_issue_date !== 'object' || !person.id_issue_date.hasOwnProperty('final_value')) {
       person.id_issue_date = makeField('Ng\u00e0y c\u1ea5p', '', '', '', 'OCR', '');
     }
     if (getReviewFieldValueForContract_(person.id_issue_date)) return;
     const id = normalizeDigitsForContract_(getReviewFieldValueForContract_(person.id_number));
-    if (!id) return;
-    for (let i = 0; i < ocrItems.length; i++) {
-      const text = ocrItems[i].text || '';
-      if (normalizeDigitsForContract_(text).indexOf(id) < 0) continue;
-      const issueDate = extractIssueDateFromContractOcrText_(text);
-      if (issueDate) {
-        person.id_issue_date.ai_value = issueDate;
-        person.id_issue_date.final_value = issueDate;
-        person.id_issue_date.source = ocrItems[i].file_name || person.id_issue_date.source || 'OCR';
-        person.id_issue_date.confidence = person.id_issue_date.confidence || 0.78;
-        return;
+    if (id) {
+      for (let i = 0; i < ocrItems.length; i++) {
+        const text = ocrItems[i].text || '';
+        if (normalizeDigitsForContract_(text).indexOf(id) < 0) continue;
+        const documentType = getReviewFieldValueForContract_(person.id_document_type);
+        const issueDate = extractIssueDateFromContractOcrText_(text, documentType) ||
+          extractIssueDateFromContractOcrText_(ocrItems[i + 1] && ocrItems[i + 1].text, documentType) ||
+          extractIssueDateFromContractOcrText_(ocrItems[i - 1] && ocrItems[i - 1].text, documentType);
+        if (issueDate) {
+          person.id_issue_date.ai_value = issueDate;
+          person.id_issue_date.final_value = issueDate;
+          person.id_issue_date.source = ocrItems[i].file_name || person.id_issue_date.source || 'OCR_ADJACENT_ID_CARD_SIDE';
+          person.id_issue_date.confidence = person.id_issue_date.confidence || 0.78;
+          return;
+        }
       }
+    }
+    if (id && allOcrItems.length) {
+      for (let k = 0; k < allOcrItems.length; k++) {
+        const allText = allOcrItems[k].text || '';
+        if (normalizeDigitsForContract_(allText).indexOf(id) < 0) continue;
+        const documentType = getReviewFieldValueForContract_(person.id_document_type);
+        const issueDateFromCaseOcr = extractIssueDateFromContractOcrText_(allText, documentType) ||
+          extractIssueDateFromContractOcrText_(allOcrItems[k + 1] && allOcrItems[k + 1].text, documentType) ||
+          extractIssueDateFromContractOcrText_(allOcrItems[k - 1] && allOcrItems[k - 1].text, documentType);
+        if (issueDateFromCaseOcr) {
+          person.id_issue_date.ai_value = issueDateFromCaseOcr;
+          person.id_issue_date.final_value = issueDateFromCaseOcr;
+          person.id_issue_date.source = allOcrItems[k].file_name || person.id_issue_date.source || 'OCR_CASE_ID_MATCH';
+          person.id_issue_date.confidence = person.id_issue_date.confidence || 0.76;
+          return;
+        }
+      }
+    }
+    const positionalText = (ocrItems[index] && ocrItems[index].text) || '';
+    const positionalIssueDate = extractIssueDateFromContractOcrText_(positionalText, getReviewFieldValueForContract_(person.id_document_type));
+    if (positionalIssueDate) {
+      person.id_issue_date.ai_value = positionalIssueDate;
+      person.id_issue_date.final_value = positionalIssueDate;
+      person.id_issue_date.source = ocrItems[index].file_name || person.id_issue_date.source || 'OCR_POSITIONAL';
+      person.id_issue_date.confidence = person.id_issue_date.confidence || 0.72;
+      return;
+    }
+    const allIssueDates = [];
+    for (let j = 0; j < ocrItems.length; j++) {
+      const fallbackIssueDate = extractIssueDateFromContractOcrText_(ocrItems[j].text || '', getReviewFieldValueForContract_(person.id_document_type));
+      if (fallbackIssueDate && allIssueDates.indexOf(fallbackIssueDate) === -1) allIssueDates.push(fallbackIssueDate);
+    }
+    if (allIssueDates.length === 1) {
+      person.id_issue_date.ai_value = allIssueDates[0];
+      person.id_issue_date.final_value = allIssueDates[0];
+      person.id_issue_date.source = person.id_issue_date.source || 'OCR_GROUP_SINGLE_ISSUE_DATE';
+      person.id_issue_date.confidence = person.id_issue_date.confidence || 0.68;
     }
   });
 }
@@ -717,9 +904,13 @@ function normalizeDigitsForContract_(value) {
   return String(value || '').replace(/\D/g, '');
 }
 
-function extractIssueDateFromContractOcrText_(text) {
+function extractIssueDateFromContractOcrText_(text, documentType) {
   text = String(text || '');
   const patterns = [
+    /(?:ng\u00e0y\s*,?\s*th\u00e1ng\s*,?\s*n\u0103m\s*c\u1ea5p|date\s*of\s*issue)\D{0,40}(\d{1,2}[\/.\-]\d{1,2}[\/.\-]\d{2,4})/i,
+    /(?:ng\u00e0y\s*,?\s*th\u00e1ng\s*,?\s*n\u0103m|date\s*,?\s*month\s*,?\s*year)\D{0,40}(\d{1,2}[\/.\-]\d{1,2}[\/.\-]\d{2,4})/i,
+    /(?:age\s*\/?\s*date\s*month\s*year)\D{0,40}(\d{1,2}[\/.\-]\d{1,2}[\/.\-]\d{2,4})/i,
+    /(?:ng\u00e0y\s*c\u1ea5p|c\u1ea5p\s*ng\u00e0y)\D{0,30}(\d{1,2}[\/.\-]\d{1,2}[\/.\-]\d{2,4})/i,
     /(?:ngày\s*cấp|ngay\s*cap|date\s*of\s*issue)\D{0,30}(\d{1,2}[\/.\-]\d{1,2}[\/.\-]\d{2,4})/i,
     /(?:cấp\s*ngày|cap\s*ngay)\D{0,30}(\d{1,2}[\/.\-]\d{1,2}[\/.\-]\d{2,4})/i
   ];
@@ -733,7 +924,32 @@ function extractIssueDateFromContractOcrText_(text) {
     const date = text.slice(idx, idx + 100).match(/(\d{1,2}[\/.\-]\d{1,2}[\/.\-]\d{2,4})/);
     if (date) return normalizeContractDateValue_(date[1]);
   }
+  const docText = removeVietnameseAccents_(String(documentType || '')).toLowerCase();
+  const isOldCccd = docText.indexOf('can cuoc cong dan') >= 0 || /\bcccd\b/.test(docText);
+  if (isOldCccd && isLikelyBackSideIdentityOcrForContract_(text)) {
+    const dates = extractAllDatesFromContractOcr_(text);
+    if (dates.length === 1) return normalizeContractDateValue_(dates[0]);
+  }
   return '';
+}
+
+function isLikelyBackSideIdentityOcrForContract_(text) {
+  const normalized = removeVietnameseAccents_(String(text || '')).toLowerCase();
+  return normalized.indexOf('idvnm') >= 0 ||
+    normalized.indexOf('ngay cap') >= 0 ||
+    normalized.indexOf('date of issue') >= 0 ||
+    normalized.indexOf('noi cu tru') >= 0 ||
+    normalized.indexOf('dac diem nhan dang') >= 0 ||
+    /<{3,}/.test(normalized);
+}
+
+function extractAllDatesFromContractOcr_(text) {
+  const out = [];
+  String(text || '').replace(/(\d{1,2}[\/.\-]\d{1,2}[\/.\-]\d{2,4})/g, function(match, date) {
+    if (out.indexOf(date) === -1) out.push(date);
+    return match;
+  });
+  return out;
 }
 
 function normalizeContractDateValue_(value) {
@@ -795,7 +1011,10 @@ function defaultIssuePlaceForIdDocument_(documentType, idNumber) {
 }
 
 function normalizeIssuingAuthorityForContract_(value) {
-  const raw = cleanContractText_(value).replace(/\s+/g, ' ').trim();
+  const raw = cleanContractText_(value)
+    .replace(/^\s*(?:TM|T\/M|THAY\s+M\u1eb6T)\.?\s*/i, '')
+    .replace(/\s+/g, ' ')
+    .trim();
   if (!raw) return '';
   const lowerWords = {
     'CHI': 'Chi', 'NHANH': 'nh\u00e1nh', 'VAN': 'v\u0103n', 'PHONG': 'ph\u00f2ng',
@@ -825,18 +1044,22 @@ function titleCaseVietnameseWord_(word) {
 }
 
 function normalizeCertificateNumberForContract_(certificateNumber, registryNumber) {
-  const cert = cleanContractText_(certificateNumber).trim();
-  const registry = cleanContractText_(registryNumber).trim();
+  const cert = normalizeCertificateCodeForContract_(certificateNumber);
+  const registry = normalizeCertificateCodeForContract_(registryNumber);
   if (!cert) return '';
   if (registry && removeVietnameseAccents_(cert).toUpperCase() === removeVietnameseAccents_(registry).toUpperCase()) return '';
   if (/^CN\s*\d/i.test(cert)) return '';
   return cert;
 }
 
+function normalizeCertificateCodeForContract_(value) {
+  return cleanContractText_(value).replace(/\s+/g, '').trim();
+}
+
 function normalizePostIssueChangesForContract_(value) {
   const raw = cleanContractText_(value).trim();
   const text = normalizeSearchTextForContract_(raw);
-  if (!raw) return '';
+  if (isBlankContractValue_(raw)) return '';
   if (text.indexOf('khong ghi nhan') >= 0 || text.indexOf('khong thay doi') >= 0 || text === '-') return '';
   return raw;
 }
@@ -1390,7 +1613,8 @@ function replaceNextLiteral_(body, oldText, newText) {
 function cleanContractPerson_(person) {
   person = person || {};
   const idDocumentType = normalizeIdDocumentTypeForContract_(person.id_document_type);
-  const idIssuePlace = normalizeIdIssuePlaceForContract_(person.id_issue_place) || defaultIssuePlaceForIdDocument_(idDocumentType, person.id_number);
+  const defaultIssuePlace = defaultIssuePlaceForIdDocument_(idDocumentType, person.id_number);
+  const idIssuePlace = defaultIssuePlace || normalizeIdIssuePlaceForContract_(person.id_issue_place);
   return {
     full_name: cleanContractText_(person.full_name),
     date_of_birth: cleanContractText_(person.date_of_birth),
@@ -1414,7 +1638,7 @@ function cleanContractAsset_(asset) {
     certificate_title: cleanContractText_(asset.certificate_title),
     real_estate: {
       certificate_number: normalizeCertificateNumberForContract_(asset.real_estate.certificate_number, asset.real_estate.registry_number),
-      registry_number: cleanContractText_(asset.real_estate.registry_number),
+      registry_number: normalizeCertificateCodeForContract_(asset.real_estate.registry_number),
       issuing_authority: normalizeIssuingAuthorityForContract_(asset.real_estate.issuing_authority),
       issue_date: cleanContractText_(asset.real_estate.issue_date),
       land_plot_number: cleanContractText_(asset.real_estate.land_plot_number),
@@ -1425,8 +1649,12 @@ function cleanContractAsset_(asset) {
       usage_purpose: cleanContractText_(asset.real_estate.usage_purpose),
       usage_term: cleanContractText_(asset.real_estate.usage_term),
       usage_origin: '',
-      attached_assets: cleanContractText_(asset.real_estate.attached_assets),
-      post_issue_changes: normalizePostIssueChangesForContract_(asset.real_estate.post_issue_changes)
+      attached_assets: isBlankContractValue_(asset.real_estate.attached_assets) ? '' : cleanContractText_(asset.real_estate.attached_assets),
+      post_issue_changes: normalizePostIssueChangesForContract_(asset.real_estate.post_issue_changes),
+      certificate_info_raw_text: cleanContractText_(asset.real_estate.certificate_info_raw_text),
+      certificate_owner_raw_text: cleanContractText_(asset.real_estate.certificate_owner_raw_text),
+      certificate_land_raw_text: cleanContractText_(asset.real_estate.certificate_land_raw_text),
+      certificate_attached_raw_text: cleanContractText_(asset.real_estate.certificate_attached_raw_text)
     }
   };
 }
@@ -1462,8 +1690,10 @@ function buildPeopleDefinitionText03b_(people) {
 function buildPersonIdIssuePhrase_(person) {
   if (!person || !person.id_number) return '';
   let text = person.id_number;
-  if (person.id_issue_place) text += ' do ' + person.id_issue_place;
-  if (person.id_issue_date) text += ' c\u1ea5p ng\u00e0y ' + person.id_issue_date;
+  const issuePlace = person.id_issue_place || defaultIssuePlaceForIdDocument_(person.id_document_type, person.id_number);
+  const issueDate = person.id_issue_date || '..........';
+  if (issuePlace) text += ' do ' + issuePlace;
+  text += ' c\u1ea5p ng\u00e0y ' + issueDate;
   return text;
 }
 

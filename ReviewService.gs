@@ -3,16 +3,19 @@ function getReviewPayload(caseId, token) {
   let data = getLatestFinalData(caseId) || getLatestExtractedData(caseId);
   if (!data) throw new Error('No review data for case ' + caseId);
   data = ensureTemplateDecisionFields_(data);
+  repairReviewDataFromFullOcr_(data, caseId);
   data = applyOverridesToReviewJson(data, getOverrides(caseId));
   data = applyTemplateDecisionToReviewJson(data);
   data = validateReviewJson(data);
-  return data;
+  return makeReviewPayloadForClient_(data);
 }
 
 function saveManualOverride(caseId, token, fieldPath, newValue, reason) {
   assertValidToken_(caseId, token);
+  newValue = normalizeManualOverrideValueForStorage_(newValue);
   let data = getLatestFinalData(caseId) || getLatestExtractedData(caseId);
   if (!data) throw new Error('No review data for case ' + caseId);
+  repairReviewDataFromFullOcr_(data, caseId);
   data = applyOverridesToReviewJson(data, getOverrides(caseId));
   const field = getByPath(data, fieldPath);
   if (!field || typeof field !== 'object' || !field.hasOwnProperty('final_value')) {
@@ -29,8 +32,93 @@ function saveManualOverride(caseId, token, fieldPath, newValue, reason) {
     'Edited At': nowIso(),
     'Reason': reason || ''
   });
+  forceLatestOverrideNewValueAsText_(newValue);
   logAudit(caseId, 'MANUAL_OVERRIDE_SAVED', { field_path: fieldPath, old_value: oldValue, new_value: newValue });
-  return getReviewPayload(caseId, token);
+  return { ok: true, field_path: fieldPath, new_value: newValue };
+}
+
+function normalizeManualOverrideValueForStorage_(value) {
+  if (Object.prototype.toString.call(value) === '[object Date]') return formatDateVi_(value);
+  return value == null ? '' : String(value);
+}
+
+function repairReviewDataFromFullOcr_(data, caseId) {
+  const fullOcr = getFullOcrTextMapsForCase_(caseId, data);
+  repairIdentityIssueDatesInReviewJson(data, fullOcr.byFileName);
+  repairAssetAreaWordsInReviewJson(data, fullOcr.assetText);
+  return data;
+}
+
+function getFullOcrTextMapsForCase_(caseId, reviewJson) {
+  const byFileName = {};
+  const assetTexts = [];
+  function addText(fileName, text, group) {
+    fileName = String(fileName || '');
+    text = String(text || '');
+    if (!fileName || !text) return;
+    byFileName[fileName] = byFileName[fileName] ? byFileName[fileName] + '\n\n' + text : text;
+    const normalizedGroup = String(group || '').toLowerCase();
+    if (normalizedGroup === 'asset' || /^asset/i.test(fileName)) assetTexts.push(text);
+  }
+  (reviewJson && reviewJson.ocr_results || []).forEach(function(item) {
+    addText(item.file_name, item.text || item.text_preview || '', item.group);
+  });
+  try {
+    const rows = getRowsByCaseId_(SHEETS.OCR_RESULTS, caseId);
+    rows.forEach(function(row) {
+      const fileName = row['File Name'] || '';
+      const text = (row['OCR Text'] || '') || readOcrTextFileFromUrl_(row['OCR Text File URL'] || '');
+      addText(fileName, text, inferOcrGroupFromFileName_(fileName));
+    });
+  } catch (err) {
+    // Review must still load from the stored JSON if the OCR sheet cannot be read.
+  }
+  return {
+    byFileName: byFileName,
+    assetText: assetTexts.join('\n\n')
+  };
+}
+
+function inferOcrGroupFromFileName_(fileName) {
+  const name = String(fileName || '').toLowerCase();
+  if (name.indexOf('secured_party__') === 0 || name.indexOf('secured_party') === 0) return 'secured_party';
+  if (name.indexOf('obligor__') === 0 || name.indexOf('obligor') === 0) return 'obligor';
+  if (name.indexOf('asset__') === 0 || name.indexOf('asset') === 0) return 'asset';
+  return '';
+}
+
+function readOcrTextFileFromUrl_(url) {
+  const fileId = extractDriveFileIdFromUrl_(url);
+  if (!fileId) return '';
+  try {
+    return DriveApp.getFileById(fileId).getBlob().getDataAsString('UTF-8') || '';
+  } catch (err) {
+    return '';
+  }
+}
+
+function extractDriveFileIdFromUrl_(url) {
+  url = String(url || '');
+  const patterns = [
+    /\/d\/([a-zA-Z0-9_-]{20,})/,
+    /[?&]id=([a-zA-Z0-9_-]{20,})/,
+    /open\?id=([a-zA-Z0-9_-]{20,})/
+  ];
+  for (let i = 0; i < patterns.length; i++) {
+    const match = url.match(patterns[i]);
+    if (match) return match[1];
+  }
+  return '';
+}
+
+function forceLatestOverrideNewValueAsText_(newValue) {
+  const sheet = getSheet(SHEETS.REVIEW_OVERRIDES);
+  const headers = getHeaders_(sheet);
+  const row = sheet.getLastRow();
+  const col = headers.indexOf('New Value') + 1;
+  if (row > 1 && col > 0) {
+    sheet.getRange(row, col).setNumberFormat('@').setValue(String(newValue == null ? '' : newValue));
+  }
 }
 
 function saveContractDraftInfo(caseId, token, values) {
@@ -59,6 +147,7 @@ function saveContractDraftInfo(caseId, token, values) {
   let data = getLatestFinalData(caseId) || getLatestExtractedData(caseId);
   if (!data) throw new Error('No review data for case ' + caseId);
   data = ensureTemplateDecisionFields_(data);
+  repairReviewDataFromFullOcr_(data, caseId);
   data = applyOverridesToReviewJson(data, getOverrides(caseId));
   Object.keys(values).forEach(function(fieldPath) {
     if (!allowed[fieldPath]) return;
@@ -85,6 +174,7 @@ function saveContractDraftInfo(caseId, token, values) {
 function confirmSingleField(caseId, token, fieldPath) {
   assertValidToken_(caseId, token);
   let data = getLatestFinalData(caseId) || getLatestExtractedData(caseId);
+  repairReviewDataFromFullOcr_(data, caseId);
   data = applyOverridesToReviewJson(data, getOverrides(caseId));
   const field = getByPath(data, fieldPath);
   if (!field || typeof field !== 'object' || !field.hasOwnProperty('final_value')) {
@@ -100,6 +190,7 @@ function confirmReview(caseId, token, forceConfirm) {
   let data = getLatestExtractedData(caseId);
   if (!data) throw new Error('No extracted data for case ' + caseId);
   data = ensureTemplateDecisionFields_(data);
+  repairReviewDataFromFullOcr_(data, caseId);
   data = applyOverridesToReviewJson(data, getOverrides(caseId));
   data = applyTemplateDecisionToReviewJson(data);
   data = validateReviewJson(data);
@@ -160,6 +251,62 @@ function getCaseImagePreview(caseId, token, fileId) {
     is_image: true,
     data_url: 'data:' + (blob.getContentType() || mimeType) + ';base64,' + Utilities.base64Encode(blob.getBytes())
   };
+}
+
+function getCaseOcrText(caseId, token, fileId, fileName) {
+  assertValidToken_(caseId, token);
+  const data = getLatestFinalData(caseId) || getLatestExtractedData(caseId);
+  if (!data) throw new Error('No review data for case ' + caseId);
+  const allowed = (data.ocr_results || []).some(function(item) {
+    return (fileId && item.file_id === fileId) || (fileName && item.file_name === fileName);
+  });
+  if (!allowed) throw new Error('OCR file is not part of this case');
+  const rows = getRowsByCaseId_(SHEETS.OCR_RESULTS, caseId);
+  for (let i = rows.length - 1; i >= 0; i--) {
+    const rowFileName = rows[i]['File Name'] || '';
+    const rowFileId = rows[i]['File ID'] || '';
+    if ((fileId && rowFileId === fileId) || (fileName && rowFileName === fileName)) {
+      return {
+        file_id: rowFileId,
+        file_name: rowFileName,
+        text: rows[i]['OCR Text'] || ''
+      };
+    }
+  }
+  return {
+    file_id: fileId || '',
+    file_name: fileName || '',
+    text: ''
+  };
+}
+
+function makeReviewPayloadForClient_(data) {
+  const copy = JSON.parse(JSON.stringify(data || {}));
+  copy.ocr_results = (copy.ocr_results || []).map(function(item) {
+    item.text_preview = makeClientOcrPreview_(item.text_preview || '');
+    return item;
+  });
+  trimLongReviewStringsForClient_(copy);
+  return copy;
+}
+
+function makeClientOcrPreview_(text) {
+  text = String(text || '');
+  const maxChars = 900;
+  if (text.length <= maxChars) return text;
+  return text.slice(0, maxChars) + '\n...[OCR_TEXT_TRUNCATED_CLIENT]';
+}
+
+function trimLongReviewStringsForClient_(value) {
+  if (!value || typeof value !== 'object') return;
+  Object.keys(value).forEach(function(key) {
+    const item = value[key];
+    if (typeof item === 'string' && item.length > 5000) {
+      value[key] = item.slice(0, 5000) + '\n...[LONG_TEXT_TRUNCATED_CLIENT]';
+      return;
+    }
+    if (item && typeof item === 'object') trimLongReviewStringsForClient_(item);
+  });
 }
 
 function resizeImageBlobForReview_(blob) {

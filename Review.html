@@ -357,7 +357,13 @@
       const body = Object.assign({ action, caseId: CASE_ID, token: TOKEN }, payload || {});
       return new Promise((resolve, reject) => {
         google.script.run
-          .withSuccessHandler(resolve)
+          .withSuccessHandler(result => {
+            if (!result) {
+              reject(new Error('API kh\u00f4ng tr\u1ea3 v\u1ec1 d\u1eef li\u1ec7u. H\u00e3y t\u1ea3i l\u1ea1i trang ho\u1eb7c ch\u1ea1y l\u1ea1i review case.'));
+              return;
+            }
+            resolve(result);
+          })
           .withFailureHandler(err => reject(new Error(err && err.message ? err.message : String(err))))
           .reviewApi(body);
       });
@@ -375,6 +381,12 @@
     }
 
     function render() {
+      if (!reviewData || !reviewData.case_id) {
+        document.getElementById('loading').style.display = 'block';
+        document.getElementById('app').style.display = 'none';
+        document.getElementById('loading').textContent = 'Kh\u00f4ng t\u1ea3i \u0111\u01b0\u1ee3c d\u1eef li\u1ec7u review. Case: ' + CASE_ID;
+        return;
+      }
       document.getElementById('loading').style.display = 'none';
       document.getElementById('app').style.display = 'block';
       document.getElementById('caseLine').textContent = reviewData.case_id || CASE_ID;
@@ -541,6 +553,30 @@
         'assets[].movable.chassis_number': 'So khung tai san ' + number,
         'assets[].movable.engine_number': 'So may tai san ' + number
       };
+      Object.assign(labels, {
+        'assets[].asset_type': 'Lo\u1ea1i t\u00e0i s\u1ea3n',
+        'assets[].certificate_title': 'T\u00ean Gi\u1ea5y ch\u1ee9ng nh\u1eadn',
+        'assets[].owner_name': 'Ng\u01b0\u1eddi s\u1eed d\u1ee5ng \u0111\u1ea5t/ch\u1ee7 s\u1edf h\u1eefu',
+        'assets[].owner_identity_summary': 'Ng\u01b0\u1eddi s\u1eed d\u1ee5ng \u0111\u1ea5t/ch\u1ee7 s\u1edf h\u1eefu v\u00e0 gi\u1ea5y t\u1edd',
+        'assets[].owner_id_document_type': 'Lo\u1ea1i gi\u1ea5y t\u1edd ch\u1ee7 s\u1edf h\u1eefu',
+        'assets[].owner_id_number': 'S\u1ed1 gi\u1ea5y t\u1edd ch\u1ee7 s\u1edf h\u1eefu',
+        'assets[].owner_address': '\u0110\u1ecba ch\u1ec9 ch\u1ee7 s\u1eed d\u1ee5ng/ch\u1ee7 s\u1edf h\u1eefu',
+        'assets[].real_estate.certificate_number': 'S\u1ed1 GCN',
+        'assets[].real_estate.registry_number': 'S\u1ed1 v\u00e0o s\u1ed5',
+        'assets[].real_estate.issuing_authority': 'N\u01a1i c\u1ea5p',
+        'assets[].real_estate.issue_date': 'Ng\u00e0y c\u1ea5p',
+        'assets[].real_estate.land_plot_number': 'Th\u1eeda \u0111\u1ea5t s\u1ed1',
+        'assets[].real_estate.map_sheet_number': 'T\u1edd b\u1ea3n \u0111\u1ed3 s\u1ed1',
+        'assets[].real_estate.land_address': '\u0110\u1ecba ch\u1ec9',
+        'assets[].real_estate.area': 'Di\u1ec7n t\u00edch',
+        'assets[].real_estate.area_in_words': 'Di\u1ec7n t\u00edch b\u1eb1ng ch\u1eef',
+        'assets[].real_estate.usage_form': 'H\u00ecnh th\u1ee9c s\u1eed d\u1ee5ng',
+        'assets[].real_estate.usage_purpose': 'M\u1ee5c \u0111\u00edch s\u1eed d\u1ee5ng',
+        'assets[].real_estate.usage_term': 'Th\u1eddi h\u1ea1n s\u1eed d\u1ee5ng',
+        'assets[].real_estate.usage_origin': 'Ngu\u1ed3n g\u1ed1c s\u1eed d\u1ee5ng',
+        'assets[].real_estate.attached_assets': 'T\u00e0i s\u1ea3n g\u1eafn li\u1ec1n v\u1edbi \u0111\u1ea5t',
+        'assets[].real_estate.post_issue_changes': 'N\u1ed9i dung thay \u0111\u1ed5i sau c\u1ea5p gi\u1ea5y'
+      });
       const label = labels[normalized];
       return label ? label.trim() : path;
     }
@@ -570,14 +606,24 @@
     }
 
     function renderPeople(targetId, people, root, group) {
-      people = sortPeopleForDisplay(people || [], group);
-      const html = people.map((p, i) => {
+      const entries = sortPeopleEntriesForDisplay(people || [], group);
+      const html = entries.map((entry, i) => {
+        const p = entry.person;
+        const dataIndex = entry.index;
         const title = escapeHtml((p.full_name && p.full_name.final_value) || 'Nguoi ' + (i + 1));
         const files = getFilesForObject(p, group);
-        return '<div class="entity-review"><h2>' + title + '</h2>' + compareLayoutHtml(group + '-person-' + i, files, fieldTable(sortPersonFields(flattenFields(p, root + '[' + i + ']')))) + '</div>';
+        return '<div class="entity-review"><h2>' + title + '</h2>' + compareLayoutHtml(group + '-person-' + dataIndex, files, fieldTable(sortPersonFields(flattenFields(p, root + '[' + dataIndex + ']')))) + '</div>';
       }).join('');
       document.getElementById(targetId).innerHTML = html || '<div class="loading">Khong co du lieu.</div>';
       hydrateAllSourceImages();
+    }
+
+    function sortPeopleEntriesForDisplay(people, group) {
+      const entries = (people || []).map((person, index) => ({ person, index }));
+      if (group !== 'secured_party') return entries;
+      const order = getAssetOwnerNameOrder();
+      if (!order.length) return entries;
+      return entries.slice().sort((a, b) => ownerOrderIndex(a.person, order) - ownerOrderIndex(b.person, order));
     }
 
     function sortPeopleForDisplay(people, group) {
@@ -643,21 +689,19 @@
       });
       lines.push('</div></section>');
       lines.push('<section class="asset-doc-section"><h3>' + t('2. Thong tin theo giay chung nhan') + '</h3><div class="asset-doc-lines">');
-      lines.push('<div class="asset-doc-line"><strong>1. ' + t('Nguoi su dung dat, chu so huu tai san gan lien voi dat') + ':</strong></div>');
+      lines.push('<div class="asset-doc-line"><strong>I. ' + t('Nguoi su dung dat, chu so huu nha o va tai san khac gan lien voi dat') + ':</strong></div>');
       ownerLines(asset).forEach(line => lines.push('<div class="asset-doc-line">' + escapeHtml(line) + '</div>'));
-      lines.push('<div class="asset-doc-line"><strong>2. ' + t('Thong tin thua dat') + ':</strong></div>');
-      lines.push('<div class="asset-doc-line">a. ' + t('Thua dat so') + ': ' + escapeHtml(valueOf(re.land_plot_number)) + '    ' + t('to ban do so') + ': ' + escapeHtml(valueOf(re.map_sheet_number)) + '</div>');
-      lines.push('<div class="asset-doc-line">b. ' + t('Dien tich') + ': ' + escapeHtml(valueOf(re.area)) + '</div>');
-      lines.push('<div class="asset-doc-line">c. ' + t('Loai dat') + ': ' + escapeHtml(valueOf(re.usage_purpose)) + '</div>');
-      lines.push('<div class="asset-doc-line">d. ' + t('Thoi han su dung') + ': ' + escapeHtml(valueOf(re.usage_term)) + '</div>');
-      lines.push('<div class="asset-doc-line">\u0111. ' + t('Hinh thuc su dung') + ': ' + escapeHtml(valueOf(re.usage_form)) + '</div>');
-      lines.push('<div class="asset-doc-line">e. ' + t('Dia chi') + ': ' + escapeHtml(valueOf(re.land_address)) + '</div>');
-      lines.push('<div class="asset-doc-line"><strong>3. ' + t('Thong tin tai san gan lien voi dat') + ':</strong></div>');
-      lines.push('<div class="asset-doc-line">a. ' + t('Ten tai san') + ': ' + escapeHtml(valueOrDash(valueOf(re.attached_assets))) + '</div>');
-      lines.push('<div class="asset-doc-line">b. ' + t('Dien tich su dung') + ': ' + escapeHtml(valueOrDash('')) + '</div>');
-      lines.push('<div class="asset-doc-line">c. ' + t('Hinh thuc so huu') + ': ' + escapeHtml(valueOrDash('')) + '</div>');
-      lines.push('<div class="asset-doc-line">d. ' + t('Thoi han so huu') + ': ' + escapeHtml(valueOrDash('')) + '</div>');
-      lines.push('<div class="asset-doc-line">\u0111. ' + t('Dia chi') + ': ' + escapeHtml(valueOrDash('')) + '</div>');
+      lines.push('<div class="asset-doc-line"><strong>II. ' + t('Thua dat, nha o va tai san khac gan lien voi dat') + ':</strong></div>');
+      lines.push('<div class="asset-doc-line"><strong>1. ' + t('Thua dat') + ':</strong></div>');
+      pushAssetLine(lines, 'a. ' + t('Thua dat so'), valueOf(re.land_plot_number) + (valueOf(re.map_sheet_number) ? '    ' + t('to ban do so') + ': ' + valueOf(re.map_sheet_number) : ''));
+      pushAssetLine(lines, 'b. ' + t('Dia chi'), valueOf(re.land_address));
+      pushAssetLine(lines, 'c. ' + t('Dien tich'), joinNonEmpty([valueOf(re.area), valueOf(re.area_in_words) || extractAreaWordsFromOcr(ocrText)], ' '));
+      pushAssetLine(lines, 'd. ' + t('Hinh thuc su dung'), valueOf(re.usage_form));
+      pushAssetLine(lines, '\u0111. ' + t('Muc dich su dung'), valueOf(re.usage_purpose));
+      pushAssetLine(lines, 'e. ' + t('Thoi han su dung'), valueOf(re.usage_term));
+      pushAssetLine(lines, 'g. ' + t('Nguon goc su dung'), valueOf(re.usage_origin));
+      lines.push('<div class="asset-doc-line"><strong>2. ' + t('Nha o') + ':</strong> ' + escapeHtml(simplifyAbsentCertificateText(valueOf(re.attached_assets))) + '</div>');
+      lines.push('<div class="asset-doc-line"><strong>3. ' + t('Cong trinh xay dung khac') + ':</strong> ' + escapeHtml(simplifyAbsentCertificateText('')) + '</div>');
       lines.push('</div><div class="asset-doc-edit">' + fieldTable(flattenFields(asset, root)) + '</div></section>');
       lines.push('</div>');
       return lines.join('');
@@ -674,14 +718,20 @@
         '1. Thong tin chung': '1. \u0054\u0068\u00f4\u006e\u0067 \u0074\u0069\u006e \u0063\u0068\u0075\u006e\u0067',
         '2. Thong tin theo giay chung nhan': '2. \u0054\u0068\u00f4\u006e\u0067 \u0074\u0069\u006e \u0074\u0068\u0065\u006f \u0067\u0069\u1ea5\u0079 \u0063\u0068\u1ee9\u006e\u0067 \u006e\u0068\u1ead\u006e',
         'Nguoi su dung dat, chu so huu tai san gan lien voi dat': '\u004e\u0067\u01b0\u1edd\u0069 \u0073\u1eed \u0064\u1ee5\u006e\u0067 \u0111\u1ea5\u0074, \u0063\u0068\u1ee7 \u0073\u1edf \u0068\u1eef\u0075 \u0074\u00e0\u0069 \u0073\u1ea3\u006e \u0067\u1eaf\u006e \u006c\u0069\u1ec1\u006e \u0076\u1edb\u0069 \u0111\u1ea5\u0074',
+        'Nguoi su dung dat, chu so huu nha o va tai san khac gan lien voi dat': 'Ng\u01b0\u1eddi s\u1eed d\u1ee5ng \u0111\u1ea5t, ch\u1ee7 s\u1edf h\u1eefu nh\u00e0 \u1edf v\u00e0 t\u00e0i s\u1ea3n kh\u00e1c g\u1eafn li\u1ec1n v\u1edbi \u0111\u1ea5t',
+        'Thua dat, nha o va tai san khac gan lien voi dat': 'Th\u1eeda \u0111\u1ea5t, nh\u00e0 \u1edf v\u00e0 t\u00e0i s\u1ea3n kh\u00e1c g\u1eafn li\u1ec1n v\u1edbi \u0111\u1ea5t',
+        'Thua dat': 'Th\u1eeda \u0111\u1ea5t',
         'Thong tin thua dat': '\u0054\u0068\u00f4\u006e\u0067 \u0074\u0069\u006e \u0074\u0068\u1eeda \u0111\u1ea5\u0074',
         'Thua dat so': '\u0054\u0068\u1eeda \u0111\u1ea5\u0074 \u0073\u1ed1',
         'to ban do so': '\u0074\u1edd \u0062\u1ea3\u006e \u0111\u1ed3 \u0073\u1ed1',
         'Dien tich': '\u0044\u0069\u1ec7\u006e \u0074\u00ed\u0063\u0068',
-        'Loai dat': '\u004c\u006f\u1ea1\u0069 \u0111\u1ea5\u0074',
+        'Muc dich su dung': '\u004d\u1ee5\u0063 \u0111\u00ed\u0063\u0068 \u0073\u1eed \u0064\u1ee5\u006e\u0067',
         'Thoi han su dung': '\u0054\u0068\u1eddi \u0068\u1ea1\u006e \u0073\u1eed \u0064\u1ee5\u006e\u0067',
         'Hinh thuc su dung': '\u0048\u00ec\u006e\u0068 \u0074\u0068\u1ee9\u0063 \u0073\u1eed \u0064\u1ee5\u006e\u0067',
+        'Nguon goc su dung': 'Ngu\u1ed3n g\u1ed1c s\u1eed d\u1ee5ng',
         'Dia chi': '\u0110\u1ecb\u0061 \u0063\u0068\u1ec9',
+        'Nha o': 'Nh\u00e0 \u1edf',
+        'Cong trinh xay dung khac': 'C\u00f4ng tr\u00ecnh x\u00e2y d\u1ef1ng kh\u00e1c',
         'Thong tin tai san gan lien voi dat': '\u0054\u0068\u00f4\u006e\u0067 \u0074\u0069\u006e \u0074\u00e0\u0069 \u0073\u1ea3\u006e \u0067\u1eaf\u006e \u006c\u0069\u1ec1\u006e \u0076\u1edb\u0069 \u0111\u1ea5\u0074',
         'Ten tai san': '\u0054\u00ea\u006e \u0074\u00e0\u0069 \u0073\u1ea3\u006e',
         'Dien tich su dung': '\u0044\u0069\u1ec7\u006e \u0074\u00ed\u0063\u0068 \u0073\u1eed \u0064\u1ee5\u006e\u0067',
@@ -702,20 +752,54 @@
       return value || '-/-';
     }
 
+    function pushAssetLine(lines, label, value) {
+      value = cleanValue(value);
+      if (!value || isAbsentCertificateText(value)) return;
+      lines.push('<div class="asset-doc-line">' + escapeHtml(label) + ': ' + escapeHtml(value) + '</div>');
+    }
+
+    function joinNonEmpty(items, separator) {
+      return (items || []).map(cleanValue).filter(Boolean).join(separator || ' ');
+    }
+
+    function simplifyAbsentCertificateText(value) {
+      value = cleanValue(value);
+      if (!value || isAbsentCertificateText(value)) return 'Ch\u01b0a ch\u1ee9ng nh\u1eadn quy\u1ec1n s\u1edf h\u1eefu';
+      return value;
+    }
+
+    function isAbsentCertificateText(value) {
+      const text = removeVietnameseMarks(value).toLowerCase();
+      return !cleanValue(value) || text.indexOf('chua chung nhan quyen so huu') >= 0 || text === '-/-' || text === '-';
+    }
+
+    function extractAreaWordsFromOcr(text) {
+      const match = String(text || '').match(/\(?\s*B[ăa]ng ch[ữu]\s*:\s*([^)\\n]+)\)?/i);
+      return match ? '(B\u1eb1ng ch\u1eef: ' + cleanValue(match[1]) + ')' : '';
+    }
+
     function ownerLines(asset) {
       const summary = valueOf(asset.owner_identity_summary);
-      if (summary) return summary.split(';').map(v => v.trim()).filter(Boolean);
+      const addresses = valueOf(asset.owner_address).split(';').map(v => v.trim()).filter(Boolean);
+      if (summary) {
+        return summary.split(';').map((v, i) => {
+          const line = v.trim();
+          const address = addresses[i] || addresses[0] || '';
+          return line && address ? line + ', \u0110\u1ecba ch\u1ec9: ' + address : line;
+        }).filter(Boolean);
+      }
       const names = valueOf(asset.owner_name).split(';').map(v => v.trim()).filter(Boolean);
       const ids = valueOf(asset.owner_id_number).split(';').map(v => v.trim()).filter(Boolean);
       const docTypes = valueOf(asset.owner_id_document_type).split(';').map(v => v.trim()).filter(Boolean);
-      if (!names.length && !ids.length) return [''];
-      const max = Math.max(names.length, ids.length);
+      if (!names.length && !ids.length && !addresses.length) return [''];
+      const max = Math.max(names.length, ids.length, addresses.length);
       const out = [];
       for (let i = 0; i < max; i++) {
         const name = names[i] || names[0] || '';
         const docType = docTypes[i] || docTypes[0] || 'giay to tuy than';
         const id = ids[i] || '';
-        out.push((name ? name : '') + (id ? ', ' + docType + ': ' + id : ''));
+        const address = addresses[i] || addresses[0] || '';
+        out.push((name ? name : '') + (id ? ', ' + docType + ': ' + id : '') + (address ? ', \u0110\u1ecba ch\u1ec9: ' + address : ''));
       }
       return out;
     }
@@ -780,14 +864,28 @@
     }
 
     function sortSourceFiles(files) {
-      return (files || []).slice().sort((a, b) => fileSideRank(a) - fileSideRank(b) || String(a.file_name || '').localeCompare(String(b.file_name || '')));
+      return (files || []).map((file, index) => ({ file, index }))
+        .sort((a, b) => fileSideRank(a.file) - fileSideRank(b.file) || a.index - b.index)
+        .map(item => item.file);
     }
 
     function fileSideRank(file) {
       const text = removeVietnameseMarks(((file && file.file_name) || '') + ' ' + ((file && file.text_preview) || '')).toLowerCase();
-      if (text.indexOf('ngay cap') >= 0 || text.indexOf('date of issue') >= 0 || text.indexOf('noi cu tru') >= 0 || text.indexOf('place of residence') >= 0 || text.indexOf('idvnm') >= 0) return 2;
-      if (text.indexOf('ho va ten') >= 0 || text.indexOf('full name') >= 0 || text.indexOf('ngay sinh') >= 0 || text.indexOf('date of birth') >= 0) return 1;
-      return 1;
+      const frontScore =
+        (text.indexOf('can cuoc cong dan') >= 0 ? 3 : 0) +
+        (text.indexOf('ho va ten') >= 0 || text.indexOf('full name') >= 0 ? 3 : 0) +
+        (text.indexOf('ngay sinh') >= 0 || text.indexOf('date of birth') >= 0 ? 2 : 0) +
+        (text.indexOf('que quan') >= 0 ? 1 : 0) +
+        (/\bso\s*\/?\s*no\b/.test(text) ? 1 : 0);
+      const backScore =
+        (text.indexOf('idvnm') >= 0 ? 3 : 0) +
+        (text.indexOf('ngay cap') >= 0 || text.indexOf('date of issue') >= 0 ? 3 : 0) +
+        (text.indexOf('dac diem nhan dang') >= 0 || text.indexOf('personal identification') >= 0 ? 2 : 0) +
+        (text.indexOf('noi cu tru') >= 0 || text.indexOf('place of residence') >= 0 ? 1 : 0) +
+        (/<{3,}/.test(text) ? 2 : 0);
+      if (frontScore >= 3 && frontScore > backScore) return 0;
+      if (backScore >= 3 && backScore > frontScore) return 20;
+      return 10;
     }
 
     function getFilesForObject(obj, group) {
@@ -861,7 +959,6 @@
         <tr>
           <td data-label="${vi('field')}">${escapeHtml(humanFieldPath(f.path) || f.label)}<small>${escapeHtml(f.path)}</small></td>
           <td data-label="OCR/AI">${escapeHtml(d.ai_value)}</td>
-          <td data-label="Form">${escapeHtml(d.form_value)}</td>
           <td data-label="${vi('manual')}">${escapeHtml(d.manual_value)}</td>
           <td data-label="${vi('final')}"><strong>${escapeHtml(d.final_value)}</strong></td>
           <td data-label="${vi('source')}">${escapeHtml(f.source)}<small>${escapeHtml(f.confidence)}</small></td>
@@ -871,7 +968,7 @@
         </tr>`;
       }).join('');
       if (!rows) return '<div class="loading">' + vi('none') + '</div>'; 
-      return `<table><thead><tr><th>${vi('field')}</th><th>OCR/AI</th><th>Form</th><th>${vi('manual')}</th><th>${vi('final')}</th><th>${vi('source')}</th><th>${vi('action')}</th></tr></thead><tbody>${rows}</tbody></table>`;
+      return `<table><thead><tr><th>${vi('field')}</th><th>OCR/AI</th><th>${vi('manual')}</th><th>${vi('final')}</th><th>${vi('source')}</th><th>${vi('action')}</th></tr></thead><tbody>${rows}</tbody></table>`;
     }
 
     function displayFieldValues(field) {
@@ -919,6 +1016,8 @@
 
     function isAlwaysVisibleReviewPath(path) {
       return [
+        /^(secured_parties|obligors)\[\d+\]\.id_issue_date$/,
+        /^(secured_parties|obligors)\[\d+\]\.id_issue_place$/,
         /^assets\[\d+\]\.real_estate\.registry_number$/
       ].some(re => re.test(String(path || '')));
     }
@@ -948,7 +1047,19 @@
     }
 
     function isHiddenReviewPath(path) {
-      return ['.spouse', '.marriage_registration', '.marital_status_certificate', '.marital_status', '.real_estate.owner_or_user'].some(part => String(path || '').indexOf(part) >= 0);
+      return [
+        '.spouse',
+        '.marriage_registration',
+        '.marital_status_certificate',
+        '.marital_status',
+        '.current_address_final',
+        '.real_estate.owner_or_user',
+        '.real_estate.owner_address',
+        '.real_estate.certificate_info_raw_text',
+        '.real_estate.certificate_owner_raw_text',
+        '.real_estate.certificate_land_raw_text',
+        '.real_estate.certificate_attached_raw_text'
+      ].some(part => String(path || '').indexOf(part) >= 0);
     }
 
     function getField(path) {
@@ -968,25 +1079,51 @@
       document.getElementById('editDialog').showModal();
     }
 
-    function openOcrPreview(index) {
+    async function openOcrPreview(index) {
       const item = (reviewData.ocr_results || [])[index] || {};
       document.getElementById('ocrTitle').textContent = item.file_name || 'OCR text';
-      document.getElementById('ocrText').value = item.text_preview || 'Không có OCR text trong dữ liệu Review.';
+      document.getElementById('ocrText').value = 'Đang tải OCR text...';
       document.getElementById('ocrDialog').showModal();
+      try {
+        const result = await api('getCaseOcrText', { fileId: item.file_id || '', fileName: item.file_name || '' });
+        document.getElementById('ocrText').value = (result && result.text) || item.text_preview || 'Không có OCR text trong dữ liệu Review.';
+      } catch (err) {
+        document.getElementById('ocrText').value = (item.text_preview || '') + '\n\n[Lỗi tải OCR đầy đủ] ' + err.message;
+      }
     }
 
     async function saveEdit() {
       try {
-        reviewData = await api('saveOverride', {
-          fieldPath: currentEditPath,
-          newValue: document.getElementById('editValue').value,
-          reason: document.getElementById('editReason').value
-        });
+        const path = currentEditPath;
+        const newValue = document.getElementById('editValue').value;
+        const reason = document.getElementById('editReason').value;
+        const scrollX = window.scrollX;
+        const scrollY = window.scrollY;
+        applyManualOverrideLocally(path, newValue);
         document.getElementById('editDialog').close();
         render();
+        window.scrollTo(scrollX, scrollY);
+        api('saveOverride', {
+          fieldPath: path,
+          newValue: newValue,
+          reason: reason
+        }).catch(err => {
+          alert('Luu sua doi len he thong khong thanh cong: ' + err.message);
+          reloadData();
+        });
       } catch (err) {
         alert(err.message);
+        reloadData();
       }
+    }
+
+    function applyManualOverrideLocally(path, newValue) {
+      const field = getField(path);
+      if (!field || typeof field !== 'object') return;
+      field.manual_value = newValue;
+      field.final_value = newValue;
+      field.source = 'MANUAL';
+      field.confirmed = true;
     }
 
     async function confirmField(path) {
@@ -1078,9 +1215,9 @@
         {
           title: 'Gi\u00e1 tr\u1ecb t\u00e0i s\u1ea3n \u0111\u1ecbnh gi\u00e1',
           fields: [
-            { path: 'contract_info.valuation_total_amount', label: 'Gi\u00e1 tr\u1ecb t\u1ed5ng', type: 'money_total', readonly: true },
-            { path: 'contract_info.valuation_land_amount', label: 'Gi\u00e1 tr\u1ecb \u0111\u1ea5t', type: 'money' },
-            { path: 'contract_info.valuation_house_amount', label: 'Gi\u00e1 tr\u1ecb nh\u00e0', type: 'money' },
+            { path: 'contract_info.valuation_land_amount', label: '1. Gi\u00e1 tr\u1ecb \u0111\u1ea5t', type: 'money' },
+            { path: 'contract_info.valuation_house_amount', label: '2. Gi\u00e1 tr\u1ecb nh\u00e0', type: 'money' },
+            { path: 'contract_info.valuation_total_amount', label: '3. Gi\u00e1 tr\u1ecb t\u1ed5ng t\u00e0i s\u1ea3n', type: 'money_total', readonly: true },
             { path: 'contract_info.actual_asset_differs_from_certificate', label: 'T\u00e0i s\u1ea3n th\u1ef1c t\u1ebf c\u00f3 kh\u00e1c th\u00f4ng tin tr\u00ean b\u00eca \u0111\u1ea5t kh\u00f4ng?', type: 'select', options: ['Kh\u00f4ng', 'C\u00f3'], affectsVisibility: true }
           ]
         },
@@ -1189,14 +1326,14 @@
     }
 
     function getSelectedBankSignerProfileForDraft() {
-      const selected = getReviewFieldFinalValue('contract_info.bank_signer') ||
-        ((document.querySelector('[data-draft-path="contract_info.bank_signer"]') || {}).value || '');
+      const selected = ((document.querySelector('[data-draft-path="contract_info.bank_signer"]') || {}).value || '') ||
+        getReviewFieldFinalValue('contract_info.bank_signer');
       const target = normalizePlainText(selected);
       return getBankSignerProfilesForDraft().filter(profile => normalizePlainText(profile.name) === target)[0] || {};
     }
 
     function inferBankSignerTitleForDraft() {
-      return getReviewFieldFinalValue('contract_info.bank_signer_title') || getSelectedBankSignerProfileForDraft().title || '';
+      return getSelectedBankSignerProfileForDraft().title || getReviewFieldFinalValue('contract_info.bank_signer_title') || '';
     }
 
     function inferBankSignerAddressForDraft() {
