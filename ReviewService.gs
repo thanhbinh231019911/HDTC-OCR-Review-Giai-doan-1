@@ -3,8 +3,8 @@ function getReviewPayload(caseId, token) {
   let data = getLatestFinalData(caseId) || getLatestExtractedData(caseId);
   if (!data) throw new Error('No review data for case ' + caseId);
   data = ensureTemplateDecisionFields_(data);
-  repairReviewDataFromFullOcr_(data, caseId);
   data = applyOverridesToReviewJson(data, getOverrides(caseId));
+  repairReviewDataFromFullOcr_(data, caseId);
   data = applyTemplateDecisionToReviewJson(data);
   data = validateReviewJson(data);
   return makeReviewPayloadForClient_(data);
@@ -15,8 +15,8 @@ function saveManualOverride(caseId, token, fieldPath, newValue, reason) {
   newValue = normalizeManualOverrideValueForStorage_(newValue);
   let data = getLatestFinalData(caseId) || getLatestExtractedData(caseId);
   if (!data) throw new Error('No review data for case ' + caseId);
-  repairReviewDataFromFullOcr_(data, caseId);
   data = applyOverridesToReviewJson(data, getOverrides(caseId));
+  repairReviewDataFromFullOcr_(data, caseId);
   const field = getByPath(data, fieldPath);
   if (!field || typeof field !== 'object' || !field.hasOwnProperty('final_value')) {
     throw new Error('Field path is not editable: ' + fieldPath);
@@ -149,8 +149,8 @@ function saveContractDraftInfo(caseId, token, values) {
   let data = getLatestFinalData(caseId) || getLatestExtractedData(caseId);
   if (!data) throw new Error('No review data for case ' + caseId);
   data = ensureTemplateDecisionFields_(data);
-  repairReviewDataFromFullOcr_(data, caseId);
   data = applyOverridesToReviewJson(data, getOverrides(caseId));
+  repairReviewDataFromFullOcr_(data, caseId);
   Object.keys(values).forEach(function(fieldPath) {
     if (!allowed[fieldPath]) return;
     const field = getByPath(data, fieldPath);
@@ -176,8 +176,8 @@ function saveContractDraftInfo(caseId, token, values) {
 function confirmSingleField(caseId, token, fieldPath) {
   assertValidToken_(caseId, token);
   let data = getLatestFinalData(caseId) || getLatestExtractedData(caseId);
-  repairReviewDataFromFullOcr_(data, caseId);
   data = applyOverridesToReviewJson(data, getOverrides(caseId));
+  repairReviewDataFromFullOcr_(data, caseId);
   const field = getByPath(data, fieldPath);
   if (!field || typeof field !== 'object' || !field.hasOwnProperty('final_value')) {
     throw new Error('Field path is not confirmable: ' + fieldPath);
@@ -192,8 +192,8 @@ function confirmReview(caseId, token, forceConfirm) {
   let data = getLatestExtractedData(caseId);
   if (!data) throw new Error('No extracted data for case ' + caseId);
   data = ensureTemplateDecisionFields_(data);
-  repairReviewDataFromFullOcr_(data, caseId);
   data = applyOverridesToReviewJson(data, getOverrides(caseId));
+  repairReviewDataFromFullOcr_(data, caseId);
   data = applyTemplateDecisionToReviewJson(data);
   data = validateReviewJson(data);
   const hasSeriousIssues = data.validation.missing_fields.length || data.validation.conflicts.length;
