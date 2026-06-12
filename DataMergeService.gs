@@ -258,13 +258,20 @@ function shouldReplaceUsageTerm_(field, candidate) {
 function normalizeRealEstateUsageTerm_(value) {
   const raw = String(value || '')
     .replace(/\s+/g, ' ')
+    .replace(/^\s*(?:[a-g]|\u0111|d)\s*[\).:]\s*/i, '')
     .replace(/^(?:th\u1eddi\s*h\u1ea1n\s*s\u1eed\s*d\u1ee5ng|thoi\s*han\s*su\s*dung)\s*[:.-]?\s*/i, '')
     .replace(/[;,.:\-\s]+$/g, '')
     .trim();
   if (!raw) return '';
-  const normalized = removeVietnameseAccents_(raw).toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
-  if (normalized === 'lau dai' || normalized.indexOf('lau dai') === 0) return 'lâu dài';
-  return raw;
+  return correctUsageTermOcrTypos_(raw);
+}
+
+function correctUsageTermOcrTypos_(value) {
+  return String(value || '')
+    .replace(/(^|[^A-Za-z\u00c0-\u1ef9])(L\u00e2u)\s+\u0111\u00e0i(?=$|[^A-Za-z\u00c0-\u1ef9])/g, '$1L\u00e2u d\u00e0i')
+    .replace(/(^|[^A-Za-z\u00c0-\u1ef9])(l\u00e2u)\s+\u0111\u00e0i(?=$|[^A-Za-z\u00c0-\u1ef9])/g, '$1l\u00e2u d\u00e0i')
+    .replace(/(^|[^A-Za-z\u00c0-\u1ef9])(Lau)\s+dai(?=$|[^A-Za-z\u00c0-\u1ef9])/g, '$1L\u00e2u d\u00e0i')
+    .replace(/(^|[^A-Za-z\u00c0-\u1ef9])(lau)\s+dai(?=$|[^A-Za-z\u00c0-\u1ef9])/g, '$1l\u00e2u d\u00e0i');
 }
 
 function extractAreaWordsFromCertificateText_(text) {
