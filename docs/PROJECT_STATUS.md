@@ -15,6 +15,8 @@ Nguyên tắc chính: không tự bịa dữ liệu pháp lý; dữ liệu sửa
 
 - CCCD/Can cuoc mat truoc va mat sau chi duoc lien ket bang day so CCCD/Can cuoc co tren ca 2 mat hoac bang chung ro rang cung mot nguoi trong cung nhom upload. Khong ghep lan lon giua Ben bao dam va Ben duoc bao dam, khong ghep cheo giua nguoi nay voi nguoi khac, khong tim bua, khong lay "gan nhat" neu khong co bang chung.
 - Khi lay ngay cap tu mat sau CCCD/Can cuoc, phai dam bao mat sau do thuoc dung so CCCD/Can cuoc/cung nguoi. Neu khong chac thi de trong hoac canh bao de sua tay.
+- Voi mat sau CCCD co MRZ dong dau dang `IDVNM...`, bo qua phan chu cai va ky tu `<`, chi tinh phan so. Neu sau `IDVNM` co 22 so lien ke thi 10 so dau la thong tin khac, 12 so tiep theo la so CCCD/Can cuoc dung de khop voi mat truoc. Vi du `IDVNM0760027248001076002724<9` cho ra so CCCD `001076002724`.
+- Quy tac MRZ CCCD ap dung chung cho moi nguoi trong ho so, khong phan biet Ben bao dam/Ben duoc bao dam; neu co 4-5 Ben bao dam thi van khop tung nguoi bang so CCCD/Can cuoc rieng, khong dung vi tri hay thu tu gan nhat.
 - Review tai san bat dong san phai the hien dung noi dung tren bia dat/giay chung nhan, gom dau cham, dau phay, dau ngoac, dau muc I, II, 1, 2, a), b), c)... theo dung thu tu va cach ghi trong bia dat.
 - Khong tu dien giai, khong rut gon, khong doi cach viet neu OCR/bia dat da co noi dung ro. Vi du dien tich co dong bang chu thi giu dang `88,7 m2 (Bang chu: Tam muoi tam phay bay met vuong)`, khong hien thanh `88,7 m2 Tam muoi tam phay bay met vuong`.
 - Cac hang muc ve nha o, cong trinh xay dung, tai san khac gan lien voi dat neu bia dat ghi "Chua chung nhan quyen so huu", de trong, "-/-" hoac gia tri tuong tu thi khong can hien thi noi dung chi tiet ben duoi, neu co.

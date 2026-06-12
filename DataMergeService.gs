@@ -687,10 +687,33 @@ function buildOcrTextByFile_(ocrResults) {
 function extractVietnamIdNumbers_(text) {
   text = String(text || '');
   const candidates = [];
+  extractCccdNumbersFromMrz_(text).forEach(function(id) {
+    if (candidates.indexOf(id) === -1) candidates.push(id);
+  });
   addUniqueMatches_(candidates, text, /(^|\D)(\d{12})(?=\D|$)/g, 2);
   addUniqueMatches_(candidates, text, /IDVNM\s*(\d{12})/gi, 1);
   addUniqueMatches_(candidates, removeVietnameseAccents_(text), /(?:so|no\.?|number|id(?:\s*no)?|cccd|can\s*cuoc\s*cong\s*dan|can\s*cuoc)\D{0,20}(\d[\d\s.-]{10,18}\d)/gi, 1);
   return candidates;
+}
+
+function extractCccdNumbersFromMrz_(text) {
+  const out = [];
+  String(text || '').split(/\r?\n/).forEach(function(line) {
+    if (!/IDVNM/i.test(line)) return;
+    const afterPrefix = line.replace(/^.*?IDVNM/i, '');
+    const mrzDigits = afterPrefix
+      .replace(/[oO]/g, '0')
+      .replace(/[iIlL]/g, '1')
+      .replace(/[^0-9]/g, '');
+    if (mrzDigits.length >= 22) {
+      const id = mrzDigits.slice(10, 22);
+      if (isLikelyVietnamId_(id) && out.indexOf(id) === -1) out.push(id);
+    } else if (mrzDigits.length >= 12) {
+      const tailId = mrzDigits.slice(-12);
+      if (isLikelyVietnamId_(tailId) && out.indexOf(tailId) === -1) out.push(tailId);
+    }
+  });
+  return out;
 }
 
 function extractVietnamPersonalDocumentNumbers_(text) {
@@ -1022,6 +1045,8 @@ function uploadGroupPrefix_(fileName) {
 }
 
 function identityOcrContainsId_(text, id) {
+  const ids = extractVietnamIdNumbers_(text);
+  if (ids.indexOf(id) >= 0) return true;
   const digits = normalizeId_(text);
   if (digits.indexOf(id) >= 0) return true;
   return new RegExp('IDVNM\\D*' + id, 'i').test(String(text || ''));

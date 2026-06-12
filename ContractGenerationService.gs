@@ -840,7 +840,7 @@ function fillMissingIssueDatesForPeople_(people, ocrItems, allOcrItems) {
     if (id) {
       for (let i = 0; i < ocrItems.length; i++) {
         const text = ocrItems[i].text || '';
-        if (normalizeDigitsForContract_(text).indexOf(id) < 0) continue;
+        if (!contractOcrContainsIdentityId_(text, id)) continue;
         const documentType = getReviewFieldValueForContract_(person.id_document_type);
         const issueDate = extractIssueDateFromContractOcrText_(text, documentType) ||
           extractIssueDateFromContractOcrText_(ocrItems[i + 1] && ocrItems[i + 1].text, documentType) ||
@@ -857,7 +857,7 @@ function fillMissingIssueDatesForPeople_(people, ocrItems, allOcrItems) {
     if (id && allOcrItems.length) {
       for (let k = 0; k < allOcrItems.length; k++) {
         const allText = allOcrItems[k].text || '';
-        if (normalizeDigitsForContract_(allText).indexOf(id) < 0) continue;
+        if (!contractOcrContainsIdentityId_(allText, id)) continue;
         const documentType = getReviewFieldValueForContract_(person.id_document_type);
         const issueDateFromCaseOcr = extractIssueDateFromContractOcrText_(allText, documentType) ||
           extractIssueDateFromContractOcrText_(allOcrItems[k + 1] && allOcrItems[k + 1].text, documentType) ||
@@ -902,6 +902,38 @@ function getReviewFieldValueForContract_(field) {
 
 function normalizeDigitsForContract_(value) {
   return String(value || '').replace(/\D/g, '');
+}
+
+function contractOcrContainsIdentityId_(text, id) {
+  id = normalizeDigitsForContract_(id);
+  if (!id) return false;
+  const ids = extractCccdNumbersFromMrzForContract_(text);
+  if (ids.indexOf(id) >= 0) return true;
+  return normalizeDigitsForContract_(text).indexOf(id) >= 0;
+}
+
+function extractCccdNumbersFromMrzForContract_(text) {
+  const out = [];
+  String(text || '').split(/\r?\n/).forEach(function(line) {
+    if (!/IDVNM/i.test(line)) return;
+    const afterPrefix = line.replace(/^.*?IDVNM/i, '');
+    const mrzDigits = afterPrefix
+      .replace(/[oO]/g, '0')
+      .replace(/[iIlL]/g, '1')
+      .replace(/[^0-9]/g, '');
+    if (mrzDigits.length >= 22) {
+      const id = mrzDigits.slice(10, 22);
+      if (isLikelyContractIdentityId_(id) && out.indexOf(id) === -1) out.push(id);
+    } else if (mrzDigits.length >= 12) {
+      const tailId = mrzDigits.slice(-12);
+      if (isLikelyContractIdentityId_(tailId) && out.indexOf(tailId) === -1) out.push(tailId);
+    }
+  });
+  return out;
+}
+
+function isLikelyContractIdentityId_(value) {
+  return /^(\d{9}|\d{12})$/.test(String(value || '')) && !/^0+$/.test(value) && !/^1+$/.test(value);
 }
 
 function extractIssueDateFromContractOcrText_(text, documentType) {
