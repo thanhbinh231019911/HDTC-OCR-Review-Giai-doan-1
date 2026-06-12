@@ -1031,6 +1031,8 @@ function extractIssueDateFromIdentityOcr_(text, documentType) {
   text = String(text || '');
   if (!text) return '';
   const normalized = removeVietnameseAccents_(text).toLowerCase();
+  const flexibleLabelDate = extractFlexibleIssueDateNearLabels_(text, normalized);
+  if (flexibleLabelDate) return flexibleLabelDate;
   const patterns = [
     /(?:ng\u00e0y\s*,?\s*th\u00e1ng\s*,?\s*n\u0103m\s*c\u1ea5p|date\s*of\s*issue)\D{0,40}(\d{1,2}[\/.\-]\d{1,2}[\/.\-]\d{2,4})/i,
     /(?:ng\u00e0y\s*,?\s*th\u00e1ng\s*,?\s*n\u0103m|date\s*,?\s*month\s*,?\s*year)\D{0,40}(\d{1,2}[\/.\-]\d{1,2}[\/.\-]\d{2,4})/i,
@@ -1061,6 +1063,21 @@ function extractIssueDateFromIdentityOcr_(text, documentType) {
     if (dates.length === 1) return normalizeDateValue_(dates[0]);
   }
   return '';
+}
+
+function extractFlexibleIssueDateNearLabels_(text, normalizedText) {
+  const normalized = normalizedText || removeVietnameseAccents_(String(text || '')).toLowerCase();
+  const labels = ['date of issue', 'ngay cap', 'cap ngay', 'ngay thang nam cap', 'ngay thang nam', 'date month year'];
+  let idx = -1;
+  for (let i = 0; i < labels.length; i++) {
+    const found = normalized.indexOf(labels[i]);
+    if (found >= 0 && (idx < 0 || found < idx)) idx = found;
+  }
+  if (idx < 0) return '';
+  const windowText = String(text || '').slice(Math.max(0, idx - 10), idx + 140);
+  const match = windowText.match(/(\d{1,2})\D{1,8}(\d{1,2})\D{1,10}(\d{4})/);
+  if (!match) return '';
+  return normalizeDateValue_(match[1] + '/' + match[2] + '/' + match[3]);
 }
 
 function isLikelyBackSideIdentityOcr_(text) {
