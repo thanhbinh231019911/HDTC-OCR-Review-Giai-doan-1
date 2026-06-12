@@ -173,7 +173,10 @@ IX. NGUYEN TAC COT LOI BAT BUOC DOC TRUOC KHI SUA CODE
 - Khi can lay ngay cap tu mat sau, phai dam bao mat sau do thuoc cung so CCCD/Can cuoc/cung nguoi; neu khong chac thi de trong hoac canh bao de sua tay.
 - Voi mat sau CCCD co MRZ dong dau dang "IDVNM...", bo qua phan chu cai va ky tu "<", chi tinh phan so. Neu sau IDVNM co 22 so lien ke thi 10 so dau la thong tin khac, 12 so tiep theo la so CCCD/Can cuoc dung de khop voi mat truoc. Vi du "IDVNM0760027248001076002724<9" cho ra so CCCD "001076002724".
 - Quy tac MRZ CCCD nay ap dung chung cho moi nguoi trong ho so, khong phan biet Ben bao dam/Ben duoc bao dam; neu co 4-5 Ben bao dam thi van khop tung nguoi bang so CCCD/Can cuoc rieng, khong dung vi tri hay thu tu gan nhat.
-- MRZ chi dung de khop dung nguoi; ngay cap van phai doc tu dong "Ngay, thang, nam / Date, month, year" ro rang. Neu OCR ngay cap hong thanh dang nhu "Oro712021", "Or0712021" hoac khong du dinh dang ngay/thang/nam thi khong duoc suy dien, phai de "Khong ro, de nghi sua thu cong" hoac chay OCR fallback vung ngay cap.
+- MRZ chi dung de khop dung nguoi; ngay cap phai doc tu vung mat sau, gan nhan ngay cap hop le. CCCD mau cu chap nhan dong "Ngay, thang, nam / Date, month, year"; Can cuoc mau moi chap nhan dong "Ngay, thang, nam cap / Date of issue".
+- Ngay cap chi duoc lay tren cung dong voi nhan ngay cap hoac toi da 2 dong ke tiep. Chap nhan cac dinh dang dd/MM/yyyy, dd-MM-yyyy, dd.MM.yyyy va ddMMyyyy khi OCR lam mat dau "/".
+- Chi sua loi OCR nhe trong vung ngay cap hop le, vi du O/o/Q/D thanh 0, I/l/T thanh 1, r thanh 7, va bo 1 ky tu thua neu chuoi ngay dang ddMM?yyyy. Sau khi sua bat buoc validate ngay/thang/nam hop le. Vi du OCR "Oro712021" ngay sau nhan "Ngay, thang, nam / Date, month, year" duoc doc thanh "07/07/2021".
+- Neu khong co nhan ngay cap hop le, khong khop dung mat sau theo so CCCD/Can cuoc, co nhieu ngay ung vien khac nhau, hoac ngay sau sua khong hop le thi de trong/canh bao sua tay; khong lay ngay gan nhat.
 
 2. Review thong tin tai san bat dong san
 

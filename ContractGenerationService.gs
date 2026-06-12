@@ -1150,6 +1150,16 @@ function extractIssueDateFromContractOcrText_(text, documentType) {
 function extractFlexibleIssueDateNearLabelsForContract_(text, normalizedText) {
   const normalized = normalizedText || removeVietnameseAccents_(String(text || '')).toLowerCase();
   const labels = ['date of issue', 'ngay cap', 'cap ngay', 'ngay thang nam cap', 'ngay thang nam', 'date month year'];
+  const lines = String(text || '').split(/\r?\n/);
+  for (let lineIndex = 0; lineIndex < lines.length; lineIndex++) {
+    const searchableLine = removeVietnameseAccents_(lines[lineIndex]).toLowerCase().replace(/[^a-z0-9]+/g, ' ').replace(/\s+/g, ' ').trim();
+    const hasLabel = labels.some(function(label) { return searchableLine.indexOf(label) >= 0; }) ||
+      isLooseIssueDateLabelLineForContract_(searchableLine);
+    if (!hasLabel) continue;
+    const lineWindow = [lines[lineIndex], lines[lineIndex + 1] || '', lines[lineIndex + 2] || ''].join(' ');
+    const lineDate = extractIssueDateFromLabeledWindowForContract_(lineWindow);
+    if (lineDate) return lineDate;
+  }
   let idx = -1;
   for (let i = 0; i < labels.length; i++) {
     const found = normalized.indexOf(labels[i]);
@@ -1157,9 +1167,86 @@ function extractFlexibleIssueDateNearLabelsForContract_(text, normalizedText) {
   }
   if (idx < 0) return '';
   const windowText = String(text || '').slice(Math.max(0, idx - 10), idx + 140);
+  return extractIssueDateFromLabeledWindowForContract_(windowText);
+}
+
+function isLooseIssueDateLabelLineForContract_(searchableLine) {
+  const compact = String(searchableLine || '').replace(/\s+/g, '');
+  return /ng.?y.*th.?ng.*n.?m/.test(searchableLine) ||
+    /ng.?y.*th.?ng.*n.?m/.test(compact) ||
+    /date.*month.*yea/.test(searchableLine) ||
+    /datemonthyea/.test(compact);
+}
+
+function extractIssueDateFromLabeledWindowForContract_(windowText) {
   const match = windowText.match(/(\d{1,2})\D{1,8}(\d{1,2})\D{1,10}(\d{4})/);
-  if (!match) return '';
-  return normalizeContractDateValue_(match[1] + '/' + match[2] + '/' + match[3]);
+  if (match) return normalizeContractDateValue_(match[1] + '/' + match[2] + '/' + match[3]);
+  return extractCompactIssueDateFromLabeledWindowForContract_(windowText);
+}
+
+function extractCompactIssueDateFromLabeledWindowForContract_(windowText) {
+  const normalized = String(windowText || '')
+    .replace(/[oO]/g, '0')
+    .replace(/[iIlL]/g, '1');
+  const candidates = [];
+  let match;
+  const compactRegex = /(?:^|[^0-9])(\d{8})(?=[^0-9]|$)/g;
+  while ((match = compactRegex.exec(normalized)) !== null) {
+    candidates.push(match[1]);
+  }
+  const loose = normalized.match(/[0-9\/.\-\s]{8,16}/g) || [];
+  loose.forEach(function(value) {
+    const digits = value.replace(/\D/g, '');
+    if (digits.length === 8) candidates.push(digits);
+  });
+  const fuzzyTokens = String(windowText || '').match(/[0-9oOqQdDiIlLtTrR]{8,12}/g) || [];
+  fuzzyTokens.forEach(function(token) {
+    expandFuzzyCompactIssueDateCandidatesForContract_(token).forEach(function(candidate) {
+      candidates.push(candidate);
+    });
+  });
+  for (let i = 0; i < candidates.length; i++) {
+    const parsed = normalizeCompactIssueDateDigitsForContract_(candidates[i]);
+    if (parsed) return parsed;
+  }
+  return '';
+}
+
+function expandFuzzyCompactIssueDateCandidatesForContract_(token) {
+  let digits = String(token || '')
+    .replace(/[oOqQdD]/g, '0')
+    .replace(/[iIlLtT]/g, '1')
+    .replace(/[rR]/g, '7')
+    .replace(/\D/g, '');
+  const out = [];
+  if (digits.length === 8) out.push(digits);
+  if (digits.length === 9) {
+    const preferred = digits.slice(0, 4) + digits.slice(5);
+    if (normalizeCompactIssueDateDigitsForContract_(preferred)) out.push(preferred);
+  }
+  if (digits.length > 8 && digits.length <= 10) {
+    for (let i = 0; i < digits.length; i++) {
+      const shortened = digits.slice(0, i) + digits.slice(i + 1);
+      if (shortened.length === 8 && out.indexOf(shortened) === -1) out.push(shortened);
+    }
+  }
+  return out;
+}
+
+function normalizeCompactIssueDateDigitsForContract_(digits) {
+  digits = String(digits || '').replace(/\D/g, '');
+  if (digits.length !== 8) return '';
+  const day = Number(digits.slice(0, 2));
+  const month = Number(digits.slice(2, 4));
+  const year = Number(digits.slice(4, 8));
+  if (year < 1990 || year > 2099 || month < 1 || month > 12 || day < 1 || day > 31) return '';
+  const daysInMonth = [31, isLeapYearForContract_(year) ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31][month - 1];
+  if (day > daysInMonth) return '';
+  return String(day).padStart(2, '0') + '/' + String(month).padStart(2, '0') + '/' + year;
+}
+
+function isLeapYearForContract_(year) {
+  return year % 400 === 0 || (year % 4 === 0 && year % 100 !== 0);
 }
 
 function isLikelyBackSideIdentityOcrForContract_(text) {
