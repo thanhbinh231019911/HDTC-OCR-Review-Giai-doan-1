@@ -139,6 +139,38 @@ function repairAssetAreaWordsInReviewJson(reviewJson, fullAssetOcrText) {
   return reviewJson;
 }
 
+function repairAssetLandAddressInReviewJson(reviewJson, fullAssetOcrText) {
+  if (!reviewJson) return reviewJson;
+  const assetText = fullAssetOcrText || (reviewJson.ocr_results || [])
+    .filter(function(item) { return item.group === 'asset'; })
+    .map(function(item) { return item.text || item.text_preview || ''; })
+    .join('\n');
+  const indexed = extractRealEstateIndexedLandFields_(assetText);
+  const address = indexed.land_address || '';
+  if (!address) return reviewJson;
+  (reviewJson.assets || []).forEach(function(asset) {
+    const field = asset && asset.real_estate && asset.real_estate.land_address;
+    if (!field || !field.hasOwnProperty('final_value') || field.manual_value) return;
+    const current = String(field.final_value || field.ai_value || '').trim();
+    if (current && !isBetterLandAddress_(current, address)) return;
+    field.ai_value = address;
+    field.final_value = address;
+    field.source = field.source || 'OCR_INDEXED_ASSET_TEXT';
+    field.confidence = Math.max(Number(field.confidence || 0), 0.86);
+  });
+  return reviewJson;
+}
+
+function isBetterLandAddress_(current, candidate) {
+  const currentNorm = removeVietnameseAccents_(current).toLowerCase();
+  const candidateNorm = removeVietnameseAccents_(candidate).toLowerCase();
+  if (!currentNorm) return true;
+  if (candidateNorm.indexOf(currentNorm) >= 0 && candidateNorm.length > currentNorm.length + 8) return true;
+  const currentParts = currentNorm.split(/\s*-\s*/).filter(Boolean).length;
+  const candidateParts = candidateNorm.split(/\s*-\s*/).filter(Boolean).length;
+  return candidateParts > currentParts && candidateNorm.length > currentNorm.length;
+}
+
 function extractAreaWordsFromCertificateText_(text) {
   text = String(text || '');
   if (!text) return '';
@@ -347,6 +379,13 @@ function enrichAssetFromOcr_(asset, text) {
     asset.real_estate.registry_number.source = 'OCR_ASSET_TEXT';
     asset.real_estate.registry_number.confidence = asset.real_estate.registry_number.confidence || 0.72;
   }
+  const indexedLandFields = extractRealEstateIndexedLandFields_(text);
+  if (indexedLandFields.land_address && (!asset.real_estate.land_address.final_value || isBetterLandAddress_(asset.real_estate.land_address.final_value, indexedLandFields.land_address))) {
+    asset.real_estate.land_address.ai_value = indexedLandFields.land_address;
+    asset.real_estate.land_address.final_value = indexedLandFields.land_address;
+    asset.real_estate.land_address.source = 'OCR_INDEXED_ASSET_TEXT';
+    asset.real_estate.land_address.confidence = Math.max(Number(asset.real_estate.land_address.confidence || 0), 0.86);
+  }
   const pairs = extractOwnerIdentityPairs_(text);
   const ownerAddress = extractOwnerAddressFromCertificateText_(text);
   if (ownerAddress && shouldReplaceOwnerListField_(asset.owner_address, ownerAddress, 1)) {
@@ -401,6 +440,80 @@ function shouldReplaceOwnerListField_(field, newValue, expectedCount) {
   if (!current) return true;
   const currentCount = current.split(';').map(function(v) { return v.trim(); }).filter(Boolean).length;
   return expectedCount > currentCount;
+}
+
+function extractRealEstateIndexedLandFields_(text) {
+  const block = extractLandPlotIndexedBlock_(text);
+  const items = extractIndexedCertificateItems_(block || text);
+  return {
+    land_address: cleanupIndexedCertificateValue_(items.b || '')
+  };
+}
+
+function extractLandPlotIndexedBlock_(text) {
+  const lines = String(text || '').split(/\r?\n/);
+  const out = [];
+  let inBlock = false;
+  for (let i = 0; i < lines.length; i++) {
+    const normalized = normalizeCertificateIndexLine_(lines[i]);
+    if (!inBlock && (
+      normalized.indexOf('1 thua dat') >= 0 ||
+      normalized.indexOf('thua dat') >= 0
+    )) {
+      inBlock = true;
+      out.push(lines[i]);
+      continue;
+    }
+    if (inBlock && i > 0 && /^(?:2|ii)\s*[\).:\-]?\s+/.test(normalized)) break;
+    if (inBlock) out.push(lines[i]);
+  }
+  return out.join('\n');
+}
+
+function extractIndexedCertificateItems_(text) {
+  const items = {};
+  const order = [];
+  const regex = /(^|\n)\s*([a-g]|đ|d)\s*[\).:]\s*/gi;
+  const matches = [];
+  let match;
+  while ((match = regex.exec(String(text || ''))) !== null) {
+    matches.push({
+      key: normalizeCertificateItemKey_(match[2]),
+      markerStart: match.index,
+      valueStart: match.index + match[0].length
+    });
+  }
+  for (let i = 0; i < matches.length; i++) {
+    const end = i + 1 < matches.length ? matches[i + 1].markerStart : String(text || '').length;
+    const rawValue = String(text || '').slice(matches[i].valueStart, end);
+    if (!items[matches[i].key]) {
+      items[matches[i].key] = rawValue;
+      order.push(matches[i].key);
+    }
+  }
+  return items;
+}
+
+function normalizeCertificateItemKey_(key) {
+  const normalized = removeVietnameseAccents_(String(key || '').toLowerCase());
+  return normalized === 'd' && String(key).toLowerCase() === 'đ' ? 'đ' : normalized;
+}
+
+function normalizeCertificateIndexLine_(line) {
+  return removeVietnameseAccents_(String(line || ''))
+    .toLowerCase()
+    .replace(/[.:)\-]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function cleanupIndexedCertificateValue_(value) {
+  return String(value || '')
+    .replace(/\r?\n+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .replace(/^(?:\u0111\u1ecba\s*ch\u1ec9|dia\s*chi|dia chi|address)\s*[:.-]?\s*/i, '')
+    .replace(/[;,.:\-\s]+$/g, '')
+    .trim();
 }
 
 function extractOwnerIdentityPairs_(text) {

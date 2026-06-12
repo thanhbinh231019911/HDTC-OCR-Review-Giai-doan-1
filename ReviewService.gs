@@ -45,6 +45,7 @@ function normalizeManualOverrideValueForStorage_(value) {
 function repairReviewDataFromFullOcr_(data, caseId) {
   const fullOcr = getFullOcrTextMapsForCase_(caseId, data);
   repairIdentityIssueDatesInReviewJson(data, fullOcr.byFileName);
+  repairAssetLandAddressInReviewJson(data, fullOcr.assetText);
   repairAssetAreaWordsInReviewJson(data, fullOcr.assetText);
   return data;
 }

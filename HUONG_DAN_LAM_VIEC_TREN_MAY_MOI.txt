@@ -178,6 +178,7 @@ IX. NGUYEN TAC COT LOI BAT BUOC DOC TRUOC KHI SUA CODE
 2. Review thong tin tai san bat dong san
 
 - Man hinh review tai san phai the hien dung noi dung tren bia dat/giay chung nhan, bao gom dau cham, dau phay, dau ngoac, dau muc I, II, 1, 2, a), b), c)... theo dung thu tu va cach ghi trong bia dat.
+- Khi OCR bia dat co bo cuc khac thuong hoac mot muc bi xuong dong, phai uu tien tach theo chi muc muc/diem: II, 1, 2, a), b), c), d), đ), e), g). Noi dung cua mot muc keo dai den ngay truoc chi muc ke tiep. Vi du `b) Dia chi` phai lay ca dong tiep theo cho den truoc `c) Dien tich`, khong chi lay dong cuoi.
 - Khong tu dien giai lai, khong rut gon, khong doi cach viet neu OCR/bia dat da co noi dung ro.
 - Vi du dien tich co dong bang chu thi phai giu dung dang: "88,7 m2 (Bang chu: Tam muoi tam phay bay met vuong)", khong duoc hien thanh "88,7 m2 Tam muoi tam phay bay met vuong".
 - Cac hang muc ve nha o, cong trinh xay dung, tai san khac gan lien voi dat neu bia dat ghi "Chua chung nhan quyen so huu", de trong, "-/-" hoac gia tri tuong tu thi khong can hien thi noi dung chi tiet ben duoi, neu co.
