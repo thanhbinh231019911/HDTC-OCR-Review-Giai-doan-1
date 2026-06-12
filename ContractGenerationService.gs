@@ -1285,7 +1285,7 @@ function normalizeCertificateNumberForContract_(certificateNumber, registryNumbe
 function normalizeCertificateTitleForContract_(title, realEstate) {
   realEstate = realEstate || {};
   const direct = cleanCertificateTitleForContract_(title || realEstate.certificate_title);
-  if (direct && !isGenericCertificateTitleForContract_(direct)) return direct;
+  if (direct && !isGenericCertificateTitleForContract_(direct) && !isShortBaseCertificateTitleForContract_(direct)) return direct;
   const rawSources = [
     realEstate.certificate_info_raw_text,
     realEstate.certificate_land_raw_text,
@@ -1308,7 +1308,7 @@ function normalizeCertificateTitleForContract_(title, realEstate) {
   }
   if (text.indexOf('quyen su dung dat') >= 0) return 'Gi\u1ea5y ch\u1ee9ng nh\u1eadn quy\u1ec1n s\u1eed d\u1ee5ng \u0111\u1ea5t';
   if (text.indexOf('quyen so huu nha o') >= 0) return 'Gi\u1ea5y ch\u1ee9ng nh\u1eadn quy\u1ec1n s\u1edf h\u1eefu nh\u00e0 \u1edf';
-  return cleanContractText_(title) || 'Gi\u1ea5y ch\u1ee9ng nh\u1eadn';
+  return direct || cleanContractText_(title) || 'Gi\u1ea5y ch\u1ee9ng nh\u1eadn';
 }
 
 function extractCertificateTitleFromOcrForContract_(text) {
@@ -1324,11 +1324,8 @@ function extractCertificateTitleFromOcrForContract_(text) {
       const next = normalizeSearchTextForContract_(lines[j]);
       if (!next) continue;
       if (isCertificateTitleStopLineForContract_(next)) break;
-      if (next.indexOf('quyen') >= 0 || next.indexOf('nha o') >= 0 || next.indexOf('tai san') >= 0 || next.indexOf('gan lien voi dat') >= 0) {
-        parts.push(lines[j]);
-      } else if (parts.length > 1) {
-        break;
-      }
+      if (!isCertificateTitleContinuationLineForContract_(next)) break;
+      parts.push(lines[j]);
     }
     const title = cleanCertificateTitleForContract_(parts.join(' '));
     if (title && !isGenericCertificateTitleForContract_(title)) return title;
@@ -1344,11 +1341,19 @@ function sliceCertificateTitleStartForContract_(line) {
 function isCertificateTitleStopLineForContract_(normalizedLine) {
   return normalizedLine.indexOf('so phat hanh') >= 0 ||
     normalizedLine.indexOf('so vao so') >= 0 ||
+    /^so\s+[a-z]{1,5}\s*\d/i.test(normalizedLine) ||
     normalizedLine.indexOf('i nguoi su dung') === 0 ||
     normalizedLine.indexOf('ii thua dat') === 0 ||
     normalizedLine.indexOf('iii so do') === 0 ||
     normalizedLine.indexOf('uy ban nhan dan') >= 0 ||
     /^(?:[ivx]+|[0-9]+)\s/.test(normalizedLine);
+}
+
+function isCertificateTitleContinuationLineForContract_(normalizedLine) {
+  if (!normalizedLine) return false;
+  if (/^(cong hoa|doc lap|uy ban|bo tai nguyen|so tai nguyen|van phong dang ky)\b/.test(normalizedLine)) return false;
+  if (/^(ngay|noi cap|cap ngay|ky ngay|ma vach)\b/.test(normalizedLine)) return false;
+  return normalizedLine.length <= 160;
 }
 
 function cleanCertificateTitleForContract_(value) {
@@ -1375,16 +1380,27 @@ function accentCertificateTitleWordsForContract_(value) {
     'va': 'v\u00e0', 'tai': 't\u00e0i', 'san': 's\u1ea3n', 'khac': 'kh\u00e1c',
     'gan': 'g\u1eafn', 'lien': 'li\u1ec1n', 'voi': 'v\u1edbi'
   };
+  let previousKey = '';
   return String(value || '').split(/(\s+|,\s*)/).map(function(token) {
     const key = removeVietnameseAccents_(token).toLowerCase().replace(/[^a-z]/g, '');
-    if (!key || !map[key]) return token;
-    return map[key];
+    if (!key) return token;
+    let replacement = map[key] || '';
+    if (key === 'dung' && previousKey !== 'su') replacement = '';
+    if (key === 'so' && previousKey !== 'quyen') replacement = '';
+    if ((key === 'huu' || key === 'hwuux' || key === 'hwux' || key === 'huux') && previousKey !== 'so') replacement = '';
+    if (key === 'o' && previousKey !== 'nha') replacement = '';
+    previousKey = key;
+    return replacement || token;
   }).join('').replace(/^gi\u1ea5y/, 'Gi\u1ea5y');
 }
 
 function isGenericCertificateTitleForContract_(value) {
   const text = normalizeSearchTextForContract_(value);
-  return text === 'giay chung nhan' || text === 'giay chung nhan quyen su dung dat';
+  return text === 'giay chung nhan';
+}
+
+function isShortBaseCertificateTitleForContract_(value) {
+  return normalizeSearchTextForContract_(value) === 'giay chung nhan quyen su dung dat';
 }
 
 function isShortCertificateTitleForContract_(current, extracted) {

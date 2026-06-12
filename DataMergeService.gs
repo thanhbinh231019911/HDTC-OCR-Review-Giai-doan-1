@@ -724,15 +724,12 @@ function extractCertificateTitleFromOcrForMerge_(text) {
     for (let j = i + 1; j < lines.length && parts.length < 5; j++) {
       const next = removeVietnameseAccents_(lines[j]).toLowerCase().replace(/[^a-z0-9]+/g, ' ').replace(/\s+/g, ' ').trim();
       if (isCertificateTitleStopLineForMerge_(next)) break;
-      if (next.indexOf('quyen') >= 0 || next.indexOf('nha o') >= 0 || next.indexOf('tai san') >= 0 || next.indexOf('gan lien voi dat') >= 0) {
-        parts.push(lines[j]);
-      } else if (parts.length > 1) {
-        break;
-      }
+      if (!isCertificateTitleContinuationLineForMerge_(next)) break;
+      parts.push(lines[j]);
     }
     const title = cleanCertificateTitleForMerge_(parts.join(' '));
     const titleText = removeVietnameseAccents_(title).toLowerCase();
-    if (title && titleText !== 'giay chung nhan' && titleText !== 'giay chung nhan quyen su dung dat') return title;
+    if (title && titleText !== 'giay chung nhan') return title;
   }
   return '';
 }
@@ -745,11 +742,19 @@ function sliceCertificateTitleStartForMerge_(line) {
 function isCertificateTitleStopLineForMerge_(normalizedLine) {
   return normalizedLine.indexOf('so phat hanh') >= 0 ||
     normalizedLine.indexOf('so vao so') >= 0 ||
+    /^so\s+[a-z]{1,5}\s*\d/i.test(normalizedLine) ||
     normalizedLine.indexOf('i nguoi su dung') === 0 ||
     normalizedLine.indexOf('ii thua dat') === 0 ||
     normalizedLine.indexOf('iii so do') === 0 ||
     normalizedLine.indexOf('uy ban nhan dan') >= 0 ||
     /^(?:[ivx]+|[0-9]+)\s/.test(normalizedLine);
+}
+
+function isCertificateTitleContinuationLineForMerge_(normalizedLine) {
+  if (!normalizedLine) return false;
+  if (/^(cong hoa|doc lap|uy ban|bo tai nguyen|so tai nguyen|van phong dang ky)\b/.test(normalizedLine)) return false;
+  if (/^(ngay|noi cap|cap ngay|ky ngay|ma vach)\b/.test(normalizedLine)) return false;
+  return normalizedLine.length <= 160;
 }
 
 function cleanCertificateTitleForMerge_(value) {
@@ -770,10 +775,17 @@ function accentCertificateTitleWordsForMerge_(value) {
     'va': 'v\u00e0', 'tai': 't\u00e0i', 'san': 's\u1ea3n', 'khac': 'kh\u00e1c',
     'gan': 'g\u1eafn', 'lien': 'li\u1ec1n', 'voi': 'v\u1edbi'
   };
+  let previousKey = '';
   return String(value || '').split(/(\s+|,\s*)/).map(function(token) {
     const key = removeVietnameseAccents_(token).toLowerCase().replace(/[^a-z]/g, '');
-    if (!key || !map[key]) return token;
-    return map[key];
+    if (!key) return token;
+    let replacement = map[key] || '';
+    if (key === 'dung' && previousKey !== 'su') replacement = '';
+    if (key === 'so' && previousKey !== 'quyen') replacement = '';
+    if ((key === 'huu' || key === 'hwuux' || key === 'hwux' || key === 'huux') && previousKey !== 'so') replacement = '';
+    if (key === 'o' && previousKey !== 'nha') replacement = '';
+    previousKey = key;
+    return replacement || token;
   }).join('').replace(/^gi\u1ea5y/, 'Gi\u1ea5y');
 }
 
