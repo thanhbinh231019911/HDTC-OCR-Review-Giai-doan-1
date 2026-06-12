@@ -343,6 +343,8 @@ function applyTemplate03bReplacements_(doc, values, finalData) {
   replaceLiteral_(body, '01/2026/9905438/H\u0110B\u0110', contractNo);
   replaceLiteral_(body, '01/2026/9905438/BB\u0110G ng\u00e0y .../06/2026', valuationNo + ' ng\u00e0y ' + buildShortContractDate_(values));
   replaceLiteral_(body, 'ng\u00e0y ... th\u00e1ng 06 n\u0103m 2026', contractDateText);
+  replaceLiteral_(body, 'ng\u00e0y 12 th\u00e1ng 06 n\u0103m 2026', contractDateText);
+  replaceLiteral_(body, 'ng\u00e0y 12/06/2026', 'ng\u00e0y ' + buildShortContractDate_(values));
 
   replaceLiteral_(body,
     '\u201cB\u00ean th\u1ebf ch\u1ea5p\u201d l\u00e0 \u00d4ng Ph\u1ea1m Ki\u00ean C\u01b0\u1eddng - B\u00e0 Nguy\u1ec5n Th\u1ecb Nh\u01b0 Hoa (v\u1edbi c\u00e1c th\u00f4ng tin n\u00eau t\u1ea1i ph\u1ea7n c\u00e1c b\u00ean tham gia H\u1ee3p \u0111\u1ed3ng \u1edf tr\u00ean)',
@@ -361,6 +363,7 @@ function applyTemplate03bReplacements_(doc, values, finalData) {
   applyMoneyWordsStyle03b_(body);
   normalizeJoinedPersonNamesInBody_(body, secured);
   boldContractPersonNames_(body, secured.concat(obligors));
+  unboldTemplate03bReferencePhrase_(body);
 
   replaceLiteral_(body, 'T\u00f2a \u00e1n nh\u00e2n d\u00e2n khu v\u1ef1c 13 \u2013 Ph\u00fa Th\u1ecd', values.toa_an_tranh_chap || '');
   replaceLiteral_(body, 'H\u1ee3p \u0111\u1ed3ng n\u00e0y \u0111\u01b0\u1ee3c l\u1eadp th\u00e0nh 05 b\u1ea3n', 'H\u1ee3p \u0111\u1ed3ng n\u00e0y \u0111\u01b0\u1ee3c l\u1eadp th\u00e0nh ' + buildContractCopyCount_(finalData) + ' b\u1ea3n');
@@ -426,11 +429,11 @@ function applyTemplate03bAssetBlock_(body, asset) {
   replaceLiteral_(body, 'Th\u1eeda \u0111\u1ea5t s\u1ed1: 353', 'Th\u1eeda \u0111\u1ea5t s\u1ed1: ' + (re.land_plot_number || ''));
   replaceLiteral_(body, 'T\u1edd b\u1ea3n \u0111\u1ed3 s\u1ed1: F-48-116(146-b-IV)', 'T\u1edd b\u1ea3n \u0111\u1ed3 s\u1ed1: ' + (re.map_sheet_number || ''));
   replaceLiteral_(body, '\u0110\u1ecba ch\u1ec9 th\u1eeda \u0111\u1ea5t: x\u00e3 L\u01b0\u01a1ng S\u01a1n, t\u1ec9nh Ph\u00fa Th\u1ecd', '\u0110\u1ecba ch\u1ec9 th\u1eeda \u0111\u1ea5t: ' + (re.land_address || ''));
-  replaceLiteral_(body, 'Di\u1ec7n t\u00edch:  227,2 m2 (b\u1eb1ng ch\u1eef: Hai tr\u0103m hai m\u01b0\u01a1i b\u1ea3y ph\u1ea9y hai m\u00e9t vu\u00f4ng)', 'Di\u1ec7n t\u00edch: ' + formatAreaForContract_(re.area));
+  replaceLiteral_(body, 'Di\u1ec7n t\u00edch:  227,2 m2 (b\u1eb1ng ch\u1eef: Hai tr\u0103m hai m\u01b0\u01a1i b\u1ea3y ph\u1ea9y hai m\u00e9t vu\u00f4ng)', 'Di\u1ec7n t\u00edch: ' + formatAreaForContract_(re.area, re.area_in_words));
   replaceLiteral_(body, 'H\u00ecnh th\u1ee9c s\u1eed d\u1ee5ng: S\u1eed d\u1ee5ng chung c\u1ee7a v\u1ee3 v\u00e0 ch\u1ed3ng', 'H\u00ecnh th\u1ee9c s\u1eed d\u1ee5ng: ' + (re.usage_form || ''));
   replaceLiteral_(body, 'M\u1ee5c \u0111\u00edch s\u1eed d\u1ee5ng: \u0110\u1ea5t \u1edf t\u1ea1i n\u00f4ng th\u00f4n (ONT)', 'M\u1ee5c \u0111\u00edch s\u1eed d\u1ee5ng: ' + (re.usage_purpose || ''));
   replaceLiteral_(body, 'Th\u1eddi h\u1ea1n s\u1eed d\u1ee5ng: L\u00e2u d\u00e0i', 'Th\u1eddi h\u1ea1n s\u1eed d\u1ee5ng: ' + (re.usage_term || ''));
-  replaceLiteral_(body, 'Ngu\u1ed3n g\u1ed1c s\u1eed d\u1ee5ng: Nh\u00e0 n\u01b0\u1edbc giao \u0111\u1ea5t c\u00f3 thu ti\u1ec1n s\u1eed d\u1ee5ng \u0111\u1ea5t', '');
+  replaceTemplate03bOptionalLiteral_(body, 'Ngu\u1ed3n g\u1ed1c s\u1eed d\u1ee5ng: Nh\u00e0 n\u01b0\u1edbc giao \u0111\u1ea5t c\u00f3 thu ti\u1ec1n s\u1eed d\u1ee5ng \u0111\u1ea5t', re.usage_origin ? 'Ngu\u1ed3n g\u1ed1c s\u1eed d\u1ee5ng: ' + re.usage_origin : '');
   applyTemplate03bPostIssueChangesBlock_(body, re.post_issue_changes);
   applyTemplate03bAttachedAssetBlock_(body, re.attached_assets);
   removeTemplate03bOptionalAssetLines_(body, re);
@@ -557,10 +560,23 @@ function splitCertificateLinesForContract_(value) {
     .filter(function(line) { return !isBlankContractValue_(line); });
 }
 
-function formatAreaForContract_(value) {
+function formatAreaForContract_(value, areaWords) {
   const text = cleanContractText_(value);
   if (!text) return '';
-  return /\bm\s*2\b|m\u00b2/i.test(text) ? text : text + ' m2';
+  let out = /\bm\s*2\b|m\u00b2/i.test(text) ? text : text + ' m2';
+  const words = normalizeAreaWordsForContract_(areaWords);
+  if (words && normalizeSearchTextForContract_(out).indexOf(normalizeSearchTextForContract_(words)) < 0) {
+    out += ' (B\u1eb1ng ch\u1eef: ' + words + ')';
+  }
+  return out;
+}
+
+function normalizeAreaWordsForContract_(value) {
+  const raw = cleanContractText_(value)
+    .replace(/^\s*\(?\s*b\u1eb1ng\s+ch\u1eef\s*:?\s*/i, '')
+    .replace(/\)\s*$/g, '')
+    .trim();
+  return isBlankContractValue_(raw) ? '' : raw;
 }
 
 function removeTemplate03bOptionalAssetLines_(body, realEstate) {
@@ -703,11 +719,12 @@ function buildContractPlaceholderMap_(finalData) {
     tai_san_1_so_thua: re.land_plot_number || '',
     tai_san_1_to_ban_do: re.map_sheet_number || '',
     tai_san_1_dia_chi: re.land_address || '',
-    tai_san_1_dien_tich: re.area || '',
+    tai_san_1_dien_tich: formatAreaForContract_(re.area, re.area_in_words),
+    tai_san_1_dien_tich_bang_chu: re.area_in_words || '',
     tai_san_1_hinh_thuc_su_dung: re.usage_form || '',
     tai_san_1_muc_dich_su_dung: re.usage_purpose || '',
     tai_san_1_thoi_han_su_dung: re.usage_term || '',
-    tai_san_1_nguon_goc_su_dung: '',
+    tai_san_1_nguon_goc_su_dung: re.usage_origin || '',
     tai_san_1_tai_san_gan_lien: re.attached_assets || '',
     tai_san_1_thay_doi_sau_cap: re.post_issue_changes || '',
 
@@ -835,6 +852,7 @@ function fillMissingIssueDatesForPeople_(people, ocrItems, allOcrItems) {
     if (!person.id_issue_date || typeof person.id_issue_date !== 'object' || !person.id_issue_date.hasOwnProperty('final_value')) {
       person.id_issue_date = makeField('Ng\u00e0y c\u1ea5p', '', '', '', 'OCR', '');
     }
+    if (cleanContractText_(person.id_issue_date.manual_value)) return;
     const id = normalizeDigitsForContract_(getReviewFieldValueForContract_(person.id_number));
     const documentType = getReviewFieldValueForContract_(person.id_document_type);
     const currentIssueDate = getReviewFieldValueForContract_(person.id_issue_date);
@@ -1153,6 +1171,38 @@ function normalizePostIssueChangesForContract_(value) {
   const text = normalizeSearchTextForContract_(raw);
   if (isBlankContractValue_(raw)) return '';
   if (text.indexOf('khong ghi nhan') >= 0 || text.indexOf('khong thay doi') >= 0 || text === '-') return '';
+  const lines = raw.split(/\r?\n|;\s*/).map(function(line) {
+    return cleanContractText_(line).replace(/\s+/g, ' ').trim();
+  }).filter(Boolean);
+  const meaningful = lines.filter(function(line) {
+    const compact = normalizeSearchTextForContract_(line);
+    if (!compact) return false;
+    if (compact.indexOf('iv nhung thay doi sau khi cap giay chung nhan') === 0) return false;
+    if (compact.indexOf('noi dung thay doi va co so phap ly') === 0) return false;
+    if (compact.indexOf('xac nhan cua co quan co tham quyen') === 0) return false;
+    if (compact.indexOf('so vao so cap gcn') === 0) return false;
+    if (/^(ha dong|ngay|tm uy ban|kt chu tich|pho chu tich|chu tich)\b/.test(compact)) return false;
+    if (/^(ty le|dan|quan|ha|ong nguyen|nguyen truong son|13 42|13 11|230|88 7)$/.test(compact)) return false;
+    return true;
+  });
+  return meaningful.length ? meaningful.join('; ') : '';
+}
+
+function normalizeAttachedAssetsForContract_(value) {
+  const raw = cleanContractText_(value).trim();
+  if (isBlankContractValue_(raw)) return '';
+  const normalized = normalizeSearchTextForContract_(raw);
+  const withoutUncertified = normalized
+    .replace(/\b\d+\s*/g, ' ')
+    .replace(/\b(nha o|cong trinh xay dung khac|rung san xuat la rung trong|cay lau nam|tai san gan lien voi dat)\b/g, ' ')
+    .replace(/\bchua chung nhan quyen so huu\b/g, ' ')
+    .replace(/\bchua chung nhan\b/g, ' ')
+    .replace(/\bkhong co\b/g, ' ')
+    .replace(/\bde trong\b/g, ' ')
+    .replace(/\b-\b/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  if (!withoutUncertified) return '';
   return raw;
 }
 
@@ -1424,10 +1474,13 @@ function addAssetPlaceholders_(map, prefix, asset) {
   map[prefix + '_so_thua'] = re.land_plot_number || '';
   map[prefix + '_to_ban_do'] = re.map_sheet_number || '';
   map[prefix + '_dia_chi'] = re.land_address || '';
-  map[prefix + '_dien_tich'] = re.area || '';
+  map[prefix + '_dien_tich'] = formatAreaForContract_(re.area, re.area_in_words);
+  map[prefix + '_dien_tich_bang_chu'] = re.area_in_words || '';
   map[prefix + '_muc_dich_su_dung'] = re.usage_purpose || '';
   map[prefix + '_thoi_han_su_dung'] = re.usage_term || '';
   map[prefix + '_hinh_thuc_su_dung'] = re.usage_form || '';
+  map[prefix + '_nguon_goc_su_dung'] = re.usage_origin || '';
+  map[prefix + '_thay_doi_sau_cap'] = re.post_issue_changes || '';
   map[prefix + '_tai_san_gan_lien'] = re.attached_assets || '';
 }
 
@@ -1456,10 +1509,11 @@ function buildAssetsLegalText_(assets) {
         re.issuing_authority ? 'boi ' + re.issuing_authority : '',
         re.land_plot_number ? 'thua dat so ' + re.land_plot_number : '',
         re.map_sheet_number ? 'to ban do so ' + re.map_sheet_number : '',
-        re.area ? 'dien tich ' + re.area : '',
+        re.area ? 'dien tich ' + formatAreaForContract_(re.area, re.area_in_words) : '',
         re.land_address ? 'Dia chi' + re.land_address : '',
         re.usage_purpose ? 'muc dich su dung ' + re.usage_purpose : '',
-        re.usage_term ? 'thoi han su dung ' + re.usage_term : ''
+        re.usage_term ? 'thoi han su dung ' + re.usage_term : '',
+        re.usage_origin ? 'nguon goc su dung ' + re.usage_origin : ''
       ].filter(Boolean).join(', ');
     }
     return [
@@ -1737,11 +1791,12 @@ function cleanContractAsset_(asset) {
       map_sheet_number: cleanContractText_(asset.real_estate.map_sheet_number),
       land_address: cleanContractText_(asset.real_estate.land_address),
       area: cleanContractText_(asset.real_estate.area),
+      area_in_words: normalizeAreaWordsForContract_(asset.real_estate.area_in_words),
       usage_form: cleanContractText_(asset.real_estate.usage_form),
       usage_purpose: cleanContractText_(asset.real_estate.usage_purpose),
       usage_term: cleanContractText_(asset.real_estate.usage_term),
-      usage_origin: '',
-      attached_assets: isBlankContractValue_(asset.real_estate.attached_assets) ? '' : cleanContractText_(asset.real_estate.attached_assets),
+      usage_origin: cleanContractText_(asset.real_estate.usage_origin),
+      attached_assets: normalizeAttachedAssetsForContract_(asset.real_estate.attached_assets),
       post_issue_changes: normalizePostIssueChangesForContract_(asset.real_estate.post_issue_changes),
       certificate_info_raw_text: cleanContractText_(asset.real_estate.certificate_info_raw_text),
       certificate_owner_raw_text: cleanContractText_(asset.real_estate.certificate_owner_raw_text),
@@ -1807,6 +1862,15 @@ function boldContractPersonNames_(body, people) {
       range = body.findText(escapeRegex_(name), range);
     }
   });
+}
+
+function unboldTemplate03bReferencePhrase_(body) {
+  const phrase = '(v\u1edbi c\u00e1c th\u00f4ng tin n\u00eau t\u1ea1i ph\u1ea7n c\u00e1c b\u00ean tham gia H\u1ee3p \u0111\u1ed3ng \u1edf tr\u00ean)';
+  let range = body.findText(escapeRegex_(phrase));
+  while (range) {
+    range.getElement().asText().setBold(range.getStartOffset(), range.getEndOffsetInclusive(), false);
+    range = body.findText(escapeRegex_(phrase), range);
+  }
 }
 
 function toVietnameseTitleCase_(value) {
