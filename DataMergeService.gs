@@ -215,6 +215,27 @@ function repairAssetLandAddressInReviewJson(reviewJson, fullAssetOcrText) {
   return reviewJson;
 }
 
+function repairAssetUsageTermInReviewJson(reviewJson, fullAssetOcrText) {
+  if (!reviewJson) return reviewJson;
+  const assetText = fullAssetOcrText || (reviewJson.ocr_results || [])
+    .filter(function(item) { return item.group === 'asset'; })
+    .map(function(item) { return item.text || item.text_preview || ''; })
+    .join('\n');
+  const indexed = extractRealEstateIndexedLandFields_(assetText);
+  const usageTerm = indexed.usage_term || '';
+  if (!usageTerm) return reviewJson;
+  (reviewJson.assets || []).forEach(function(asset) {
+    const field = asset && asset.real_estate && asset.real_estate.usage_term;
+    if (!field || !field.hasOwnProperty('final_value') || field.manual_value) return;
+    if (!shouldReplaceUsageTerm_(field, usageTerm)) return;
+    field.ai_value = usageTerm;
+    field.final_value = usageTerm;
+    field.source = field.source || 'OCR_INDEXED_ASSET_TEXT';
+    field.confidence = Math.max(Number(field.confidence || 0), 0.86);
+  });
+  return reviewJson;
+}
+
 function isBetterLandAddress_(current, candidate) {
   const currentNorm = removeVietnameseAccents_(current).toLowerCase();
   const candidateNorm = removeVietnameseAccents_(candidate).toLowerCase();
@@ -223,6 +244,27 @@ function isBetterLandAddress_(current, candidate) {
   const currentParts = currentNorm.split(/\s*-\s*/).filter(Boolean).length;
   const candidateParts = candidateNorm.split(/\s*-\s*/).filter(Boolean).length;
   return candidateParts > currentParts && candidateNorm.length > currentNorm.length;
+}
+
+function shouldReplaceUsageTerm_(field, candidate) {
+  if (!field || !candidate || field.manual_value) return false;
+  const current = String(field.final_value || field.ai_value || '').trim();
+  if (!current) return true;
+  const currentNorm = removeVietnameseAccents_(current).toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+  const candidateNorm = removeVietnameseAccents_(candidate).toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+  return currentNorm && candidateNorm && currentNorm === candidateNorm && current !== candidate;
+}
+
+function normalizeRealEstateUsageTerm_(value) {
+  const raw = String(value || '')
+    .replace(/\s+/g, ' ')
+    .replace(/^(?:th\u1eddi\s*h\u1ea1n\s*s\u1eed\s*d\u1ee5ng|thoi\s*han\s*su\s*dung)\s*[:.-]?\s*/i, '')
+    .replace(/[;,.:\-\s]+$/g, '')
+    .trim();
+  if (!raw) return '';
+  const normalized = removeVietnameseAccents_(raw).toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+  if (normalized === 'lau dai' || normalized.indexOf('lau dai') === 0) return 'lâu dài';
+  return raw;
 }
 
 function extractAreaWordsFromCertificateText_(text) {
@@ -440,6 +482,12 @@ function enrichAssetFromOcr_(asset, text) {
     asset.real_estate.land_address.source = 'OCR_INDEXED_ASSET_TEXT';
     asset.real_estate.land_address.confidence = Math.max(Number(asset.real_estate.land_address.confidence || 0), 0.86);
   }
+  if (indexedLandFields.usage_term && shouldReplaceUsageTerm_(asset.real_estate.usage_term, indexedLandFields.usage_term)) {
+    asset.real_estate.usage_term.ai_value = indexedLandFields.usage_term;
+    asset.real_estate.usage_term.final_value = indexedLandFields.usage_term;
+    asset.real_estate.usage_term.source = 'OCR_INDEXED_ASSET_TEXT';
+    asset.real_estate.usage_term.confidence = Math.max(Number(asset.real_estate.usage_term.confidence || 0), 0.86);
+  }
   const pairs = extractOwnerIdentityPairs_(text);
   const ownerAddress = extractOwnerAddressFromCertificateText_(text);
   if (ownerAddress && shouldReplaceOwnerListField_(asset.owner_address, ownerAddress, 1)) {
@@ -500,7 +548,8 @@ function extractRealEstateIndexedLandFields_(text) {
   const block = extractLandPlotIndexedBlock_(text);
   const items = extractIndexedCertificateItems_(block || text);
   return {
-    land_address: cleanupIndexedCertificateValue_(items.b || '') || extractDislocatedLandAddressFromBlock_(block || text)
+    land_address: cleanupIndexedCertificateValue_(items.b || '') || extractDislocatedLandAddressFromBlock_(block || text),
+    usage_term: normalizeRealEstateUsageTerm_(cleanupIndexedCertificateValue_(items.e || ''))
   };
 }
 
