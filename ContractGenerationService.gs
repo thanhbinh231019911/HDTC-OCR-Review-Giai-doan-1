@@ -919,7 +919,12 @@ function extractIssueDateFromContractOcrText_(text, documentType) {
     if (match) return normalizeContractDateValue_(match[1]);
   }
   const normalized = removeVietnameseAccents_(text).toLowerCase();
-  const idx = Math.max(normalized.indexOf('date of issue'), normalized.indexOf('ngay cap'), normalized.indexOf('cap ngay'));
+  const issueLabels = ['date of issue', 'ngay cap', 'cap ngay', 'ngay thang nam cap', 'ngay thang nam'];
+  let idx = -1;
+  for (let l = 0; l < issueLabels.length; l++) {
+    const found = normalized.indexOf(issueLabels[l]);
+    if (found >= 0 && (idx < 0 || found < idx)) idx = found;
+  }
   if (idx >= 0) {
     const date = text.slice(idx, idx + 100).match(/(\d{1,2}[\/.\-]\d{1,2}[\/.\-]\d{2,4})/);
     if (date) return normalizeContractDateValue_(date[1]);
@@ -937,6 +942,7 @@ function isLikelyBackSideIdentityOcrForContract_(text) {
   const normalized = removeVietnameseAccents_(String(text || '')).toLowerCase();
   return normalized.indexOf('idvnm') >= 0 ||
     normalized.indexOf('ngay cap') >= 0 ||
+    normalized.indexOf('ngay thang nam') >= 0 ||
     normalized.indexOf('date of issue') >= 0 ||
     normalized.indexOf('noi cu tru') >= 0 ||
     normalized.indexOf('dac diem nhan dang') >= 0 ||

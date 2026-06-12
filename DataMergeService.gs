@@ -933,7 +933,7 @@ function normalizePersonDates_(person) {
 
 function inferPersonIssueDateFromOcr_(person, ocrTextByFile) {
   const field = person && person.id_issue_date;
-  if (!field || (field.final_value || field.ai_value)) return;
+  if (!field || field.final_value) return;
   const documentType = person.id_document_type && person.id_document_type.final_value;
   const id = normalizeId_(person.id_number && person.id_number.final_value);
   if (id) {
@@ -981,7 +981,32 @@ function extractIssueDateByIdentityNumberFromOcr_(id, ocrTextByFile, documentTyp
       if (adjacentDate) return { date: adjacentDate, file_name: fileNames[adjacentIdx] };
     }
   }
+  const groupCandidates = [];
+  for (let g = 0; g < matchedIndexes.length; g++) {
+    const matchedFileName = fileNames[matchedIndexes[g]];
+    for (let c = 0; c < fileNames.length; c++) {
+      if (!sameUploadGroup_(matchedFileName, fileNames[c])) continue;
+      const candidateText = ocrTextByFile[fileNames[c]] || '';
+      if (!isLikelyBackSideIdentityOcr_(candidateText)) continue;
+      const candidateDate = extractIssueDateFromIdentityOcr_(candidateText, documentType);
+      if (!candidateDate) continue;
+      groupCandidates.push({ date: candidateDate, file_name: fileNames[c] });
+    }
+  }
+  const uniqueCandidates = uniqueIssueDateCandidates_(groupCandidates);
+  if (uniqueCandidates.length === 1) return uniqueCandidates[0];
   return { date: '', file_name: '' };
+}
+
+function uniqueIssueDateCandidates_(candidates) {
+  const seen = {};
+  const out = [];
+  (candidates || []).forEach(function(candidate) {
+    if (!candidate || !candidate.date || seen[candidate.date]) return;
+    seen[candidate.date] = true;
+    out.push(candidate);
+  });
+  return out;
 }
 
 function sameUploadGroup_(fileNameA, fileNameB) {
@@ -1005,6 +1030,7 @@ function identityOcrContainsId_(text, id) {
 function extractIssueDateFromIdentityOcr_(text, documentType) {
   text = String(text || '');
   if (!text) return '';
+  const normalized = removeVietnameseAccents_(text).toLowerCase();
   const patterns = [
     /(?:ng\u00e0y\s*,?\s*th\u00e1ng\s*,?\s*n\u0103m\s*c\u1ea5p|date\s*of\s*issue)\D{0,40}(\d{1,2}[\/.\-]\d{1,2}[\/.\-]\d{2,4})/i,
     /(?:ng\u00e0y\s*,?\s*th\u00e1ng\s*,?\s*n\u0103m|date\s*,?\s*month\s*,?\s*year)\D{0,40}(\d{1,2}[\/.\-]\d{1,2}[\/.\-]\d{2,4})/i,
@@ -1017,8 +1043,12 @@ function extractIssueDateFromIdentityOcr_(text, documentType) {
     const match = text.match(patterns[i]);
     if (match) return normalizeDateValue_(match[1]);
   }
-  const normalized = removeVietnameseAccents_(text).toLowerCase();
-  const idx = normalized.indexOf('date of issue');
+  const issueLabels = ['date of issue', 'ngay cap', 'cap ngay', 'ngay thang nam cap', 'ngay thang nam'];
+  let idx = -1;
+  for (let l = 0; l < issueLabels.length; l++) {
+    const found = normalized.indexOf(issueLabels[l]);
+    if (found >= 0 && (idx < 0 || found < idx)) idx = found;
+  }
   if (idx >= 0) {
     const tail = text.slice(idx, idx + 100);
     const date = tail.match(/(\d{1,2}[\/.\-]\d{1,2}[\/.\-]\d{2,4})/);
@@ -1037,6 +1067,7 @@ function isLikelyBackSideIdentityOcr_(text) {
   const normalized = removeVietnameseAccents_(String(text || '')).toLowerCase();
   return normalized.indexOf('idvnm') >= 0 ||
     normalized.indexOf('ngay cap') >= 0 ||
+    normalized.indexOf('ngay thang nam') >= 0 ||
     normalized.indexOf('date of issue') >= 0 ||
     normalized.indexOf('noi cu tru') >= 0 ||
     normalized.indexOf('dac diem nhan dang') >= 0 ||

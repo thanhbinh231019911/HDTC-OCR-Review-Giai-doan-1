@@ -695,7 +695,7 @@
       lines.push('<div class="asset-doc-line"><strong>1. ' + t('Thua dat') + ':</strong></div>');
       pushAssetLine(lines, 'a. ' + t('Thua dat so'), valueOf(re.land_plot_number) + (valueOf(re.map_sheet_number) ? '    ' + t('to ban do so') + ': ' + valueOf(re.map_sheet_number) : ''));
       pushAssetLine(lines, 'b. ' + t('Dia chi'), valueOf(re.land_address));
-      pushAssetLine(lines, 'c. ' + t('Dien tich'), joinNonEmpty([valueOf(re.area), valueOf(re.area_in_words) || extractAreaWordsFromOcr(ocrText)], ' '));
+      pushAssetLine(lines, 'c. ' + t('Dien tich'), formatAreaWithWords(valueOf(re.area), valueOf(re.area_in_words) || extractAreaWordsFromOcr(ocrText)));
       pushAssetLine(lines, 'd. ' + t('Hinh thuc su dung'), valueOf(re.usage_form));
       pushAssetLine(lines, '\u0111. ' + t('Muc dich su dung'), valueOf(re.usage_purpose));
       pushAssetLine(lines, 'e. ' + t('Thoi han su dung'), valueOf(re.usage_term));
@@ -760,6 +760,18 @@
 
     function joinNonEmpty(items, separator) {
       return (items || []).map(cleanValue).filter(Boolean).join(separator || ' ');
+    }
+
+    function formatAreaWithWords(area, areaWords) {
+      return joinNonEmpty([cleanValue(area), normalizeAreaWordsForDisplay(areaWords)], ' ');
+    }
+
+    function normalizeAreaWordsForDisplay(value) {
+      let text = cleanValue(value);
+      if (!text) return '';
+      text = text.replace(/^\(+|\)+$/g, '').trim();
+      text = text.replace(/^(?:B[Äƒa]ng\s+ch[á»¯u]|B\u1eb1ng\s+ch\u1eef|Bang\s+chu)\s*:\s*/i, '').trim();
+      return text ? '(B\u1eb1ng ch\u1eef: ' + text + ')' : '';
     }
 
     function simplifyAbsentCertificateText(value) {
