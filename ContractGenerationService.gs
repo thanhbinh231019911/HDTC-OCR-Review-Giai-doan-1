@@ -326,9 +326,10 @@ function applyTemplate03bReplacements_(doc, values, finalData) {
   const body = doc.getBody();
   const contractNo = buildMortgageContractNumber_(values);
   const valuationNo = contractNo.replace(/\/H\u0110B\u0110$/i, '/BB\u0110G');
-  const contractDateText = 'ng\u00e0y ' + (values.ngay_lap_hop_dong_ngay || '...') +
-    ' th\u00e1ng ' + (values.ngay_lap_hop_dong_thang || '...') +
-    ' n\u0103m ' + (values.ngay_lap_hop_dong_nam || '....');
+  const contractDate = resolveTemplate03bContractDate_(values);
+  const contractDateText = 'ng\u00e0y ' + contractDate.day +
+    ' th\u00e1ng ' + contractDate.month +
+    ' n\u0103m ' + contractDate.year;
 
   const secured = (finalData.secured_parties || []).map(cleanContractPerson_);
   const obligors = (finalData.obligors || []).map(cleanContractPerson_);
@@ -341,10 +342,11 @@ function applyTemplate03bReplacements_(doc, values, finalData) {
   const firstObligor = obligors[0] || secured[0] || {};
 
   replaceLiteral_(body, '01/2026/9905438/H\u0110B\u0110', contractNo);
-  replaceLiteral_(body, '01/2026/9905438/BB\u0110G ng\u00e0y .../06/2026', valuationNo + ' ng\u00e0y ' + buildShortContractDate_(values));
+  replaceLiteral_(body, '01/2026/9905438/BB\u0110G ng\u00e0y .../06/2026', valuationNo + ' ng\u00e0y ' + contractDate.short);
   replaceLiteral_(body, 'ng\u00e0y ... th\u00e1ng 06 n\u0103m 2026', contractDateText);
   replaceLiteral_(body, 'ng\u00e0y 12 th\u00e1ng 06 n\u0103m 2026', contractDateText);
-  replaceLiteral_(body, 'ng\u00e0y 12/06/2026', 'ng\u00e0y ' + buildShortContractDate_(values));
+  replaceLiteral_(body, 'ng\u00e0y 12/06/2026', 'ng\u00e0y ' + contractDate.short);
+  replaceTemplate03bDatePatterns_(body, contractDate);
 
   replaceLiteral_(body,
     '\u201cB\u00ean th\u1ebf ch\u1ea5p\u201d l\u00e0 \u00d4ng Ph\u1ea1m Ki\u00ean C\u01b0\u1eddng - B\u00e0 Nguy\u1ec5n Th\u1ecb Nh\u01b0 Hoa (v\u1edbi c\u00e1c th\u00f4ng tin n\u00eau t\u1ea1i ph\u1ea7n c\u00e1c b\u00ean tham gia H\u1ee3p \u0111\u1ed3ng \u1edf tr\u00ean)',
@@ -417,9 +419,10 @@ function applyTemplate03bSecuredPartyBlock_(body, secured) {
 
 function applyTemplate03bAssetBlock_(body, asset) {
   const re = asset.real_estate || {};
+  const certificateTitle = normalizeCertificateTitleForContract_(asset.certificate_title, re);
   const oldIntro = 'Quy\u1ec1n s\u1eed d\u1ee5ng \u0111\u1ea5t c\u1ee7a B\u00ean th\u1ebf ch\u1ea5p \u0111\u1ed1i v\u1edbi th\u1eeda \u0111\u1ea5t theo Gi\u1ea5y ch\u1ee9ng nh\u1eadn Quy\u1ec1n s\u1eed d\u1ee5ng \u0111\u1ea5t, quy\u1ec1n s\u1edf h\u1eefu t\u00e0i s\u1ea3n g\u1eafn li\u1ec1n v\u1edbi \u0111\u1ea5t s\u1ed1 AA04998919 (S\u1ed1 v\u00e0o s\u1ed5 c\u1ea5p GCN: CN8840) do Chi nh\u00e1nh v\u0103n ph\u00f2ng \u0111\u0103ng k\u00fd \u0111\u1ea5t \u0111ai L\u01b0\u01a1ng S\u01a1n c\u1ea5p ng\u00e0y 06/11/2025 , c\u1ee5 th\u1ec3 nh\u01b0 sau:';
   const newIntro = 'Quy\u1ec1n s\u1eed d\u1ee5ng \u0111\u1ea5t c\u1ee7a B\u00ean th\u1ebf ch\u1ea5p \u0111\u1ed1i v\u1edbi th\u1eeda \u0111\u1ea5t theo ' +
-    (asset.certificate_title || 'Gi\u1ea5y ch\u1ee9ng nh\u1eadn') +
+    certificateTitle +
     ' s\u1ed1 ' + (re.certificate_number || '') +
     (re.registry_number ? ' (S\u1ed1 v\u00e0o s\u1ed5 c\u1ea5p GCN: ' + re.registry_number + ')' : '') +
     (re.issuing_authority ? ' do ' + normalizeIssuingAuthorityForContract_(re.issuing_authority) : '') +
@@ -469,6 +472,71 @@ function replaceTemplate03bOptionalLiteral_(body, oldText, newText) {
   }
 }
 
+function resolveTemplate03bContractDate_(values) {
+  values = values || {};
+  const candidates = [
+    values.ngay_lap_hop_dong,
+    values.contract_date,
+    values.ngay_hop_dong,
+    values.ngay_bien_ban_dinh_gia
+  ];
+  for (let i = 0; i < candidates.length; i++) {
+    const parsed = parseContractDateInput_(candidates[i]);
+    if (parsed.full) {
+      return {
+        day: parsed.day || '...',
+        month: parsed.month || '...',
+        year: parsed.year || '....',
+        short: [parsed.day || '...', parsed.month || '...', parsed.year || '....'].join('/')
+      };
+    }
+  }
+  return {
+    day: values.ngay_lap_hop_dong_ngay || '...',
+    month: values.ngay_lap_hop_dong_thang || '...',
+    year: values.ngay_lap_hop_dong_nam || '....',
+    short: buildShortContractDate_(values)
+  };
+}
+
+function replaceTemplate03bDatePatterns_(body, contractDate) {
+  replaceDatePatternInTextBlocks_(body,
+    /ng\u00e0y\s+(?:\d{1,2}|\.\.\.)\s+th\u00e1ng\s+(?:\d{1,2}|\.\.\.)\s+n\u0103m\s+(?:\d{4}|\.\.\.\.)/gi,
+    'ng\u00e0y ' + contractDate.day + ' th\u00e1ng ' + contractDate.month + ' n\u0103m ' + contractDate.year);
+  replaceDatePatternInTextBlocks_(body,
+    /ng\u00e0y\s+(?:\d{1,2}|\.\.\.)\/(?:\d{1,2}|\.\.\.)\/(?:\d{4}|\.\.\.\.)/gi,
+    'ng\u00e0y ' + contractDate.short);
+}
+
+function replaceDatePatternInTextBlocks_(body, pattern, replacement) {
+  for (let i = 0; i < body.getNumChildren(); i++) {
+    const child = body.getChild(i);
+    if (!isTextBlockElement_(child)) continue;
+    const text = child.getText();
+    const compact = normalizeSearchTextForContract_(text);
+    if (compact.indexOf('hop dong the chap bat dong san') < 0 &&
+        compact.indexOf('bien ban dinh gia') < 0 &&
+        compact.indexOf('bbdg') < 0) {
+      continue;
+    }
+    const matches = [];
+    pattern.lastIndex = 0;
+    text.replace(pattern, function(match) {
+      matches.push({ text: match, index: arguments[arguments.length - 2] });
+      return match;
+    });
+    pattern.lastIndex = 0;
+    if (!matches.length) continue;
+    const textElement = child.editAsText();
+    for (let m = matches.length - 1; m >= 0; m--) {
+      const start = matches[m].index;
+      const end = start + matches[m].text.length - 1;
+      textElement.deleteText(start, end);
+      textElement.insertText(start, replacement);
+    }
+  }
+}
+
 function applyTemplate03bAttachedAssetBlock_(body, attachedAssets) {
   const heading = findTemplate03bAttachedAssetHeading_(body);
   removeTemplate03bSampleAttachedAssetDetails_(body);
@@ -492,6 +560,8 @@ function setTemplate03bAttachedHeadingText_(heading, listItemText, paragraphText
   } else {
     heading.setText(paragraphText);
   }
+  const text = heading.editAsText ? heading.editAsText() : null;
+  if (text) text.setBold(0, heading.getText().length - 1, true);
 }
 
 function applyTemplate03bPostIssueChangesBlock_(body, postIssueChanges) {
@@ -581,6 +651,7 @@ function normalizeAreaWordsForContract_(value) {
 
 function removeTemplate03bOptionalAssetLines_(body, realEstate) {
   const shouldRemoveNote = isBlankContractValue_(realEstate && realEstate.post_issue_changes);
+  const shouldRemoveSource = isBlankContractValue_(realEstate && realEstate.usage_origin);
   for (let i = body.getNumChildren() - 1; i >= 0; i--) {
     const child = body.getChild(i);
     if (!isTextBlockElement_(child)) continue;
@@ -589,7 +660,7 @@ function removeTemplate03bOptionalAssetLines_(body, realEstate) {
     const compact = normalized.replace(/\s+/g, ' ').trim();
     const isListItem = child.getType && child.getType() === DocumentApp.ElementType.LIST_ITEM;
     const removeEmptyBullet = (isListItem && compact === '') || compact === '-' || compact === '- :' || compact === '\u2013';
-    const removeSource = compact.match(/^-?\s*nguon goc su dung\s*:?/);
+    const removeSource = compact.match(/^-?\s*nguon goc su dung\s*:?/) && shouldRemoveSource;
     const removeNote = compact.match(/^-?\s*ghi chu\s*:?/) && shouldRemoveNote;
     if (removeEmptyBullet || removeSource || removeNote) {
       body.removeChild(child);
@@ -1162,6 +1233,30 @@ function normalizeCertificateNumberForContract_(certificateNumber, registryNumbe
   return cert;
 }
 
+function normalizeCertificateTitleForContract_(title, realEstate) {
+  realEstate = realEstate || {};
+  const rawPool = [
+    title,
+    realEstate.certificate_title,
+    realEstate.certificate_info_raw_text,
+    realEstate.certificate_land_raw_text,
+    realEstate.certificate_owner_raw_text
+  ].map(cleanContractText_).join(' ');
+  const text = normalizeSearchTextForContract_(rawPool);
+  if (text.indexOf('quyen su dung dat quyen so huu nha o va tai san khac gan lien voi dat') >= 0 ||
+      text.indexOf('quyen su dung dat quyen so huu nha va tai san khac gan lien voi dat') >= 0 ||
+      text.indexOf('quyen su dung dat va quyen so huu nha o va tai san khac gan lien voi dat') >= 0) {
+    return 'Gi\u1ea5y ch\u1ee9ng nh\u1eadn quy\u1ec1n s\u1eed d\u1ee5ng \u0111\u1ea5t, quy\u1ec1n s\u1edf h\u1eefu nh\u00e0 \u1edf v\u00e0 t\u00e0i s\u1ea3n kh\u00e1c g\u1eafn li\u1ec1n v\u1edbi \u0111\u1ea5t';
+  }
+  if (text.indexOf('quyen su dung dat quyen so huu tai san gan lien voi dat') >= 0 ||
+      text.indexOf('quyen su dung dat va quyen so huu tai san gan lien voi dat') >= 0) {
+    return 'Gi\u1ea5y ch\u1ee9ng nh\u1eadn quy\u1ec1n s\u1eed d\u1ee5ng \u0111\u1ea5t, quy\u1ec1n s\u1edf h\u1eefu t\u00e0i s\u1ea3n g\u1eafn li\u1ec1n v\u1edbi \u0111\u1ea5t';
+  }
+  if (text.indexOf('quyen su dung dat') >= 0) return 'Gi\u1ea5y ch\u1ee9ng nh\u1eadn quy\u1ec1n s\u1eed d\u1ee5ng \u0111\u1ea5t';
+  if (text.indexOf('quyen so huu nha o') >= 0) return 'Gi\u1ea5y ch\u1ee9ng nh\u1eadn quy\u1ec1n s\u1edf h\u1eefu nh\u00e0 \u1edf';
+  return cleanContractText_(title) || 'Gi\u1ea5y ch\u1ee9ng nh\u1eadn';
+}
+
 function normalizeCertificateCodeForContract_(value) {
   return cleanContractText_(value).replace(/\s+/g, '').trim();
 }
@@ -1204,6 +1299,38 @@ function normalizeAttachedAssetsForContract_(value) {
     .trim();
   if (!withoutUncertified) return '';
   return raw;
+}
+
+function normalizeUsageOriginForContract_(value, rawText) {
+  const direct = cleanContractText_(value).trim();
+  if (!isBlankContractValue_(direct)) return direct;
+  const lines = cleanContractText_(rawText).split(/\r?\n|;\s*/).map(function(line) {
+    return line.replace(/\s+/g, ' ').trim();
+  }).filter(Boolean);
+  for (let i = 0; i < lines.length; i++) {
+    const compact = normalizeSearchTextForContract_(lines[i]);
+    if (compact.indexOf('nguon goc su dung') < 0) continue;
+    let valueLine = lines[i].replace(/^.*?[:：]\s*/, '').trim();
+    const parts = [];
+    if (valueLine && normalizeSearchTextForContract_(valueLine).indexOf('nguon goc su dung') < 0) parts.push(valueLine);
+    for (let j = i + 1; j < lines.length; j++) {
+      if (isAssetFieldMarkerForContract_(lines[j])) break;
+      parts.push(lines[j]);
+    }
+    const out = parts.join(' ').replace(/\s+/g, ' ').trim();
+    if (!isBlankContractValue_(out)) return out;
+  }
+  return '';
+}
+
+function isAssetFieldMarkerForContract_(line) {
+  const text = normalizeSearchTextForContract_(line);
+  return /^(?:[a-z]\s|[a-z]\)|[0-9]+\s|[0-9]+\.|i{1,4}\s)/.test(text) ||
+    text.indexOf('nha o') === 0 ||
+    text.indexOf('cong trinh') === 0 ||
+    text.indexOf('rung san xuat') === 0 ||
+    text.indexOf('cay lau nam') === 0 ||
+    text.indexOf('ghi chu') === 0;
 }
 
 function resolveDisputeCourtForContract_(value) {
@@ -1261,6 +1388,14 @@ function parseContractDateInput_(value) {
   const currentYear = Utilities.formatDate(today, Session.getScriptTimeZone(), 'yyyy');
   const result = { raw: raw, day: '', month: '', year: currentYear, full: '' };
   if (!raw) return result;
+  const ellipsisMatch = raw.match(/^(\.{2,}|\d{1,2})[\/\-](\.{2,}|\d{1,2})[\/\-](\.{2,}|\d{2,4})$/);
+  if (ellipsisMatch) {
+    result.day = normalizeDateToken_(ellipsisMatch[1]);
+    result.month = normalizeDateToken_(ellipsisMatch[2]);
+    result.year = normalizeDateToken_(ellipsisMatch[3]) || currentYear;
+    result.full = [result.day || '...', result.month || '...', result.year || '....'].join('/');
+    return result;
+  }
   const parts = raw.split(/[\/\-.]/).map(function(part) { return part.trim(); });
   if (parts.length >= 3) {
     result.day = normalizeDateToken_(parts[0]);
@@ -1783,6 +1918,7 @@ function cleanContractAsset_(asset) {
     owner_identity_summary: cleanContractText_(asset.owner_identity_summary),
     certificate_title: cleanContractText_(asset.certificate_title),
     real_estate: {
+      certificate_title: cleanContractText_(asset.real_estate.certificate_title),
       certificate_number: normalizeCertificateNumberForContract_(asset.real_estate.certificate_number, asset.real_estate.registry_number),
       registry_number: normalizeCertificateCodeForContract_(asset.real_estate.registry_number),
       issuing_authority: normalizeIssuingAuthorityForContract_(asset.real_estate.issuing_authority),
@@ -1795,7 +1931,11 @@ function cleanContractAsset_(asset) {
       usage_form: cleanContractText_(asset.real_estate.usage_form),
       usage_purpose: cleanContractText_(asset.real_estate.usage_purpose),
       usage_term: cleanContractText_(asset.real_estate.usage_term),
-      usage_origin: cleanContractText_(asset.real_estate.usage_origin),
+      usage_origin: normalizeUsageOriginForContract_(asset.real_estate.usage_origin, [
+        asset.real_estate.certificate_land_raw_text,
+        asset.real_estate.certificate_info_raw_text,
+        asset.real_estate.certificate_attached_raw_text
+      ]),
       attached_assets: normalizeAttachedAssetsForContract_(asset.real_estate.attached_assets),
       post_issue_changes: normalizePostIssueChangesForContract_(asset.real_estate.post_issue_changes),
       certificate_info_raw_text: cleanContractText_(asset.real_estate.certificate_info_raw_text),
