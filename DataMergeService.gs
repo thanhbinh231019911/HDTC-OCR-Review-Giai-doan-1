@@ -446,7 +446,7 @@ function extractRealEstateIndexedLandFields_(text) {
   const block = extractLandPlotIndexedBlock_(text);
   const items = extractIndexedCertificateItems_(block || text);
   return {
-    land_address: cleanupIndexedCertificateValue_(items.b || '')
+    land_address: cleanupIndexedCertificateValue_(items.b || '') || extractDislocatedLandAddressFromBlock_(block || text)
   };
 }
 
@@ -512,6 +512,70 @@ function cleanupIndexedCertificateValue_(value) {
     .replace(/\r?\n+/g, ' ')
     .replace(/\s+/g, ' ')
     .replace(/^(?:\u0111\u1ecba\s*ch\u1ec9|dia\s*chi|dia chi|address)\s*[:.-]?\s*/i, '')
+    .replace(/[;,.:\-\s]+$/g, '')
+    .trim();
+}
+
+function extractDislocatedLandAddressFromBlock_(text) {
+  const lines = String(text || '').split(/\r?\n/)
+    .map(function(line) { return String(line || '').replace(/\s+/g, ' ').trim(); })
+    .filter(Boolean);
+  const scored = [];
+  for (let i = 0; i < lines.length; i++) {
+    if (!isLikelyLandAddressLine_(lines[i])) continue;
+    scored.push({ index: i, line: lines[i], score: scoreLandAddressLine_(lines[i]) });
+  }
+  if (!scored.length) return '';
+  const selected = [];
+  for (let j = 0; j < scored.length; j++) {
+    const item = scored[j];
+    const nearSelected = selected.length && Math.abs(item.index - selected[selected.length - 1].index) <= 6;
+    if (item.score < 2 && !(nearSelected && item.score >= 1)) continue;
+    if (!selected.length || nearSelected) {
+      selected.push(item);
+    }
+  }
+  const best = selected.length ? selected : [scored.sort(function(a, b) { return b.score - a.score; })[0]];
+  const address = best
+    .sort(function(a, b) { return a.index - b.index; })
+    .map(function(item) { return item.line; })
+    .join(' ');
+  return cleanupLandAddressCandidate_(address);
+}
+
+function isLikelyLandAddressLine_(line) {
+  const normalized = removeVietnameseAccents_(line).toLowerCase();
+  if (!normalized || normalized.length < 6) return false;
+  if (/^\d+(?:[,.]\d+)?\s*m/.test(normalized)) return false;
+  if (/^(?:a|b|c|d|e|g)\s*[\).:]/i.test(line)) return false;
+  if (normalized.indexOf('to ban do') >= 0 ||
+      normalized.indexOf('so thua') >= 0 ||
+      normalized.indexOf('thua dat') >= 0 ||
+      normalized.indexOf('dien tich') >= 0) return false;
+  return normalized.indexOf('phuong') >= 0 ||
+    normalized.indexOf('xa ') >= 0 ||
+    normalized.indexOf('thi tran') >= 0 ||
+    normalized.indexOf('quan') >= 0 ||
+    normalized.indexOf('huyen') >= 0 ||
+    normalized.indexOf('thanh pho') >= 0 ||
+    normalized.indexOf('tinh') >= 0 ||
+    /\s[-–—]\s/.test(line);
+}
+
+function scoreLandAddressLine_(line) {
+  const normalized = removeVietnameseAccents_(line).toLowerCase();
+  let score = 0;
+  ['phuong', 'xa ', 'thi tran', 'quan', 'huyen', 'thanh pho', 'tinh'].forEach(function(token) {
+    if (normalized.indexOf(token) >= 0) score++;
+  });
+  if (/\s[-–—]\s/.test(line)) score++;
+  return score;
+}
+
+function cleanupLandAddressCandidate_(value) {
+  return String(value || '')
+    .replace(/\s+/g, ' ')
+    .replace(/\b(?:III|II)\s*[.:].*$/i, '')
     .replace(/[;,.:\-\s]+$/g, '')
     .trim();
 }
