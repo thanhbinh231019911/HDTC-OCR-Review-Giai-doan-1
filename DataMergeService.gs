@@ -162,6 +162,27 @@ function repairAssetCertificateTitleInReviewJson(reviewJson, fullAssetOcrText) {
   return reviewJson;
 }
 
+function repairAssetIssuingAuthorityInReviewJson(reviewJson, fullAssetOcrText) {
+  if (!reviewJson) return reviewJson;
+  const assetText = fullAssetOcrText || (reviewJson.ocr_results || [])
+    .filter(function(item) { return item.group === 'asset'; })
+    .map(function(item) { return item.text || item.text_preview || ''; })
+    .join('\n');
+  const authority = extractRealEstateIssuingAuthority_(assetText);
+  if (!authority) return reviewJson;
+  (reviewJson.assets || []).forEach(function(asset) {
+    const field = asset && asset.real_estate && asset.real_estate.issuing_authority;
+    if (!field || !field.hasOwnProperty('final_value') || field.manual_value) return;
+    const current = String(field.final_value || field.ai_value || '').trim();
+    if (current) return;
+    field.ai_value = authority;
+    field.final_value = authority;
+    field.source = field.source || 'OCR_ASSET_TEXT_AUTHORITY_REPAIR';
+    field.confidence = Math.max(Number(field.confidence || 0), 0.84);
+  });
+  return reviewJson;
+}
+
 function isShortCertificateTitleForReviewRepair_(current, extracted) {
   const currentText = removeVietnameseAccents_(current).toLowerCase().replace(/[^a-z0-9]+/g, ' ').replace(/\s+/g, ' ').trim();
   const extractedText = removeVietnameseAccents_(extracted).toLowerCase().replace(/[^a-z0-9]+/g, ' ').replace(/\s+/g, ' ').trim();
@@ -858,6 +879,65 @@ function extractRealEstateRegistryNumber_(text) {
   if (direct) return normalizeCertificateCodeValue_(direct[1]);
   const candidates = normalized.match(/\b(?:CS|CT|CN|CH|CL|HX|VP|DC|DL)[0-9][A-Z0-9.\/-]{1,20}\b/gi) || [];
   return candidates.length ? normalizeCertificateCodeValue_(candidates[0]) : '';
+}
+
+function extractRealEstateIssuingAuthority_(text) {
+  const raw = String(text || '').replace(/\s+/g, ' ').trim();
+  if (!raw) return '';
+  const direct = raw.match(/\b(?:do|duoc|được)\s+(.{5,160}?)\s+c.{0,3}p\s+ng.{0,3}y/i);
+  if (direct) {
+    const directCleaned = cleanRealEstateIssuingAuthority_(direct[1]);
+    if (directCleaned) return directCleaned;
+  }
+  const plain = removeVietnameseAccents_(raw).toLowerCase();
+  const anchors = [
+    { start: ' do ', end: ' cap ngay ' },
+    { start: ' duoc ', end: ' cap ngay ' }
+  ];
+  for (let i = 0; i < anchors.length; i++) {
+    const found = extractTextBetweenNormalizedAnchors_(raw, plain, anchors[i].start, anchors[i].end);
+    const cleaned = cleanRealEstateIssuingAuthority_(found);
+    if (cleaned) return cleaned;
+  }
+  const lines = String(text || '').split(/\r?\n/).map(function(line) {
+    return line.replace(/\s+/g, ' ').trim();
+  }).filter(Boolean);
+  for (let l = 0; l < lines.length; l++) {
+    const linePlain = removeVietnameseAccents_(lines[l]).toLowerCase();
+    if (linePlain.indexOf('uy ban nhan dan') >= 0 || linePlain.indexOf('so tai nguyen') >= 0 || linePlain.indexOf('van phong dang ky dat dai') >= 0) {
+      const cleanedLine = cleanRealEstateIssuingAuthority_(lines[l]);
+      if (cleanedLine) return cleanedLine;
+    }
+  }
+  return '';
+}
+
+function extractTextBetweenNormalizedAnchors_(raw, normalized, startAnchor, endAnchor) {
+  const start = normalized.indexOf(startAnchor);
+  if (start < 0) return '';
+  const from = start + startAnchor.length;
+  const end = normalized.indexOf(endAnchor, from);
+  if (end < 0 || end <= from) return '';
+  return raw.slice(from, end);
+}
+
+function cleanRealEstateIssuingAuthority_(value) {
+  let raw = String(value || '')
+    .replace(/^(?:do|duoc|được)\s+/i, '')
+    .replace(/\s+/g, ' ')
+    .replace(/[;,.:\-\s]+$/g, '')
+    .trim();
+  if (!raw) return '';
+  const plain = removeVietnameseAccents_(raw).toLowerCase();
+  const keepFrom = [
+    plain.indexOf('uy ban nhan dan'),
+    plain.indexOf('so tai nguyen'),
+    plain.indexOf('van phong dang ky dat dai'),
+    plain.indexOf('chi nhanh van phong dang ky dat dai')
+  ].filter(function(index) { return index >= 0; }).sort(function(a, b) { return a - b; })[0];
+  if (keepFrom > 0) raw = raw.slice(keepFrom).trim();
+  if (raw.length > 160) return '';
+  return normalizeVietnameseAgencyNameClean_(raw);
 }
 function applyFormPriorityRules_(reviewJson) {
   function applyPersonAddress(person) {
