@@ -173,6 +173,7 @@ IX. NGUYEN TAC COT LOI BAT BUOC DOC TRUOC KHI SUA CODE
 - Khi can lay ngay cap tu mat sau, phai dam bao mat sau do thuoc cung so CCCD/Can cuoc/cung nguoi; neu khong chac thi de trong hoac canh bao de sua tay.
 - Voi mat sau CCCD co MRZ dong dau dang "IDVNM...", bo qua phan chu cai va ky tu "<", chi tinh phan so. Neu sau IDVNM co 22 so lien ke thi 10 so dau la thong tin khac, 12 so tiep theo la so CCCD/Can cuoc dung de khop voi mat truoc. Vi du "IDVNM0760027248001076002724<9" cho ra so CCCD "001076002724".
 - Quy tac MRZ CCCD nay ap dung chung cho moi nguoi trong ho so, khong phan biet Ben bao dam/Ben duoc bao dam; neu co 4-5 Ben bao dam thi van khop tung nguoi bang so CCCD/Can cuoc rieng, khong dung vi tri hay thu tu gan nhat.
+- MRZ chi dung de khop dung nguoi; ngay cap van phai doc tu dong "Ngay, thang, nam / Date, month, year" ro rang. Neu OCR ngay cap hong thanh dang nhu "Oro712021", "Or0712021" hoac khong du dinh dang ngay/thang/nam thi khong duoc suy dien, phai de "Khong ro, de nghi sua thu cong" hoac chay OCR fallback vung ngay cap.
 
 2. Review thong tin tai san bat dong san
 

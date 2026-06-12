@@ -835,13 +835,28 @@ function fillMissingIssueDatesForPeople_(people, ocrItems, allOcrItems) {
     if (!person.id_issue_date || typeof person.id_issue_date !== 'object' || !person.id_issue_date.hasOwnProperty('final_value')) {
       person.id_issue_date = makeField('Ng\u00e0y c\u1ea5p', '', '', '', 'OCR', '');
     }
-    if (getReviewFieldValueForContract_(person.id_issue_date)) return;
     const id = normalizeDigitsForContract_(getReviewFieldValueForContract_(person.id_number));
+    const documentType = getReviewFieldValueForContract_(person.id_document_type);
+    const currentIssueDate = getReviewFieldValueForContract_(person.id_issue_date);
+    if (currentIssueDate && id) {
+      const verifiedIssueDate = findIssueDateForContractPerson_(id, documentType, ocrItems, allOcrItems);
+      if (verifiedIssueDate && verifiedIssueDate !== currentIssueDate) {
+        person.id_issue_date.ai_value = verifiedIssueDate;
+        person.id_issue_date.final_value = verifiedIssueDate;
+        person.id_issue_date.source = person.id_issue_date.source || 'OCR_ID_MATCH_CORRECTED';
+        person.id_issue_date.confidence = person.id_issue_date.confidence || 0.9;
+      } else if (!verifiedIssueDate && hasIdentityBackSideOcrForContractId_(id, ocrItems.concat(allOcrItems))) {
+        person.id_issue_date.ai_value = '';
+        person.id_issue_date.final_value = '';
+        person.id_issue_date.source = person.id_issue_date.source || 'OCR_DATE_UNREADABLE';
+        person.id_issue_date.confidence = '';
+      }
+      return;
+    }
     if (id) {
       for (let i = 0; i < ocrItems.length; i++) {
         const text = ocrItems[i].text || '';
         if (!contractOcrContainsIdentityId_(text, id)) continue;
-        const documentType = getReviewFieldValueForContract_(person.id_document_type);
         const issueDate = extractIssueDateFromContractOcrText_(text, documentType) ||
           extractIssueDateFromContractOcrText_(ocrItems[i + 1] && ocrItems[i + 1].text, documentType) ||
           extractIssueDateFromContractOcrText_(ocrItems[i - 1] && ocrItems[i - 1].text, documentType);
@@ -858,7 +873,6 @@ function fillMissingIssueDatesForPeople_(people, ocrItems, allOcrItems) {
       for (let k = 0; k < allOcrItems.length; k++) {
         const allText = allOcrItems[k].text || '';
         if (!contractOcrContainsIdentityId_(allText, id)) continue;
-        const documentType = getReviewFieldValueForContract_(person.id_document_type);
         const issueDateFromCaseOcr = extractIssueDateFromContractOcrText_(allText, documentType) ||
           extractIssueDateFromContractOcrText_(allOcrItems[k + 1] && allOcrItems[k + 1].text, documentType) ||
           extractIssueDateFromContractOcrText_(allOcrItems[k - 1] && allOcrItems[k - 1].text, documentType);
@@ -902,6 +916,29 @@ function getReviewFieldValueForContract_(field) {
 
 function normalizeDigitsForContract_(value) {
   return String(value || '').replace(/\D/g, '');
+}
+
+function findIssueDateForContractPerson_(id, documentType, ocrItems, allOcrItems) {
+  const pools = [ocrItems || [], allOcrItems || []];
+  for (let p = 0; p < pools.length; p++) {
+    for (let i = 0; i < pools[p].length; i++) {
+      const text = pools[p][i].text || '';
+      if (!contractOcrContainsIdentityId_(text, id)) continue;
+      const issueDate = extractIssueDateFromContractOcrText_(text, documentType) ||
+        extractIssueDateFromContractOcrText_(pools[p][i + 1] && pools[p][i + 1].text, documentType) ||
+        extractIssueDateFromContractOcrText_(pools[p][i - 1] && pools[p][i - 1].text, documentType);
+      if (issueDate) return issueDate;
+    }
+  }
+  return '';
+}
+
+function hasIdentityBackSideOcrForContractId_(id, ocrItems) {
+  for (let i = 0; i < (ocrItems || []).length; i++) {
+    const text = ocrItems[i].text || '';
+    if (contractOcrContainsIdentityId_(text, id) && isLikelyBackSideIdentityOcrForContract_(text)) return true;
+  }
+  return false;
 }
 
 function contractOcrContainsIdentityId_(text, id) {

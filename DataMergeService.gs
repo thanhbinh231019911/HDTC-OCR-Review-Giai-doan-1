@@ -98,11 +98,13 @@ function repairIdentityIssueDatesInReviewJson(reviewJson, ocrTextByFileOverride)
     if (!id) return;
     const documentType = person.id_document_type && person.id_document_type.final_value;
     const inferred = extractIssueDateByIdentityNumberFromOcr_(id, ocrTextByFile, documentType);
-    if (!inferred.date) return;
-    person.id_issue_date.ai_value = inferred.date;
-    person.id_issue_date.source = inferred.file_name || person.id_issue_date.source || 'OCR_ID_MATCH';
-    person.id_issue_date.confidence = Math.max(Number(person.id_issue_date.confidence || 0), 0.9);
-    if (!person.id_issue_date.manual_value) person.id_issue_date.final_value = inferred.date;
+    if (inferred.date) {
+      person.id_issue_date.ai_value = inferred.date;
+      person.id_issue_date.source = inferred.file_name || person.id_issue_date.source || 'OCR_ID_MATCH';
+      person.id_issue_date.confidence = Math.max(Number(person.id_issue_date.confidence || 0), 0.9);
+      if (!person.id_issue_date.manual_value) person.id_issue_date.final_value = inferred.date;
+    }
+    rejectUnverifiedIdentityIssueDate_(person, ocrTextByFile, documentType);
   }
   (reviewJson.secured_parties || []).forEach(repairPerson);
   (reviewJson.obligors || []).forEach(repairPerson);
@@ -251,6 +253,7 @@ function normalizePerson_(person, idHintsByFile, ocrTextByFile) {
   normalizeGenderFromIdentityNumber_(normalized);
   normalizeIdIssuePlaceCleanApply_(normalized, ocrTextByFile || {});
   inferPersonIssueDateFromOcr_(normalized, ocrTextByFile || {});
+  rejectUnverifiedIdentityIssueDate_(normalized, ocrTextByFile || {}, normalized.id_document_type && normalized.id_document_type.final_value);
   enforceIssuePlaceByDocumentType_(normalized);
   normalizePersonDates_(normalized);
   return normalized;
@@ -1019,6 +1022,38 @@ function extractIssueDateByIdentityNumberFromOcr_(id, ocrTextByFile, documentTyp
   const uniqueCandidates = uniqueIssueDateCandidates_(groupCandidates);
   if (uniqueCandidates.length === 1) return uniqueCandidates[0];
   return { date: '', file_name: '' };
+}
+
+function rejectUnverifiedIdentityIssueDate_(person, ocrTextByFile, documentType) {
+  const field = person && person.id_issue_date;
+  if (!field || field.manual_value) return;
+  const current = normalizeDateValue_(field.final_value || field.ai_value);
+  if (!current) return;
+  const id = normalizeId_(person.id_number && person.id_number.final_value);
+  if (!id) return;
+  const inferred = extractIssueDateByIdentityNumberFromOcr_(id, ocrTextByFile || {}, documentType);
+  if (inferred.date && inferred.date === current) return;
+  if (inferred.date && inferred.date !== current) {
+    field.ai_value = inferred.date;
+    field.final_value = inferred.date;
+    field.source = inferred.file_name || field.source || 'OCR_ID_MATCH_CORRECTED';
+    field.confidence = Math.max(Number(field.confidence || 0), 0.9);
+    return;
+  }
+  if (!hasIdentityBackSideOcrForId_(id, ocrTextByFile || {})) return;
+  field.ai_value = '';
+  field.final_value = '\u004b\u0068\u00f4\u006e\u0067 \u0072\u00f5, \u0111\u1ec1 \u006e\u0067\u0068\u1ecb \u0073\u1eeda \u0074\u0068\u1ee7 \u0063\u00f4\u006e\u0067';
+  field.source = field.source || 'OCR_DATE_UNREADABLE';
+  field.confidence = '';
+}
+
+function hasIdentityBackSideOcrForId_(id, ocrTextByFile) {
+  const fileNames = Object.keys(ocrTextByFile || {});
+  for (let i = 0; i < fileNames.length; i++) {
+    const text = ocrTextByFile[fileNames[i]] || '';
+    if (identityOcrContainsId_(text, id) && isLikelyBackSideIdentityOcr_(text)) return true;
+  }
+  return false;
 }
 
 function uniqueIssueDateCandidates_(candidates) {
