@@ -41,6 +41,7 @@ function generateContractsForCase(caseId, token, templateCodes) {
   data = applyOverridesToReviewJson(data, getOverrides(caseId));
   data = applyTemplateDecisionToReviewJson(data);
   fillMissingPersonIssueDatesFromReviewOcr_(data, caseId);
+  enrichAssetCertificateTitlesFromCaseOcr_(data, caseId);
   const finalData = buildFinalConfirmedData(data);
   const templates = getContractTemplateConfigs_().filter(function(tpl) {
     return templateCodes.indexOf(tpl.code) >= 0;
@@ -891,6 +892,48 @@ function fillMissingPersonIssueDatesFromReviewOcr_(reviewJson, caseId) {
   fillMissingIssueDatesForPeople_(reviewJson.obligors || [], textByGroup.obligor || [], allPersonOcrItems);
 }
 
+function enrichAssetCertificateTitlesFromCaseOcr_(reviewJson, caseId) {
+  if (!caseId || !reviewJson || !Array.isArray(reviewJson.assets)) return;
+  let ocrText = '';
+  try {
+    const rows = getRowsByCaseId_(SHEETS.OCR_RESULTS, caseId);
+    rows.forEach(function(row) {
+      const fileName = String(row['File Name'] || '');
+      if (!isLikelyAssetOcrFileForContract_(fileName)) return;
+      ocrText += '\n' + (row['OCR Text'] || row['Text'] || row['OCR Preview'] || '');
+    });
+  } catch (err) {
+    console.warn('Cannot read asset OCR text for certificate title fallback: ' + err);
+    return;
+  }
+  const title = extractCertificateTitleFromOcrForContract_(ocrText);
+  if (!title) return;
+  reviewJson.assets.forEach(function(asset) {
+    if (!asset) return;
+    const field = asset.certificate_title && typeof asset.certificate_title === 'object'
+      ? asset.certificate_title
+      : makeField('T\u00ean Gi\u1ea5y ch\u1ee9ng nh\u1eadn', '', cleanContractText_(asset.certificate_title), '', 'OCR', '');
+    const current = getReviewFieldValueForContract_(field);
+    if (cleanContractText_(field.manual_value) && !isShortCertificateTitleForContract_(field.manual_value, title)) return;
+    if (!current || isShortCertificateTitleForContract_(current, title)) {
+      field.ai_value = title;
+      field.final_value = title;
+      field.source = 'OCR_ASSET_TEXT_TITLE';
+      field.confidence = field.confidence || 0.86;
+      asset.certificate_title = field;
+    }
+  });
+}
+
+function isLikelyAssetOcrFileForContract_(fileName) {
+  const text = normalizeSearchTextForContract_(fileName);
+  return text.indexOf('asset') >= 0 ||
+    text.indexOf('bia') >= 0 ||
+    text.indexOf('dat') >= 0 ||
+    text.indexOf('gcn') >= 0 ||
+    text.indexOf('giay chung nhan') >= 0;
+}
+
 function appendFullOcrTextForIssueDateFallback_(textByGroup, caseId) {
   if (!caseId) return;
   try {
@@ -1235,13 +1278,18 @@ function normalizeCertificateNumberForContract_(certificateNumber, registryNumbe
 
 function normalizeCertificateTitleForContract_(title, realEstate) {
   realEstate = realEstate || {};
-  const rawPool = [
-    title,
-    realEstate.certificate_title,
+  const direct = cleanCertificateTitleForContract_(title || realEstate.certificate_title);
+  if (direct && !isGenericCertificateTitleForContract_(direct)) return direct;
+  const rawSources = [
     realEstate.certificate_info_raw_text,
     realEstate.certificate_land_raw_text,
     realEstate.certificate_owner_raw_text
-  ].map(cleanContractText_).join(' ');
+  ];
+  for (let r = 0; r < rawSources.length; r++) {
+    const extracted = extractCertificateTitleFromOcrForContract_(rawSources[r]);
+    if (extracted) return extracted;
+  }
+  const rawPool = [title, realEstate.certificate_title].concat(rawSources).map(cleanContractText_).join(' ');
   const text = normalizeSearchTextForContract_(rawPool);
   if (text.indexOf('quyen su dung dat quyen so huu nha o va tai san khac gan lien voi dat') >= 0 ||
       text.indexOf('quyen su dung dat quyen so huu nha va tai san khac gan lien voi dat') >= 0 ||
@@ -1255,6 +1303,91 @@ function normalizeCertificateTitleForContract_(title, realEstate) {
   if (text.indexOf('quyen su dung dat') >= 0) return 'Gi\u1ea5y ch\u1ee9ng nh\u1eadn quy\u1ec1n s\u1eed d\u1ee5ng \u0111\u1ea5t';
   if (text.indexOf('quyen so huu nha o') >= 0) return 'Gi\u1ea5y ch\u1ee9ng nh\u1eadn quy\u1ec1n s\u1edf h\u1eefu nh\u00e0 \u1edf';
   return cleanContractText_(title) || 'Gi\u1ea5y ch\u1ee9ng nh\u1eadn';
+}
+
+function extractCertificateTitleFromOcrForContract_(text) {
+  const lines = cleanContractText_(text).split(/\r?\n/).map(function(line) {
+    return line.replace(/\s+/g, ' ').trim();
+  }).filter(Boolean);
+  for (let i = 0; i < lines.length; i++) {
+    const normalized = normalizeSearchTextForContract_(lines[i]);
+    if (normalized.indexOf('giay chung nhan') < 0) continue;
+    const parts = [];
+    parts.push(sliceCertificateTitleStartForContract_(lines[i]));
+    for (let j = i + 1; j < lines.length && parts.length < 5; j++) {
+      const next = normalizeSearchTextForContract_(lines[j]);
+      if (!next) continue;
+      if (isCertificateTitleStopLineForContract_(next)) break;
+      if (next.indexOf('quyen') >= 0 || next.indexOf('nha o') >= 0 || next.indexOf('tai san') >= 0 || next.indexOf('gan lien voi dat') >= 0) {
+        parts.push(lines[j]);
+      } else if (parts.length > 1) {
+        break;
+      }
+    }
+    const title = cleanCertificateTitleForContract_(parts.join(' '));
+    if (title && !isGenericCertificateTitleForContract_(title)) return title;
+  }
+  return '';
+}
+
+function sliceCertificateTitleStartForContract_(line) {
+  const match = String(line || '').match(/(gi\u1ea5y|giay)\s+(ch\u1ee9ng|chung)\s+(nh\u1eadn|nhan)/i);
+  return match ? String(line || '').slice(match.index).trim() : String(line || '').trim();
+}
+
+function isCertificateTitleStopLineForContract_(normalizedLine) {
+  return normalizedLine.indexOf('so phat hanh') >= 0 ||
+    normalizedLine.indexOf('so vao so') >= 0 ||
+    normalizedLine.indexOf('i nguoi su dung') === 0 ||
+    normalizedLine.indexOf('ii thua dat') === 0 ||
+    normalizedLine.indexOf('iii so do') === 0 ||
+    normalizedLine.indexOf('uy ban nhan dan') >= 0 ||
+    /^(?:[ivx]+|[0-9]+)\s/.test(normalizedLine);
+}
+
+function cleanCertificateTitleForContract_(value) {
+  let raw = cleanContractText_(value)
+    .replace(/\s+/g, ' ')
+    .replace(/\s+,/g, ',')
+    .replace(/,\s*/g, ', ')
+    .replace(/\s*;\s*/g, ', ')
+    .trim();
+  raw = accentCertificateTitleWordsForContract_(raw);
+  raw = raw.replace(/^(giay|gi\u1ea5y)\s+chung\s+nhan/i, 'Gi\u1ea5y ch\u1ee9ng nh\u1eadn');
+  if (!/^Gi\u1ea5y ch\u1ee9ng nh\u1eadn/i.test(raw) && /^giay chung nhan/i.test(removeVietnameseAccents_(raw))) {
+    raw = 'Gi\u1ea5y ch\u1ee9ng nh\u1eadn' + raw.replace(/^giay chung nhan/i, '');
+  }
+  return raw;
+}
+
+function accentCertificateTitleWordsForContract_(value) {
+  const map = {
+    'giay': 'gi\u1ea5y', 'chung': 'ch\u1ee9ng', 'nhan': 'nh\u1eadn',
+    'quyen': 'quy\u1ec1n', 'su': 's\u1eed', 'dung': 'd\u1ee5ng', 'dat': '\u0111\u1ea5t',
+    'so': 's\u1edf', 'huu': 'h\u1eefu', 'nha': 'nh\u00e0', 'o': '\u1edf',
+    'va': 'v\u00e0', 'tai': 't\u00e0i', 'san': 's\u1ea3n', 'khac': 'kh\u00e1c',
+    'gan': 'g\u1eafn', 'lien': 'li\u1ec1n', 'voi': 'v\u1edbi'
+  };
+  return String(value || '').split(/(\s+|,\s*)/).map(function(token) {
+    const key = removeVietnameseAccents_(token).toLowerCase().replace(/[^a-z]/g, '');
+    if (!key || !map[key]) return token;
+    return map[key];
+  }).join('').replace(/^gi\u1ea5y/, 'Gi\u1ea5y');
+}
+
+function isGenericCertificateTitleForContract_(value) {
+  const text = normalizeSearchTextForContract_(value);
+  return text === 'giay chung nhan' || text === 'giay chung nhan quyen su dung dat';
+}
+
+function isShortCertificateTitleForContract_(current, extracted) {
+  const currentText = normalizeSearchTextForContract_(current);
+  const extractedText = normalizeSearchTextForContract_(extracted);
+  return currentText &&
+    extractedText &&
+    currentText !== extractedText &&
+    extractedText.indexOf(currentText) === 0 &&
+    extractedText.length > currentText.length + 8;
 }
 
 function normalizeCertificateCodeForContract_(value) {

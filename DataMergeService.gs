@@ -662,20 +662,85 @@ function buildOwnerIdentitySummary_(pairs) {
 }
 
 function extractCertificateTitle_(text) {
+  const extracted = extractCertificateTitleFromOcrForMerge_(text);
+  if (extracted) return extracted;
   const clean = removeVietnameseAccents_(String(text || '')).toUpperCase().replace(/\s+/g, ' ');
   if (clean.indexOf('QUYEN SU DUNG DAT QUYEN SO HUU NHA O VA TAI SAN KHAC GAN LIEN VOI DAT') >= 0) {
-    return 'Giay chung nhan quyen su dung dat, quyen so huu nha o va tai san khac gan lien voi dat';
+    return 'Gi\u1ea5y ch\u1ee9ng nh\u1eadn quy\u1ec1n s\u1eed d\u1ee5ng \u0111\u1ea5t, quy\u1ec1n s\u1edf h\u1eefu nh\u00e0 \u1edf v\u00e0 t\u00e0i s\u1ea3n kh\u00e1c g\u1eafn li\u1ec1n v\u1edbi \u0111\u1ea5t';
   }
   if (clean.indexOf('QUYEN SU DUNG DAT QUYEN SO HUU TAI SAN GAN LIEN VOI DAT') >= 0) {
-    return 'Giay chung nhan quyen su dung dat, quyen so huu tai san gan lien voi dat';
+    return 'Gi\u1ea5y ch\u1ee9ng nh\u1eadn quy\u1ec1n s\u1eed d\u1ee5ng \u0111\u1ea5t, quy\u1ec1n s\u1edf h\u1eefu t\u00e0i s\u1ea3n g\u1eafn li\u1ec1n v\u1edbi \u0111\u1ea5t';
   }
   if (clean.indexOf('QUYEN SU DUNG DAT') >= 0) {
-    return 'Giay chung nhan quyen su dung dat';
+    return 'Gi\u1ea5y ch\u1ee9ng nh\u1eadn quy\u1ec1n s\u1eed d\u1ee5ng \u0111\u1ea5t';
   }
   if (clean.indexOf('QUYEN SO HUU NHA O') >= 0) {
-    return 'Giay chung nhan quyen so huu nha o';
+    return 'Gi\u1ea5y ch\u1ee9ng nh\u1eadn quy\u1ec1n s\u1edf h\u1eefu nh\u00e0 \u1edf';
   }
   return '';
+}
+
+function extractCertificateTitleFromOcrForMerge_(text) {
+  const lines = String(text || '').split(/\r?\n/).map(function(line) {
+    return line.replace(/\s+/g, ' ').trim();
+  }).filter(Boolean);
+  for (let i = 0; i < lines.length; i++) {
+    const normalized = removeVietnameseAccents_(lines[i]).toLowerCase().replace(/[^a-z0-9]+/g, ' ').replace(/\s+/g, ' ').trim();
+    if (normalized.indexOf('giay chung nhan') < 0) continue;
+    const parts = [sliceCertificateTitleStartForMerge_(lines[i])];
+    for (let j = i + 1; j < lines.length && parts.length < 5; j++) {
+      const next = removeVietnameseAccents_(lines[j]).toLowerCase().replace(/[^a-z0-9]+/g, ' ').replace(/\s+/g, ' ').trim();
+      if (isCertificateTitleStopLineForMerge_(next)) break;
+      if (next.indexOf('quyen') >= 0 || next.indexOf('nha o') >= 0 || next.indexOf('tai san') >= 0 || next.indexOf('gan lien voi dat') >= 0) {
+        parts.push(lines[j]);
+      } else if (parts.length > 1) {
+        break;
+      }
+    }
+    const title = cleanCertificateTitleForMerge_(parts.join(' '));
+    const titleText = removeVietnameseAccents_(title).toLowerCase();
+    if (title && titleText !== 'giay chung nhan' && titleText !== 'giay chung nhan quyen su dung dat') return title;
+  }
+  return '';
+}
+
+function sliceCertificateTitleStartForMerge_(line) {
+  const match = String(line || '').match(/(gi\u1ea5y|giay)\s+(ch\u1ee9ng|chung)\s+(nh\u1eadn|nhan)/i);
+  return match ? String(line || '').slice(match.index).trim() : String(line || '').trim();
+}
+
+function isCertificateTitleStopLineForMerge_(normalizedLine) {
+  return normalizedLine.indexOf('so phat hanh') >= 0 ||
+    normalizedLine.indexOf('so vao so') >= 0 ||
+    normalizedLine.indexOf('i nguoi su dung') === 0 ||
+    normalizedLine.indexOf('ii thua dat') === 0 ||
+    normalizedLine.indexOf('iii so do') === 0 ||
+    normalizedLine.indexOf('uy ban nhan dan') >= 0 ||
+    /^(?:[ivx]+|[0-9]+)\s/.test(normalizedLine);
+}
+
+function cleanCertificateTitleForMerge_(value) {
+  return accentCertificateTitleWordsForMerge_(String(value || '')
+    .replace(/\s+/g, ' ')
+    .replace(/\s+,/g, ',')
+    .replace(/,\s*/g, ', ')
+    .replace(/^(giay|gi\u1ea5y)\s+chung\s+nhan/i, 'Gi\u1ea5y ch\u1ee9ng nh\u1eadn')
+    .trim());
+}
+
+function accentCertificateTitleWordsForMerge_(value) {
+  const map = {
+    'giay': 'gi\u1ea5y', 'chung': 'ch\u1ee9ng', 'nhan': 'nh\u1eadn',
+    'quyen': 'quy\u1ec1n', 'su': 's\u1eed', 'dung': 'd\u1ee5ng', 'dat': '\u0111\u1ea5t',
+    'so': 's\u1edf', 'huu': 'h\u1eefu', 'nha': 'nh\u00e0', 'o': '\u1edf',
+    'va': 'v\u00e0', 'tai': 't\u00e0i', 'san': 's\u1ea3n', 'khac': 'kh\u00e1c',
+    'gan': 'g\u1eafn', 'lien': 'li\u1ec1n', 'voi': 'v\u1edbi'
+  };
+  return String(value || '').split(/(\s+|,\s*)/).map(function(token) {
+    const key = removeVietnameseAccents_(token).toLowerCase().replace(/[^a-z]/g, '');
+    if (!key || !map[key]) return token;
+    return map[key];
+  }).join('').replace(/^gi\u1ea5y/, 'Gi\u1ea5y');
 }
 
 function extractRealEstateCertificateNumber_(text) {
