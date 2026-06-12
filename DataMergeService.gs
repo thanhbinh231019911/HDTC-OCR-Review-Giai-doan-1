@@ -139,6 +139,39 @@ function repairAssetAreaWordsInReviewJson(reviewJson, fullAssetOcrText) {
   return reviewJson;
 }
 
+function repairAssetCertificateTitleInReviewJson(reviewJson, fullAssetOcrText) {
+  if (!reviewJson) return reviewJson;
+  const assetText = fullAssetOcrText || (reviewJson.ocr_results || [])
+    .filter(function(item) { return item.group === 'asset'; })
+    .map(function(item) { return item.text || item.text_preview || ''; })
+    .join('\n');
+  const title = extractCertificateTitle_(assetText);
+  if (!title) return reviewJson;
+  (reviewJson.assets || []).forEach(function(asset) {
+    const field = asset && asset.certificate_title;
+    if (!field || !field.hasOwnProperty('final_value')) return;
+    const current = String(field.final_value || field.ai_value || '').trim();
+    const manual = String(field.manual_value || '').trim();
+    if (manual && !isShortCertificateTitleForReviewRepair_(manual, title)) return;
+    if (current && !isShortCertificateTitleForReviewRepair_(current, title)) return;
+    field.ai_value = title;
+    field.final_value = title;
+    field.source = field.source || 'OCR_ASSET_TEXT_TITLE_REPAIR';
+    field.confidence = Math.max(Number(field.confidence || 0), 0.86);
+  });
+  return reviewJson;
+}
+
+function isShortCertificateTitleForReviewRepair_(current, extracted) {
+  const currentText = removeVietnameseAccents_(current).toLowerCase().replace(/[^a-z0-9]+/g, ' ').replace(/\s+/g, ' ').trim();
+  const extractedText = removeVietnameseAccents_(extracted).toLowerCase().replace(/[^a-z0-9]+/g, ' ').replace(/\s+/g, ' ').trim();
+  return currentText &&
+    extractedText &&
+    currentText !== extractedText &&
+    extractedText.indexOf(currentText) === 0 &&
+    extractedText.length > currentText.length + 8;
+}
+
 function repairAssetLandAddressInReviewJson(reviewJson, fullAssetOcrText) {
   if (!reviewJson) return reviewJson;
   const assetText = fullAssetOcrText || (reviewJson.ocr_results || [])
@@ -733,6 +766,7 @@ function accentCertificateTitleWordsForMerge_(value) {
     'giay': 'gi\u1ea5y', 'chung': 'ch\u1ee9ng', 'nhan': 'nh\u1eadn',
     'quyen': 'quy\u1ec1n', 'su': 's\u1eed', 'dung': 'd\u1ee5ng', 'dat': '\u0111\u1ea5t',
     'so': 's\u1edf', 'huu': 'h\u1eefu', 'nha': 'nh\u00e0', 'o': '\u1edf',
+    'hwuux': 'h\u1eefu', 'hwux': 'h\u1eefu', 'huux': 'h\u1eefu',
     'va': 'v\u00e0', 'tai': 't\u00e0i', 'san': 's\u1ea3n', 'khac': 'kh\u00e1c',
     'gan': 'g\u1eafn', 'lien': 'li\u1ec1n', 'voi': 'v\u1edbi'
   };

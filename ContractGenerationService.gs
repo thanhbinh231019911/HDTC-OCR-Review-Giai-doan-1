@@ -895,11 +895,17 @@ function fillMissingPersonIssueDatesFromReviewOcr_(reviewJson, caseId) {
 function enrichAssetCertificateTitlesFromCaseOcr_(reviewJson, caseId) {
   if (!caseId || !reviewJson || !Array.isArray(reviewJson.assets)) return;
   let ocrText = '';
+  const assetFileNames = {};
+  (reviewJson.ocr_results || []).forEach(function(item) {
+    if (!item || item.group !== 'asset') return;
+    if (item.file_name) assetFileNames[String(item.file_name)] = true;
+    ocrText += '\n' + (item.text || item.text_preview || '');
+  });
   try {
     const rows = getRowsByCaseId_(SHEETS.OCR_RESULTS, caseId);
     rows.forEach(function(row) {
       const fileName = String(row['File Name'] || '');
-      if (!isLikelyAssetOcrFileForContract_(fileName)) return;
+      if (!assetFileNames[fileName] && !isLikelyAssetOcrFileForContract_(fileName)) return;
       ocrText += '\n' + (row['OCR Text'] || row['Text'] || row['OCR Preview'] || '');
     });
   } catch (err) {
@@ -1365,6 +1371,7 @@ function accentCertificateTitleWordsForContract_(value) {
     'giay': 'gi\u1ea5y', 'chung': 'ch\u1ee9ng', 'nhan': 'nh\u1eadn',
     'quyen': 'quy\u1ec1n', 'su': 's\u1eed', 'dung': 'd\u1ee5ng', 'dat': '\u0111\u1ea5t',
     'so': 's\u1edf', 'huu': 'h\u1eefu', 'nha': 'nh\u00e0', 'o': '\u1edf',
+    'hwuux': 'h\u1eefu', 'hwux': 'h\u1eefu', 'huux': 'h\u1eefu',
     'va': 'v\u00e0', 'tai': 't\u00e0i', 'san': 's\u1ea3n', 'khac': 'kh\u00e1c',
     'gan': 'g\u1eafn', 'lien': 'li\u1ec1n', 'voi': 'v\u1edbi'
   };
