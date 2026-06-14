@@ -289,6 +289,20 @@ function shouldReplaceUsageForm_(field, candidate) {
   return currentNorm && candidateNorm && currentNorm !== candidateNorm && candidateNorm.indexOf(currentNorm) >= 0;
 }
 
+function normalizeRealEstateUsageForm_(value) {
+  let raw = String(value || '')
+    .replace(/\s+/g, ' ')
+    .replace(/^\s*(?:[a-g]|\u0111|d)\s*[\).:]\s*/i, '')
+    .replace(/^(?:h\u00ecnh\s*th\u1ee9c\s*s\u1eed\s*d\u1ee5ng|hinh\s*thuc\s*su\s*dung)\s*[:.-]?\s*/i, '')
+    .replace(/[;,.:\-\s]+$/g, '')
+    .trim();
+  if (!raw) return '';
+  raw = raw.replace(/(\d+(?:[,.]\d+)?)\s*m(?![A-Za-z0-9\u00b2])/gi, '$1 m\u00b2');
+  raw = raw.replace(/\bKh[o\u00f4]ng\s*m(?![A-Za-z0-9\u00b2])/gi, 'Kh\u00f4ng m\u00b2');
+  raw = raw.replace(/\bChung:\s*Khong\s*m\u00b2/gi, 'Chung: Kh\u00f4ng m\u00b2');
+  return raw;
+}
+
 function shouldReplaceUsageTerm_(field, candidate) {
   if (!field || !candidate || field.manual_value) return false;
   const current = String(field.final_value || field.ai_value || '').trim();
@@ -599,7 +613,7 @@ function extractRealEstateIndexedLandFields_(text) {
   const items = extractIndexedCertificateItems_(block || text);
   return {
     land_address: cleanupIndexedCertificateValue_(items.b || '') || extractDislocatedLandAddressFromBlock_(block || text),
-    usage_form: cleanupIndexedCertificateValue_(items.d || ''),
+    usage_form: normalizeRealEstateUsageForm_(cleanupIndexedCertificateValue_(items.d || '')),
     usage_purpose: cleanupIndexedCertificateValue_(items.dd || items['Ä‘'] || ''),
     usage_term: normalizeRealEstateUsageTerm_(cleanupIndexedCertificateValue_(items.e || ''))
   };

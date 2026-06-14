@@ -221,7 +221,7 @@ function extractIndexedLandFields(text) {
     land_address: cleanupIndexedValue(items.b || ''),
     area: extractAreaValue(items.c || ''),
     area_in_words: extractAreaWords(items.c || ''),
-    usage_form: cleanupIndexedValue(items.d || ''),
+    usage_form: normalizeUsageForm(cleanupIndexedValue(items.d || '')),
     usage_purpose: cleanupIndexedValue(items.dd || ''),
     usage_term: normalizeUsageTerm(cleanupIndexedValue(items.e || '')),
     usage_origin: cleanupIndexedValue(items.g || '')
@@ -277,6 +277,20 @@ function cleanupIndexedValue(value) {
     .replace(/^(?:dia chi|address|hinh thuc su dung|muc dich su dung|thoi han su dung|nguon goc su dung)\s*[:.-]?\s*/i, '')
     .replace(/[;,.:\-\s]+$/g, '')
     .trim();
+}
+
+function normalizeUsageForm(value) {
+  let raw = String(value || '')
+    .replace(/\s+/g, ' ')
+    .replace(/^\s*(?:[a-g]|\u0111|d)\s*[\).:]\s*/i, '')
+    .replace(/^(?:hình\s*thức\s*sử\s*dụng|hinh\s*thuc\s*su\s*dung)\s*[:.-]?\s*/i, '')
+    .replace(/[;,.:\-\s]+$/g, '')
+    .trim();
+  if (!raw) return '';
+  raw = raw.replace(/(\d+(?:[,.]\d+)?)\s*m(?![A-Za-z0-9²])/gi, '$1 m²');
+  raw = raw.replace(/\bKh[oô]ng\s*m(?![A-Za-z0-9²])/gi, 'Không m²');
+  raw = raw.replace(/\bChung:\s*Khong\s*m²/gi, 'Chung: Không m²');
+  return raw;
 }
 
 function extractMapSheetNumber(value) {
