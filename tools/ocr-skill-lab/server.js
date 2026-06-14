@@ -8,6 +8,7 @@ const ROOT = __dirname;
 const PUBLIC = path.join(ROOT, 'public');
 const REPO_ROOT = path.resolve(ROOT, '..', '..');
 let realLandParserCache = null;
+let realAiToolsCache = null;
 
 const SKILLS = {
   cccd: 'OCR CCCD/Can cuoc',
@@ -90,11 +91,31 @@ function getRealLandParser() {
       extractRealEstateRegistryNumber_: extractRealEstateRegistryNumber_,
       extractRealEstateIssuingAuthority_: extractRealEstateIssuingAuthority_,
       extractRealEstateIndexedLandFields_: extractRealEstateIndexedLandFields_,
-      extractAreaWordsFromCertificateText_: extractAreaWordsFromCertificateText_
+      extractAreaWordsFromCertificateText_: extractAreaWordsFromCertificateText_,
+      normalizeAiData_: normalizeAiData_,
+      flattenFieldObject_: flattenFieldObject_
     };
   `, sandbox, { filename: 'DataMergeService.gs' });
   realLandParserCache = sandbox.__realLandParser;
   return realLandParserCache;
+}
+
+function getRealAiTools() {
+  if (realAiToolsCache) return realAiToolsCache;
+  const source = [
+    fs.readFileSync(path.join(REPO_ROOT, 'Config.gs'), 'utf8'),
+    fs.readFileSync(path.join(REPO_ROOT, 'AIExtractionService.gs'), 'utf8')
+  ].join('\n');
+  const sandbox = { console };
+  vm.createContext(sandbox);
+  vm.runInContext(source + `
+    this.__realAiTools = {
+      getAiExtractionPrompt: getAiExtractionPrompt,
+      getExtractionJsonSchema_: getExtractionJsonSchema_
+    };
+  `, sandbox, { filename: 'AIExtractionService.gs' });
+  realAiToolsCache = sandbox.__realAiTools;
+  return realAiToolsCache;
 }
 
 function extractVietnamIds(text) {
@@ -740,6 +761,83 @@ function extractOpenAiText(body) {
   return parts.join('\n');
 }
 
+async function openAiStructuredExtraction(ocrResults, apiKeyOverride) {
+  const apiKey = apiKeyOverride || process.env.OPENAI_API_KEY;
+  if (!apiKey) {
+    return { data: null, error: 'Missing OPENAI_API_KEY for full real pipeline' };
+  }
+  const aiTools = getRealAiTools();
+  const input = {
+    case_id: 'OCR_SKILL_LAB',
+    form_data: {
+      assetType: 'Bất động sản',
+      assetCount: '1'
+    },
+    ocr_results: (ocrResults || []).map(item => ({
+      file_name: item.file_name || '',
+      file_id: item.file_id || '',
+      file_type: item.file_type || 'image',
+      group: 'asset',
+      ocr_status: item.ocr_status || 'DONE',
+      confidence: item.confidence || 0.9,
+      text: item.text || ''
+    }))
+  };
+  const response = await fetch('https://api.openai.com/v1/responses', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', authorization: 'Bearer ' + apiKey },
+    body: JSON.stringify({
+      model: process.env.OPENAI_MODEL || process.env.OPENAI_VISION_MODEL || 'gpt-5.4-mini',
+      input: [
+        { role: 'system', content: aiTools.getAiExtractionPrompt() },
+        { role: 'user', content: 'Bóc tách dữ liệu sau thành JSON. JSON input:\n' + JSON.stringify(input, null, 2) }
+      ],
+      text: {
+        format: {
+          type: 'json_schema',
+          name: 'mortgage_case_extraction',
+          strict: false,
+          schema: aiTools.getExtractionJsonSchema_()
+        }
+      }
+    })
+  });
+  const body = await response.json();
+  if (!response.ok) return { data: null, error: JSON.stringify(body) };
+  try {
+    return { data: parseOpenAiJsonBody(body), raw: body, error: '' };
+  } catch (err) {
+    return { data: null, raw: body, error: String(err && err.message || err) };
+  }
+}
+
+function parseOpenAiJsonBody(body) {
+  if (body.output_text) return JSON.parse(body.output_text);
+  const output = body.output || [];
+  for (const item of output) {
+    for (const content of item.content || []) {
+      if (content.type === 'output_text' && content.text) return JSON.parse(content.text);
+      if (content.text) return JSON.parse(content.text);
+    }
+  }
+  throw new Error('OpenAI response does not contain JSON output');
+}
+
+function normalizeLandAiResult(aiData, ocrResults) {
+  const real = getRealLandParser();
+  const normalized = real.normalizeAiData_(aiData || { secured_parties: [], obligors: [], assets: [], conflicts: [], warnings: [] }, (ocrResults || []).map(item => ({
+    file_name: item.file_name || '',
+    file_id: item.file_id || '',
+    file_type: item.file_type || 'image',
+    group: 'asset',
+    status: item.ocr_status || 'DONE',
+    confidence: item.confidence || 0.9,
+    text: item.text || ''
+  })));
+  const asset = normalized.assets && normalized.assets[0] || {};
+  return real.flattenFieldObject_(asset);
+}
+
 async function handleOcr(req, res) {
   try {
     const payload = JSON.parse(await readBody(req));
@@ -800,6 +898,63 @@ async function handleParseText(req, res) {
   }
 }
 
+async function handleLandFullPipeline(req, res) {
+  try {
+    const payload = JSON.parse(await readBody(req));
+    const ocrResults = (payload.ocrResults || []).map(item => ({
+      file_name: item.file_name || '',
+      file_id: item.file_id || '',
+      file_type: item.file_type || 'image',
+      ocr_status: item.ocr_status || 'DONE',
+      confidence: item.confidence || 0.9,
+      text: item.text || ''
+    }));
+    const ai = await openAiStructuredExtraction(ocrResults, payload.openAiApiKey);
+    if (!ai.data) {
+      return sendJson(res, 200, {
+        ok: false,
+        error: ai.error,
+        parsed: mergeLandDeterministicResults(ocrResults)
+      });
+    }
+    const normalizedAsset = normalizeLandAiResult(ai.data, ocrResults);
+    sendJson(res, 200, {
+      ok: true,
+      mode: 'full_real_pipeline',
+      ai_data: ai.data,
+      parsed: {
+        skill: SKILLS.land,
+        mode: 'full_real_pipeline',
+        fields: {
+          certificate_title: normalizedAsset.certificate_title || '',
+          certificate_number: normalizedAsset.real_estate && normalizedAsset.real_estate.certificate_number || '',
+          registry_number: normalizedAsset.real_estate && normalizedAsset.real_estate.registry_number || '',
+          issuing_authority: normalizedAsset.real_estate && normalizedAsset.real_estate.issuing_authority || '',
+          land_plot_number: normalizedAsset.real_estate && normalizedAsset.real_estate.land_plot_number || '',
+          map_sheet_number: normalizedAsset.real_estate && normalizedAsset.real_estate.map_sheet_number || '',
+          land_address: normalizedAsset.real_estate && normalizedAsset.real_estate.land_address || '',
+          area: normalizedAsset.real_estate && normalizedAsset.real_estate.area || '',
+          area_in_words: normalizedAsset.real_estate && normalizedAsset.real_estate.area_in_words || '',
+          usage_form: normalizedAsset.real_estate && normalizedAsset.real_estate.usage_form || '',
+          usage_purpose: normalizedAsset.real_estate && normalizedAsset.real_estate.usage_purpose || '',
+          usage_term: normalizedAsset.real_estate && normalizedAsset.real_estate.usage_term || '',
+          usage_origin: normalizedAsset.real_estate && normalizedAsset.real_estate.usage_origin || '',
+          owner_identity_summary: normalizedAsset.owner_identity_summary || '',
+          owner_address: normalizedAsset.owner_address || ''
+        },
+        warnings: ai.data.warnings || []
+      }
+    });
+  } catch (err) {
+    sendJson(res, 500, { error: String(err && err.stack || err) });
+  }
+}
+
+function mergeLandDeterministicResults(ocrResults) {
+  const text = (ocrResults || []).map(item => item.text || '').join('\n\n');
+  return parseLand(text);
+}
+
 const server = http.createServer((req, res) => {
   const url = new URL(req.url, 'http://localhost');
   if (req.method === 'GET' && url.pathname === '/') {
@@ -807,6 +962,7 @@ const server = http.createServer((req, res) => {
   }
   if (req.method === 'POST' && url.pathname === '/api/ocr') return handleOcr(req, res);
   if (req.method === 'POST' && url.pathname === '/api/parse-text') return handleParseText(req, res);
+  if (req.method === 'POST' && url.pathname === '/api/land-full-pipeline') return handleLandFullPipeline(req, res);
   sendJson(res, 404, { error: 'Not found' });
 });
 

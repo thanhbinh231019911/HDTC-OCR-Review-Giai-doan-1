@@ -324,8 +324,30 @@
       return {
         file_name: files.map(file => file.name).join(', '),
         results: allResults,
-        parsed: skill === 'land' ? mergeLandReviewResults(allResults) : mergeIdentityReviewResults(allResults)
+        parsed: skill === 'land' ? await runLandFullPipeline(allResults) : mergeIdentityReviewResults(allResults)
       };
+    }
+
+    async function runLandFullPipeline(results) {
+      const response = await fetch('/api/land-full-pipeline', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          openAiApiKey: document.getElementById('openaiKey').value,
+          ocrResults: (results || []).map(item => ({
+            file_name: item.file_name || '',
+            text: item.raw_text || '',
+            confidence: 0.9
+          }))
+        })
+      });
+      const data = await response.json();
+      if (!data.ok && data.error) {
+        const parsed = data.parsed || mergeLandReviewResults(results);
+        parsed.warnings = (parsed.warnings || []).concat(['Full pipeline chua chay: ' + data.error]);
+        return parsed;
+      }
+      return data.parsed || mergeLandReviewResults(results);
     }
 
     function cropImageDataUrlFromSource(sourceDataUrl, box) {
@@ -453,6 +475,7 @@
       const warnings = final && final.warnings || [];
       if (skill === 'land') {
         finalResult.innerHTML = [
+          rowHtml('Che do', final && final.mode),
           rowHtml('Loai GCN', fields.certificate_title),
           rowHtml('So GCN', fields.certificate_number),
           rowHtml('So vao so', fields.registry_number),
@@ -546,6 +569,26 @@
     document.getElementById('parseText').addEventListener('click', async () => {
       parsed.textContent = 'Äang parse text...';
       raw.textContent = '';
+      if (document.getElementById('skill').value === 'land') {
+        const text = document.getElementById('ocrText').value;
+        const pipeline = await fetch('/api/land-full-pipeline', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({
+            openAiApiKey: document.getElementById('openaiKey').value,
+            ocrResults: [{ file_name: 'raw_ocr_text.txt', text, confidence: 1 }]
+          })
+        }).then(response => response.json());
+        const result = {
+          raw_text: text,
+          parsed: pipeline.parsed || {},
+          pipeline_error: pipeline.error || ''
+        };
+        renderFinalResult(result);
+        parsed.textContent = JSON.stringify(result.parsed || result, null, 2);
+        raw.textContent = text;
+        return;
+      }
       const response = await fetch('/api/parse-text', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
