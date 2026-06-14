@@ -50,7 +50,7 @@ Forbidden behavior:
 Required behavior:
 
 - If date evidence is clear near the issue-date label, normalize to `dd/MM/yyyy`.
-- For old CCCD, scan after `Date, month, year` or after the word `year`, then scan up to the next two OCR lines.
+- For old CCCD, do not scan a wide `Date, month, year` line for the date. Crop narrowly after the `year/yea` anchor; if no `year/yea` anchor is available, use CCCD-back layout from MRZ as a fallback crop region.
 - For old CCCD crop, prefer the narrow region starting at `year` through the date digits. Do not rely on a wide crop containing the full Vietnamese/English label if OCR turns the label into a false date such as `40/07/2021`.
 - For new Can cuoc, scan after `Date of issue`, then prioritize the line directly below that label.
 - Use the document type only to choose the first crop/search strategy. The final decision must still be based on the issue-date label and date position.
@@ -62,7 +62,7 @@ Required behavior:
 ## Tool Strategy
 
 - Google Vision OCR is useful for full-image text and MRZ.
-- OpenAI Vision may be used only as field-level assistance, preferably on a cropped issue-date region.
+- Do not use OpenAI Vision on the full back-side image as an independent source for issue date. If Vision is used later, use it only on the cropped issue-date region and still require one valid date.
 - Tesseract/OpenCV or equivalent preprocessing may be added for deterministic crop, deskew, contrast, and enlarged-region OCR.
 - No tool is allowed to be the sole authority for a legal date without visible/traceable evidence.
 

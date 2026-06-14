@@ -175,7 +175,7 @@ IX. NGUYEN TAC COT LOI BAT BUOC DOC TRUOC KHI SUA CODE
 - Quy tac MRZ CCCD nay ap dung chung cho moi nguoi trong ho so, khong phan biet Ben bao dam/Ben duoc bao dam; neu co 4-5 Ben bao dam thi van khop tung nguoi bang so CCCD/Can cuoc rieng, khong dung vi tri hay thu tu gan nhat.
 - MRZ chi dung de khop dung nguoi; ngay cap phai doc tu vung mat sau, gan nhan ngay cap hop le. CCCD mau cu chap nhan dong "Ngay, thang, nam / Date, month, year"; Can cuoc mau moi chap nhan dong "Ngay, thang, nam cap / Date of issue".
 - Ngay cap chi duoc lay tren cung dong voi nhan ngay cap hoac toi da 2 dong ke tiep. Chap nhan cac dinh dang dd/MM/yyyy, dd-MM-yyyy, dd.MM.yyyy va ddMMyyyy khi OCR lam mat dau "/".
-- Khong duoc tu suy luan ngay cap tu OCR hong/bien dang nhu "Oro712021", "Or0712021" thanh mot ngay cu the. Neu OCR khong doc ro ngay dang dd/MM/yyyy, dd-MM-yyyy, dd.MM.yyyy hoac ddMMyyyy toan so ngay canh nhan ngay cap, phai dung OpenAI Vision doc truc tiep anh mat sau; neu Vision khong doc chac thi de trong/canh bao sua tay.
+- Khong duoc tu suy luan ngay cap tu OCR hong/bien dang nhu "Oro712021", "Or0712021" thanh mot ngay cu the. Neu OCR full image khong doc ro, he thong phai dung crop chuyen biet: CCCD cu crop hep sau anchor "year/yea"; Can cuoc moi crop vung ben duoi "Date of issue". Khong dung OpenAI Vision/toan anh lam nguon quyet dinh doc lap cho ngay cap; neu crop khong co dung mot ngay hop le thi de trong/canh bao sua tay.
 - Neu khong co nhan ngay cap hop le, khong khop dung mat sau theo so CCCD/Can cuoc, co nhieu ngay ung vien khac nhau, hoac ngay khong hop le thi de trong/canh bao sua tay; khong lay ngay gan nhat.
 
 2. Review thong tin tai san bat dong san
