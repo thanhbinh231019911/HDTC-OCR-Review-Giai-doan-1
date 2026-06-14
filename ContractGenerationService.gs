@@ -39,6 +39,7 @@ function generateContractsForCase(caseId, token, templateCodes) {
 
   data = ensureTemplateDecisionFields_(data);
   data = applyOverridesToReviewJson(data, getOverrides(caseId));
+  repairReviewDataFromFullOcr_(data, caseId);
   data = applyTemplateDecisionToReviewJson(data);
   fillMissingPersonIssueDatesFromReviewOcr_(data, caseId);
   enrichAssetCertificateTitlesFromCaseOcr_(data, caseId);
@@ -1199,38 +1200,11 @@ function extractCompactIssueDateFromLabeledWindowForContract_(windowText) {
     const digits = value.replace(/\D/g, '');
     if (digits.length === 8) candidates.push(digits);
   });
-  const fuzzyTokens = String(windowText || '').match(/[0-9oOqQdDiIlLtTrR]{8,12}/g) || [];
-  fuzzyTokens.forEach(function(token) {
-    expandFuzzyCompactIssueDateCandidatesForContract_(token).forEach(function(candidate) {
-      candidates.push(candidate);
-    });
-  });
   for (let i = 0; i < candidates.length; i++) {
     const parsed = normalizeCompactIssueDateDigitsForContract_(candidates[i]);
     if (parsed) return parsed;
   }
   return '';
-}
-
-function expandFuzzyCompactIssueDateCandidatesForContract_(token) {
-  let digits = String(token || '')
-    .replace(/[oOqQdD]/g, '0')
-    .replace(/[iIlLtT]/g, '1')
-    .replace(/[rR]/g, '7')
-    .replace(/\D/g, '');
-  const out = [];
-  if (digits.length === 8) out.push(digits);
-  if (digits.length === 9) {
-    const preferred = digits.slice(0, 4) + digits.slice(5);
-    if (normalizeCompactIssueDateDigitsForContract_(preferred)) out.push(preferred);
-  }
-  if (digits.length > 8 && digits.length <= 10) {
-    for (let i = 0; i < digits.length; i++) {
-      const shortened = digits.slice(0, i) + digits.slice(i + 1);
-      if (shortened.length === 8 && out.indexOf(shortened) === -1) out.push(shortened);
-    }
-  }
-  return out;
 }
 
 function normalizeCompactIssueDateDigitsForContract_(digits) {

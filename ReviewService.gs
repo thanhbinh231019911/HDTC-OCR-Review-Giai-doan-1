@@ -45,12 +45,129 @@ function normalizeManualOverrideValueForStorage_(value) {
 function repairReviewDataFromFullOcr_(data, caseId) {
   const fullOcr = getFullOcrTextMapsForCase_(caseId, data);
   repairIdentityIssueDatesInReviewJson(data, fullOcr.byFileName);
+  repairIdentityIssueDatesWithVision_(data, caseId, fullOcr.byFileName);
   repairAssetCertificateTitleInReviewJson(data, fullOcr.assetText);
   repairAssetIssuingAuthorityInReviewJson(data, fullOcr.assetText);
   repairAssetLandAddressInReviewJson(data, fullOcr.assetText);
   repairAssetUsageTermInReviewJson(data, fullOcr.assetText);
   repairAssetAreaWordsInReviewJson(data, fullOcr.assetText);
   return data;
+}
+
+function repairIdentityIssueDatesWithVision_(data, caseId, ocrTextByFile) {
+  if (!data || !caseId) return data;
+  const apiKey = PropertiesService.getScriptProperties().getProperty(CONFIG.OPENAI_API_KEY_PROPERTY);
+  if (!apiKey) return data;
+  let rows = [];
+  try {
+    rows = getRowsByCaseId_(SHEETS.OCR_RESULTS, caseId);
+  } catch (err) {
+    return data;
+  }
+  const candidatesByFileName = {};
+  rows.forEach(function(row) {
+    const fileName = String(row['File Name'] || '');
+    const fileId = String(row['File ID'] || '');
+    if (!fileName || !fileId) return;
+    candidatesByFileName[fileName] = {
+      fileName: fileName,
+      fileId: fileId,
+      text: (row['OCR Text'] || '') || (ocrTextByFile && ocrTextByFile[fileName]) || ''
+    };
+  });
+  function repairPerson(person) {
+    if (!person || !person.id_issue_date || person.id_issue_date.manual_value) return;
+    const id = normalizeId_(person.id_number && person.id_number.final_value);
+    if (!id) return;
+    const current = normalizeDateValue_(person.id_issue_date.final_value || person.id_issue_date.ai_value);
+    const source = String(person.id_issue_date.source || '');
+    const currentText = removeVietnameseAccents_(String(person.id_issue_date.final_value || '')).toLowerCase();
+    if (current && source !== 'OCR_DATE_UNREADABLE' && currentText.indexOf('khong ro') < 0) return;
+    const fileNames = Object.keys(candidatesByFileName);
+    for (let i = 0; i < fileNames.length; i++) {
+      const item = candidatesByFileName[fileNames[i]];
+      if (!identityOcrContainsId_(item.text, id) || !isLikelyBackSideIdentityOcr_(item.text)) continue;
+      const vision = readIdentityIssueDateFromImageWithOpenAi_(item.fileId, item.fileName);
+      if (!vision.date) continue;
+      person.id_issue_date.ai_value = vision.date;
+      person.id_issue_date.final_value = vision.date;
+      person.id_issue_date.source = item.fileName + ' | OPENAI_VISION_DATE';
+      person.id_issue_date.confidence = vision.confidence || 0.92;
+      return;
+    }
+  }
+  (data.secured_parties || []).forEach(repairPerson);
+  (data.obligors || []).forEach(repairPerson);
+  return data;
+}
+
+function readIdentityIssueDateFromImageWithOpenAi_(fileId, fileName) {
+  try {
+    const apiKey = PropertiesService.getScriptProperties().getProperty(CONFIG.OPENAI_API_KEY_PROPERTY);
+    if (!apiKey) return { date: '', confidence: '' };
+    const file = DriveApp.getFileById(fileId);
+    const blob = file.getBlob();
+    const contentType = blob.getContentType() || 'image/jpeg';
+    if (contentType.indexOf('image/') !== 0) return { date: '', confidence: '' };
+    const dataUrl = 'data:' + contentType + ';base64,' + Utilities.base64Encode(blob.getBytes());
+    const payload = {
+      model: PropertiesService.getScriptProperties().getProperty('OPENAI_VISION_MODEL') ||
+        PropertiesService.getScriptProperties().getProperty('OPENAI_MODEL') ||
+        CONFIG.OPENAI_MODEL_DEFAULT,
+      input: [{
+        role: 'user',
+        content: [
+          {
+            type: 'input_text',
+            text: [
+              'Read the Vietnamese ID card back-side image.',
+              'Return only JSON: {"date":"dd/MM/yyyy or empty","confidence":0..1,"evidence":"short text seen"}.',
+              'The field is issue date near labels "Ngày, tháng, năm / Date, month, year" or "Ngày, tháng, năm cấp / Date of issue".',
+              'Do not infer from corrupted OCR. If the date is not visually clear, return empty date.',
+              'Do not use birth date, expiry date, MRZ dates, or any other date.'
+            ].join(' ')
+          },
+          { type: 'input_image', image_url: dataUrl }
+        ]
+      }],
+      text: {
+        format: {
+          type: 'json_schema',
+          name: 'identity_issue_date_from_image',
+          strict: false,
+          schema: {
+            type: 'object',
+            additionalProperties: false,
+            properties: {
+              date: { type: 'string' },
+              confidence: { type: 'number' },
+              evidence: { type: 'string' }
+            },
+            required: ['date']
+          }
+        }
+      }
+    };
+    const response = withRetry('OpenAI vision issue date ' + fileName, function() {
+      const res = UrlFetchApp.fetch(CONFIG.OPENAI_ENDPOINT, {
+        method: 'post',
+        contentType: 'application/json',
+        headers: { Authorization: 'Bearer ' + apiKey },
+        payload: JSON.stringify(payload),
+        muteHttpExceptions: true
+      });
+      if (res.getResponseCode() >= 300) throw new Error(res.getContentText());
+      return JSON.parse(res.getContentText());
+    }, 2);
+    const parsed = parseOpenAiJsonResponse_(response);
+    const date = normalizeDateValue_(parsed && parsed.date);
+    if (!date) return { date: '', confidence: '' };
+    const confidence = Number(parsed.confidence || 0);
+    if (confidence && confidence < 0.75) return { date: '', confidence: confidence };
+    return { date: date, confidence: confidence || 0.92 };
+  } catch (err) {
+    return { date: '', confidence: '' };
+  }
 }
 
 function getFullOcrTextMapsForCase_(caseId, reviewJson) {
