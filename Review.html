@@ -692,7 +692,7 @@
       lines.push('</div></section>');
       lines.push('<section class="asset-doc-section"><h3>' + t('2. Thong tin theo giay chung nhan') + '</h3><div class="asset-doc-lines">');
       lines.push('<div class="asset-doc-line"><strong>I. ' + t('Nguoi su dung dat, chu so huu nha o va tai san khac gan lien voi dat') + ':</strong></div>');
-      ownerLines(asset).forEach(line => lines.push('<div class="asset-doc-line">' + escapeHtml(line) + '</div>'));
+      ownerLines(asset).forEach(line => lines.push('<div class="asset-doc-line">' + escapeHtml(oneLineCertificateValue(line)) + '</div>'));
       lines.push('<div class="asset-doc-line"><strong>II. ' + t('Thua dat, nha o va tai san khac gan lien voi dat') + ':</strong></div>');
       lines.push('<div class="asset-doc-line"><strong>1. ' + t('Thua dat') + ':</strong></div>');
       pushAssetLine(lines, 'a. ' + t('Thua dat so'), valueOf(re.land_plot_number) + (valueOf(re.map_sheet_number) ? '    ' + t('to ban do so') + ': ' + valueOf(re.map_sheet_number) : ''));
@@ -1041,10 +1041,7 @@
       (people || []).forEach(function(person, index) {
         const field = person && person.id_issue_date;
         if (!isMissingAutoOcrField_(field)) return;
-        const files = getFilesForObject(person, group).filter(function(file) {
-          const text = removeVietnameseMarks((file.text_preview || '') + ' ' + (file.file_name || '')).toLowerCase();
-          return text.indexOf('idvnm') >= 0 || text.indexOf('date of issue') >= 0 || text.indexOf('date month') >= 0 || text.indexOf('ngay thang nam') >= 0;
-        });
+        const files = getFilesForObject(person, group);
         if (!files.length) return;
         jobs.push({
           fieldPath: root + '[' + index + '].id_issue_date',
