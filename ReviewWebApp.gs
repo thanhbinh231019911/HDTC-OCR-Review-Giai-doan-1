@@ -37,6 +37,15 @@ function reviewApi(body) {
   if (action === 'getCaseOcrText') {
     return getCaseOcrText(body.caseId, body.token, body.fileId, body.fileName);
   }
+  if (action === 'suggestIdentityIssueDateCrop') {
+    return suggestIdentityIssueDateCrop(body.caseId, body.token, body.fileId);
+  }
+  if (action === 'ocrIdentityIssueDateCrop') {
+    return ocrIdentityIssueDateCrop(body.caseId, body.token, body.dataUrl);
+  }
+  if (action === 'saveAutoOcrFieldValue') {
+    return saveAutoOcrFieldValue(body.caseId, body.token, body.fieldPath, body.newValue, body.source);
+  }
   if (action === 'listContractTemplates') {
     return listContractTemplatesForReview(body.caseId, body.token);
   }

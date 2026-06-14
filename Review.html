@@ -329,6 +329,8 @@
     let imageCache = {};
     let confirmBusy = false;
     let generateBusy = false;
+    let autoOcrBusy = false;
+    let autoOcrDonePaths = {};
 
     function vi(key) {
       const map = {
@@ -995,6 +997,100 @@
           frame.textContent = err.message;
         }
       }
+      autoRepairIdentityIssueDatesFromImageCrops();
+    }
+
+    async function autoRepairIdentityIssueDatesFromImageCrops() {
+      if (autoOcrBusy || !reviewData) return;
+      autoOcrBusy = true;
+      try {
+        const jobs = [];
+        collectIdentityIssueDateJobs_(reviewData.secured_parties || [], 'secured_parties', 'secured_party', jobs);
+        collectIdentityIssueDateJobs_(reviewData.obligors || [], 'obligors', 'obligor', jobs);
+        for (const job of jobs) {
+          if (autoOcrDonePaths[job.fieldPath]) continue;
+          autoOcrDonePaths[job.fieldPath] = true;
+          const date = await readIssueDateFromIdentityFiles_(job.files);
+          if (!date) continue;
+          const saved = await api('saveAutoOcrFieldValue', {
+            fieldPath: job.fieldPath,
+            newValue: date,
+            source: 'AUTO_OCR_IDENTITY_CROP'
+          });
+          if (saved && saved.ok) {
+            job.field.ai_value = date;
+            job.field.final_value = date;
+            job.field.source = 'AUTO_OCR_IDENTITY_CROP';
+            job.field.confidence = '0.9';
+            render();
+            break;
+          }
+        }
+      } catch (err) {
+        console.warn('Auto OCR identity issue date failed', err);
+      } finally {
+        autoOcrBusy = false;
+      }
+    }
+
+    function collectIdentityIssueDateJobs_(people, root, group, jobs) {
+      (people || []).forEach(function(person, index) {
+        const field = person && person.id_issue_date;
+        if (!isMissingAutoOcrField_(field)) return;
+        const files = getFilesForObject(person, group).filter(function(file) {
+          const text = removeVietnameseMarks((file.text_preview || '') + ' ' + (file.file_name || '')).toLowerCase();
+          return text.indexOf('idvnm') >= 0 || text.indexOf('date of issue') >= 0 || text.indexOf('date month') >= 0 || text.indexOf('ngay thang nam') >= 0;
+        });
+        if (!files.length) return;
+        jobs.push({
+          fieldPath: root + '[' + index + '].id_issue_date',
+          field: field,
+          files: files
+        });
+      });
+    }
+
+    function isMissingAutoOcrField_(field) {
+      if (!field || field.manual_value) return false;
+      const value = cleanValue(field.final_value || field.ai_value);
+      if (!value) return true;
+      return removeVietnameseMarks(value).toLowerCase().indexOf('khong ro') >= 0;
+    }
+
+    async function readIssueDateFromIdentityFiles_(files) {
+      for (const file of files || []) {
+        if (!file.file_id) continue;
+        const preview = imageCache[file.file_id] || await api('getCaseImagePreview', { fileId: file.file_id });
+        imageCache[file.file_id] = preview;
+        if (!preview || !preview.is_image || !preview.data_url) continue;
+        const suggestion = await api('suggestIdentityIssueDateCrop', { fileId: file.file_id });
+        if (!suggestion || !suggestion.ok || !suggestion.crop) continue;
+        const cropDataUrl = await cropDataUrlFromImage_(preview.data_url, suggestion.crop);
+        if (!cropDataUrl) continue;
+        const ocr = await api('ocrIdentityIssueDateCrop', { dataUrl: cropDataUrl });
+        if (ocr && ocr.date) return ocr.date;
+      }
+      return '';
+    }
+
+    function cropDataUrlFromImage_(dataUrl, box) {
+      return new Promise(function(resolve) {
+        const img = new Image();
+        img.onload = function() {
+          const x = Math.max(0, Math.round(box.x || 0));
+          const y = Math.max(0, Math.round(box.y || 0));
+          const w = Math.min(img.naturalWidth - x, Math.round(box.width || 0));
+          const h = Math.min(img.naturalHeight - y, Math.round(box.height || 0));
+          if (w < 8 || h < 8) return resolve('');
+          const canvas = document.createElement('canvas');
+          canvas.width = w;
+          canvas.height = h;
+          canvas.getContext('2d').drawImage(img, x, y, w, h, 0, 0, w, h);
+          resolve(canvas.toDataURL('image/png'));
+        };
+        img.onerror = function() { resolve(''); };
+        img.src = dataUrl;
+      });
     }
 
     function autoOrientReviewImage(img) {

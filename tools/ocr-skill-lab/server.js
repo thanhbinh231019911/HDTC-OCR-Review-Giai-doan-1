@@ -60,7 +60,7 @@ function formatValidDate(dayValue, monthValue, yearValue) {
   const day = Number(dayValue);
   const month = Number(monthValue);
   const year = Number(yearValue);
-  if (year < 1990 || year > 2099 || month < 1 || month > 12 || day < 1 || day > 31) return '';
+  if (year < 1900 || year > 2099 || month < 1 || month > 12 || day < 1 || day > 31) return '';
   const daysInMonth = [31, isLeapYear(year) ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31][month - 1];
   if (day > daysInMonth) return '';
   return pad2(day) + '/' + pad2(month) + '/' + year;
@@ -154,8 +154,11 @@ function extractCccdIssueDateFromCrop(text) {
 }
 
 function extractStrictDate(text) {
-  const separated = String(text || '').match(/(\d{1,2})[\/.\-](\d{1,2})[\/.\-](\d{4})/);
-  if (separated) return normalizeDate(separated[1] + '/' + separated[2] + '/' + separated[3]);
+  const separatedMatches = String(text || '').match(/(\d{1,2})[\/.\-](\d{1,2})[\/.\-](\d{4})/g) || [];
+  for (const value of separatedMatches) {
+    const date = normalizeDate(value);
+    if (date) return date;
+  }
   const compactMatches = String(text || '').match(/(?:^|\D)(\d{8})(?=\D|$)/g) || [];
   for (const raw of compactMatches) {
     const date = normalizeDate(raw.replace(/\D/g, ''));
@@ -212,12 +215,19 @@ function extractUsageTerm(text) {
 function parseCccd(text, options) {
   options = options || {};
   const issueDate = extractCccdIssueDate(text, options);
+  const identityFields = extractIdentityFieldsFromOcr(text);
   return {
     skill: SKILLS.cccd,
     mode: options.issueDateCrop ? 'issue_date_crop' : 'full_image',
     fields: {
-      id_numbers: extractVietnamIds(text),
-      issue_date: issueDate.value
+      full_name: identityFields.full_name,
+      date_of_birth: identityFields.date_of_birth,
+      document_type: identityFields.document_type,
+      id_numbers: identityFields.id_numbers,
+      issue_date: issueDate.value,
+      expiry_date: identityFields.expiry_date,
+      issue_place: identityFields.issue_place,
+      permanent_address: identityFields.permanent_address
     },
     evidence: {
       issue_date: issueDate.evidence,
@@ -229,6 +239,296 @@ function parseCccd(text, options) {
         : 'Không đọc chắc ngày cấp từ OCR text; cần crop/vùng ngày cấp hoặc sửa tay.'
     ]
   };
+}
+
+function extractIdentityFieldsFromOcr(text) {
+  text = String(text || '');
+  const normalized = normalizeText(text);
+  const idNumbers = extractVietnamIds(text);
+  return {
+    full_name: extractIdentityFullName(text),
+    date_of_birth: extractIdentityBirthDate(text),
+    document_type: inferIdentityDocumentType(text),
+    id_numbers: idNumbers,
+    expiry_date: extractIdentityExpiryDate(text),
+    issue_place: inferIdentityIssuePlace(text),
+    permanent_address: extractIdentityPermanentAddress(text)
+  };
+}
+
+function inferIdentityDocumentType(text) {
+  const normalized = normalizeText(text);
+  if (normalized.includes('can cuoc cong dan') || normalized.includes('citizen identity card')) {
+    return 'Căn cước công dân';
+  }
+  if (normalized.includes('can cuoc')) return 'Căn cước';
+  return '';
+}
+
+function inferIdentityIssuePlace(text) {
+  const normalized = normalizeText(text);
+  if (normalized.includes('cuc canh sat quan ly hanh chinh') ||
+      normalized.includes('canh sat quan ly hanh chinh')) {
+    return 'Cục Cảnh sát quản lý hành chính về trật tự xã hội';
+  }
+  if (normalized.includes('bo cong an') || normalized.includes('ministry of public security')) {
+    return 'Bộ Công an';
+  }
+  return '';
+}
+
+function extractIdentityBirthDate(text) {
+  const lines = String(text || '').split(/\r?\n/);
+  for (let i = 0; i < lines.length; i++) {
+    const searchable = normalizeText(lines[i]);
+    if (!searchable.includes('date of birth') && !searchable.includes('ngay sinh')) continue;
+    const sameLine = extractStrictDate(lines[i]);
+    if (sameLine) return sameLine;
+    const compactLine = lines[i].replace(/\s+/g, '');
+    const compactDate = extractStrictDate(compactLine);
+    if (compactDate) return compactDate;
+    const nextLine = extractStrictDate(lines[i + 1] || '');
+    if (nextLine) return nextLine;
+  }
+  return '';
+}
+
+function extractIdentityExpiryDate(text) {
+  const lines = String(text || '').split(/\r?\n/);
+  for (let i = 0; i < lines.length; i++) {
+    const searchable = normalizeText(lines[i]);
+    if (!searchable.includes('date of expiry') &&
+        !searchable.includes('expiry') &&
+        !searchable.includes('co gia tri den') &&
+        !searchable.includes('gia tri den')) continue;
+    const sameLine = extractStrictDate(lines[i]);
+    if (sameLine) return sameLine;
+    const compactDate = extractStrictDate(lines[i].replace(/\s+/g, ''));
+    if (compactDate) return compactDate;
+    const nextLine = extractStrictDate(lines[i + 1] || '');
+    if (nextLine) return nextLine;
+  }
+  return '';
+}
+
+function extractIdentityFullName(text) {
+  const lines = String(text || '').split(/\r?\n/).map(line => line.trim()).filter(Boolean);
+  for (let i = 0; i < lines.length; i++) {
+    const searchable = normalizeText(lines[i]);
+    if (!searchable.includes('ho va ten') && !searchable.includes('full name')) continue;
+    const sameLine = lines[i].split(/full name\s*:?/i).pop().trim();
+    if (isLikelyPersonName(sameLine)) return cleanupPersonName(sameLine);
+    for (let j = i + 1; j < Math.min(lines.length, i + 4); j++) {
+      if (isLikelyPersonName(lines[j])) return cleanupPersonName(lines[j]);
+    }
+  }
+  const mrzName = extractMrzName(text);
+  return mrzName;
+}
+
+function isLikelyPersonName(value) {
+  const text = String(value || '').trim();
+  if (!text || /\d/.test(text)) return false;
+  const normalized = normalizeText(text);
+  if (normalized.includes('ngay sinh') || normalized.includes('date of birth')) return false;
+  if (normalized.includes('nationality') || normalized.includes('sex')) return false;
+  return /^[A-ZÀ-Ỹ\s]{5,}$/i.test(text);
+}
+
+function cleanupPersonName(value) {
+  return String(value || '').replace(/\s+/g, ' ').trim();
+}
+
+function extractMrzName(text) {
+  const match = String(text || '').match(/\n([A-Z<]{5,})<<([A-Z<]{2,})/);
+  if (!match) return '';
+  return cleanupPersonName((match[1] + '<' + match[2]).replace(/</g, ' '));
+}
+
+function extractIdentityPermanentAddress(text) {
+  const lines = String(text || '').split(/\r?\n/);
+  for (let i = 0; i < lines.length; i++) {
+    const searchable = normalizeText(lines[i]);
+    if (!searchable.includes('noi thuong tru') && !searchable.includes('place of residence')) continue;
+    const addressLines = [];
+    for (let j = i; j < Math.min(lines.length, i + 4); j++) {
+      const normalizedLine = normalizeText(lines[j]);
+      if (j > i && (
+        normalizedLine.includes('cuc canh sat') ||
+        normalizedLine.includes('bo cong an') ||
+        normalizedLine.includes('director general') ||
+        normalizedLine.includes('police department') ||
+        normalizedLine.includes('ngon tro')
+      )) break;
+      addressLines.push(lines[j]);
+    }
+    const value = addressLines.join(' ')
+      .replace(/.*?(Nơi thường trú|Noi thuong tru|Place of residence)\s*:?\s*/i, '')
+      .replace(/^\/\s*Place of residence\s*:?\s*/i, '')
+      .replace(/\s+/g, ' ')
+      .trim();
+    return cleanupIdentityAddress_(value);
+  }
+  return '';
+}
+
+function cleanupIdentityAddress_(value) {
+  value = String(value || '').replace(/\s+/g, ' ').trim();
+  value = value.replace(/^I\s+Place of residence\s*/i, '');
+  value = value.replace(/^\/\s*Place of residence\s*:?\s*/i, '');
+  value = value.replace(/\bOÀN\b.*$/i, '').trim();
+  value = value.replace(/\bOAN\b.*$/i, '').trim();
+  value = value.replace(/\bHOÀNG\b.*$/i, '').trim();
+  value = value.replace(/\bHOANG\b.*$/i, '').trim();
+  value = value.replace(/\bri,\s*phi\b.*$/i, '').trim();
+  return value;
+}
+
+function suggestCccdIssueDateCropFromGoogleVision(raw) {
+  const newIdCrop = suggestNewIdentityIssueDateCropFromGoogleVision(raw);
+  if (newIdCrop) return newIdCrop;
+  const pages = raw && raw.fullTextAnnotation && raw.fullTextAnnotation.pages || [];
+  for (const page of pages) {
+    const pageWidth = Number(page.width || 0);
+    const pageHeight = Number(page.height || 0);
+    for (const block of page.blocks || []) {
+      for (const paragraph of block.paragraphs || []) {
+        for (const word of paragraph.words || []) {
+          const text = (word.symbols || []).map(symbol => symbol.text || '').join('');
+          const normalized = normalizeText(text);
+          const yearIndex = findIssueDateYearIndex(normalized);
+          if (yearIndex < 0) continue;
+          const box = boundingRect(word.boundingBox);
+          if (!box || box.width < 4 || box.height < 4) continue;
+          const charCount = Math.max(text.length, 1);
+          const dateStartRatio = Math.min(0.9, Math.max(0, (yearIndex + 3) / charCount));
+          const startX = Math.max(0, Math.round(box.x + box.width * dateStartRatio - box.height * 0.15));
+          const y = Math.max(0, Math.round(box.y - box.height * 0.75));
+          const rightFromWord = Math.round(box.x + box.width + box.height * 1.8);
+          const rightFallback = Math.round(startX + Math.max(pageWidth * 0.18, box.height * 8));
+          const right = Math.min(pageWidth || rightFromWord, Math.max(rightFromWord, rightFallback));
+          const height = Math.min(pageHeight - y, Math.round(box.height * 2.6));
+          const width = Math.max(8, right - startX);
+          if (width < 8 || height < 8) continue;
+          return {
+            x: startX,
+            y,
+            width,
+            height,
+            reason: 'old_cccd_year_label',
+            anchor_text: text
+          };
+        }
+      }
+    }
+  }
+  const mrzLayoutCrop = suggestOldCccdIssueDateCropFromMrzLayout_(raw);
+  if (mrzLayoutCrop) return mrzLayoutCrop;
+  return null;
+}
+
+function suggestOldCccdIssueDateCropFromMrzLayout_(raw) {
+  const words = collectGoogleVisionWords(raw);
+  for (const word of words) {
+    const normalized = normalizeText(word.text).replace(/\s+/g, '');
+    if (normalized.indexOf('idvnm') < 0) continue;
+    const box = word.box;
+    if (!box || box.width < 40 || box.height < 5) continue;
+    const pageWidth = word.pageWidth || 0;
+    const pageHeight = word.pageHeight || 0;
+    const x = Math.max(0, Math.round(box.x + box.width * 0.52));
+    const y = Math.max(0, Math.round(box.y - box.width * 0.62));
+    const width = Math.max(8, Math.round(box.width * 0.36));
+    const height = Math.max(8, Math.round(box.width * 0.09));
+    return {
+      x,
+      y,
+      width: Math.min(width, Math.max(8, pageWidth - x)),
+      height: Math.min(height, Math.max(8, pageHeight - y)),
+      reason: 'old_cccd_mrz_layout_year_region',
+      anchor_text: word.text
+    };
+  }
+  return null;
+}
+
+function suggestNewIdentityIssueDateCropFromGoogleVision(raw) {
+  const words = collectGoogleVisionWords(raw);
+  for (let i = 0; i < words.length; i++) {
+    const current = normalizeText(words[i].text);
+    const next1 = normalizeText(words[i + 1] && words[i + 1].text);
+    const next2 = normalizeText(words[i + 2] && words[i + 2].text);
+    const isDateOfIssue = current === 'date' && next1 === 'of' && next2.indexOf('issue') === 0;
+    if (!isDateOfIssue) continue;
+    const labelBox = mergeRects([words[i].box, words[i + 1].box, words[i + 2].box]);
+    if (!labelBox) continue;
+    const pageWidth = words[i].pageWidth || 0;
+    const pageHeight = words[i].pageHeight || 0;
+    const height = Math.round(labelBox.height * 2.4);
+    const width = Math.round(Math.max(labelBox.width * 1.5, labelBox.height * 9));
+    const x = Math.max(0, Math.round(labelBox.x + labelBox.width / 2 - width / 2));
+    const y = Math.max(0, Math.round(labelBox.y + labelBox.height * 0.85));
+    return {
+      x,
+      y,
+      width: Math.min(width, Math.max(8, pageWidth - x)),
+      height: Math.min(height, Math.max(8, pageHeight - y)),
+      reason: 'new_can_cuoc_date_of_issue_label',
+      anchor_text: [words[i].text, words[i + 1].text, words[i + 2].text].join(' ')
+    };
+  }
+  return null;
+}
+
+function collectGoogleVisionWords(raw) {
+  const out = [];
+  const pages = raw && raw.fullTextAnnotation && raw.fullTextAnnotation.pages || [];
+  for (const page of pages) {
+    const pageWidth = Number(page.width || 0);
+    const pageHeight = Number(page.height || 0);
+    for (const block of page.blocks || []) {
+      for (const paragraph of block.paragraphs || []) {
+        for (const word of paragraph.words || []) {
+          const text = (word.symbols || []).map(symbol => symbol.text || '').join('');
+          const box = boundingRect(word.boundingBox);
+          if (!text || !box) continue;
+          out.push({ text, box, pageWidth, pageHeight });
+        }
+      }
+    }
+  }
+  return out;
+}
+
+function mergeRects(rects) {
+  rects = (rects || []).filter(Boolean);
+  if (!rects.length) return null;
+  const minX = Math.min.apply(null, rects.map(rect => rect.x));
+  const minY = Math.min.apply(null, rects.map(rect => rect.y));
+  const maxX = Math.max.apply(null, rects.map(rect => rect.x + rect.width));
+  const maxY = Math.max.apply(null, rects.map(rect => rect.y + rect.height));
+  return { x: minX, y: minY, width: maxX - minX, height: maxY - minY };
+}
+
+function findIssueDateYearIndex(normalizedWord) {
+  const text = String(normalizedWord || '');
+  let idx = text.indexOf('year');
+  if (idx >= 0) return idx;
+  idx = text.indexOf('yea');
+  if (idx >= 0) return idx;
+  return -1;
+}
+
+function boundingRect(box) {
+  const vertices = box && box.vertices || [];
+  if (!vertices.length) return null;
+  const xs = vertices.map(v => Number(v.x || 0));
+  const ys = vertices.map(v => Number(v.y || 0));
+  const minX = Math.min.apply(null, xs);
+  const maxX = Math.max.apply(null, xs);
+  const minY = Math.min.apply(null, ys);
+  const maxY = Math.max.apply(null, ys);
+  return { x: minX, y: minY, width: maxX - minX, height: maxY - minY };
 }
 
 function parseLand(text) {
@@ -329,6 +629,9 @@ async function handleOcr(req, res) {
         engine: ocr.provider || engine,
         ocr_error: ocr.error || '',
         raw_text: text,
+        crop_suggestion: skill === 'cccd' && ocr.provider === 'GOOGLE_VISION' && !payload.issueDateCrop
+          ? suggestCccdIssueDateCropFromGoogleVision(ocr.raw)
+          : null,
         parsed: skill === 'land' ? parseLand(text) : parseCccd(text, {
           issueDateCrop: Boolean(payload.issueDateCrop)
         })

@@ -170,6 +170,223 @@ function readIdentityIssueDateFromImageWithOpenAi_(fileId, fileName) {
   }
 }
 
+function suggestIdentityIssueDateCrop(caseId, token, fileId) {
+  assertValidToken_(caseId, token);
+  const apiKey = PropertiesService.getScriptProperties().getProperty(CONFIG.CLOUD_VISION_API_KEY_PROPERTY);
+  if (!apiKey) return { ok: false, reason: 'MISSING_CLOUD_VISION_API_KEY' };
+  const file = DriveApp.getFileById(fileId);
+  const blob = file.getBlob();
+  const contentType = blob.getContentType() || 'image/jpeg';
+  if (contentType.indexOf('image/') !== 0) return { ok: false, reason: 'NOT_IMAGE' };
+  const response = withRetry('Vision crop suggestion ' + file.getName(), function() {
+    const res = UrlFetchApp.fetch('https://vision.googleapis.com/v1/images:annotate?key=' + encodeURIComponent(apiKey), {
+      method: 'post',
+      contentType: 'application/json',
+      payload: JSON.stringify({
+        requests: [{
+          image: { content: Utilities.base64Encode(blob.getBytes()) },
+          features: [{ type: 'DOCUMENT_TEXT_DETECTION' }],
+          imageContext: { languageHints: ['vi', 'en'] }
+        }]
+      }),
+      muteHttpExceptions: true
+    });
+    if (res.getResponseCode() >= 300) throw new Error(res.getContentText());
+    return JSON.parse(res.getContentText());
+  }, 2);
+  const annotation = response.responses && response.responses[0];
+  const suggestion = suggestIdentityIssueDateCropFromVisionAnnotation_(annotation);
+  return suggestion ? { ok: true, crop: suggestion } : { ok: false, reason: 'NO_CROP_ANCHOR' };
+}
+
+function ocrIdentityIssueDateCrop(caseId, token, dataUrl) {
+  assertValidToken_(caseId, token);
+  const apiKey = PropertiesService.getScriptProperties().getProperty(CONFIG.CLOUD_VISION_API_KEY_PROPERTY);
+  if (!apiKey) return { date: '', raw_text: '', reason: 'MISSING_CLOUD_VISION_API_KEY' };
+  const match = String(dataUrl || '').match(/^data:image\/[a-zA-Z0-9.+-]+;base64,(.+)$/);
+  if (!match) return { date: '', raw_text: '', reason: 'INVALID_IMAGE_DATA' };
+  const response = withRetry('Vision OCR issue date crop', function() {
+    const res = UrlFetchApp.fetch('https://vision.googleapis.com/v1/images:annotate?key=' + encodeURIComponent(apiKey), {
+      method: 'post',
+      contentType: 'application/json',
+      payload: JSON.stringify({
+        requests: [{
+          image: { content: match[1] },
+          features: [{ type: 'DOCUMENT_TEXT_DETECTION' }],
+          imageContext: { languageHints: ['vi', 'en'] }
+        }]
+      }),
+      muteHttpExceptions: true
+    });
+    if (res.getResponseCode() >= 300) throw new Error(res.getContentText());
+    return JSON.parse(res.getContentText());
+  }, 2);
+  const annotation = response.responses && response.responses[0] && response.responses[0].fullTextAnnotation;
+  const text = annotation && annotation.text || '';
+  const date = extractSingleValidDateFromIssueDateCrop_(text);
+  return { date: date, raw_text: text, reason: date ? 'OK' : 'NO_SINGLE_VALID_DATE' };
+}
+
+function saveAutoOcrFieldValue(caseId, token, fieldPath, newValue, source) {
+  assertValidToken_(caseId, token);
+  newValue = normalizeManualOverrideValueForStorage_(newValue);
+  if (!newValue) return { ok: false, reason: 'EMPTY_VALUE' };
+  let data = getLatestFinalData(caseId) || getLatestExtractedData(caseId);
+  if (!data) throw new Error('No review data for case ' + caseId);
+  data = applyOverridesToReviewJson(data, getOverrides(caseId));
+  const field = getByPath(data, fieldPath);
+  if (!field || typeof field !== 'object' || !field.hasOwnProperty('final_value')) {
+    throw new Error('Field path is not editable: ' + fieldPath);
+  }
+  if (field.manual_value) return { ok: false, reason: 'HAS_MANUAL_VALUE' };
+  const current = normalizeDateValue_(field.final_value || field.ai_value);
+  if (current && String(field.final_value || '').indexOf('Không rõ') < 0) return { ok: false, reason: 'HAS_VALUE' };
+  appendSheetRow(SHEETS.REVIEW_OVERRIDES, {
+    'Case ID': caseId,
+    'Field Path': fieldPath,
+    'Field Label': field.label || fieldPath,
+    'Old Value': field.final_value || '',
+    'New Value': newValue,
+    'Edited By': 'AUTO_OCR',
+    'Edited At': nowIso(),
+    'Reason': source || 'AUTO_OCR_IDENTITY_CROP'
+  });
+  logAudit(caseId, 'AUTO_OCR_FIELD_SAVED', { field_path: fieldPath, value: newValue, source: source || '' });
+  return { ok: true, field_path: fieldPath, new_value: newValue };
+}
+
+function suggestIdentityIssueDateCropFromVisionAnnotation_(annotation) {
+  const newIdCrop = suggestNewIdentityIssueDateCropFromVisionAnnotation_(annotation);
+  if (newIdCrop) return newIdCrop;
+  const words = collectVisionWords_(annotation);
+  for (let i = 0; i < words.length; i++) {
+    const text = String(words[i].text || '');
+    const normalized = removeVietnameseAccents_(text).toLowerCase();
+    const idx = normalized.indexOf('year') >= 0 ? normalized.indexOf('year') : normalized.indexOf('yea');
+    if (idx < 0) continue;
+    const box = words[i].box;
+    const charCount = Math.max(text.length, 1);
+    const startX = Math.max(0, Math.round(box.x + box.width * Math.min(0.9, (idx + 3) / charCount) - box.height * 0.15));
+    const y = Math.max(0, Math.round(box.y - box.height * 0.45));
+    return {
+      x: startX,
+      y: y,
+      width: Math.max(8, Math.min(words[i].pageWidth - startX, Math.round(Math.max(box.height * 8, words[i].pageWidth * 0.16)))),
+      height: Math.max(8, Math.min(words[i].pageHeight - y, Math.round(box.height * 1.8))),
+      reason: 'old_cccd_year_anchor',
+      anchor_text: text
+    };
+  }
+  for (let j = 0; j < words.length; j++) {
+    const normalizedWord = removeVietnameseAccents_(String(words[j].text || '')).toLowerCase().replace(/\s+/g, '');
+    if (normalizedWord.indexOf('idvnm') < 0) continue;
+    const mrz = words[j].box;
+    const x = Math.max(0, Math.round(mrz.x + mrz.width * 0.52));
+    const y = Math.max(0, Math.round(mrz.y - mrz.width * 0.62));
+    return {
+      x: x,
+      y: y,
+      width: Math.max(8, Math.min(words[j].pageWidth - x, Math.round(mrz.width * 0.36))),
+      height: Math.max(8, Math.min(words[j].pageHeight - y, Math.round(mrz.width * 0.09))),
+      reason: 'old_cccd_mrz_layout_year_region',
+      anchor_text: words[j].text
+    };
+  }
+  return null;
+}
+
+function suggestNewIdentityIssueDateCropFromVisionAnnotation_(annotation) {
+  const words = collectVisionWords_(annotation);
+  for (let i = 0; i < words.length - 2; i++) {
+    const a = removeVietnameseAccents_(String(words[i].text || '')).toLowerCase();
+    const b = removeVietnameseAccents_(String(words[i + 1].text || '')).toLowerCase();
+    const c = removeVietnameseAccents_(String(words[i + 2].text || '')).toLowerCase();
+    if (!(a === 'date' && b === 'of' && c.indexOf('issue') === 0)) continue;
+    const box = mergeVisionRects_([words[i].box, words[i + 1].box, words[i + 2].box]);
+    const pageWidth = words[i].pageWidth;
+    const pageHeight = words[i].pageHeight;
+    const height = Math.round(box.height * 2.4);
+    const width = Math.round(Math.max(box.width * 1.5, box.height * 9));
+    const x = Math.max(0, Math.round(box.x + box.width / 2 - width / 2));
+    const y = Math.max(0, Math.round(box.y + box.height * 0.85));
+    return {
+      x: x,
+      y: y,
+      width: Math.max(8, Math.min(width, pageWidth - x)),
+      height: Math.max(8, Math.min(height, pageHeight - y)),
+      reason: 'new_can_cuoc_date_of_issue_label',
+      anchor_text: [words[i].text, words[i + 1].text, words[i + 2].text].join(' ')
+    };
+  }
+  return null;
+}
+
+function collectVisionWords_(annotation) {
+  const out = [];
+  const pages = annotation && annotation.fullTextAnnotation && annotation.fullTextAnnotation.pages || [];
+  pages.forEach(function(page) {
+    const pageWidth = Number(page.width || 0);
+    const pageHeight = Number(page.height || 0);
+    (page.blocks || []).forEach(function(block) {
+      (block.paragraphs || []).forEach(function(paragraph) {
+        (paragraph.words || []).forEach(function(word) {
+          const text = (word.symbols || []).map(function(symbol) { return symbol.text || ''; }).join('');
+          const box = visionBoundingRect_(word.boundingBox);
+          if (text && box) out.push({ text: text, box: box, pageWidth: pageWidth, pageHeight: pageHeight });
+        });
+      });
+    });
+  });
+  return out;
+}
+
+function visionBoundingRect_(box) {
+  const vertices = box && box.vertices || [];
+  if (!vertices.length) return null;
+  const xs = vertices.map(function(v) { return Number(v.x || 0); });
+  const ys = vertices.map(function(v) { return Number(v.y || 0); });
+  const minX = Math.min.apply(null, xs);
+  const maxX = Math.max.apply(null, xs);
+  const minY = Math.min.apply(null, ys);
+  const maxY = Math.max.apply(null, ys);
+  return { x: minX, y: minY, width: maxX - minX, height: maxY - minY };
+}
+
+function mergeVisionRects_(rects) {
+  rects = (rects || []).filter(Boolean);
+  const minX = Math.min.apply(null, rects.map(function(rect) { return rect.x; }));
+  const minY = Math.min.apply(null, rects.map(function(rect) { return rect.y; }));
+  const maxX = Math.max.apply(null, rects.map(function(rect) { return rect.x + rect.width; }));
+  const maxY = Math.max.apply(null, rects.map(function(rect) { return rect.y + rect.height; }));
+  return { x: minX, y: minY, width: maxX - minX, height: maxY - minY };
+}
+
+function extractSingleValidDateFromIssueDateCrop_(text) {
+  const out = [];
+  String(text || '').replace(/(\d{1,2})[\/.\-](\d{1,2})[\/.\-](\d{4})/g, function(match) {
+    const date = normalizeDateValue_(match);
+    if (isValidIdentityDate_(date) && out.indexOf(date) === -1) out.push(date);
+    return match;
+  });
+  String(text || '').replace(/(?:^|\D)(\d{8})(?=\D|$)/g, function(match, digits) {
+    const date = normalizeCompactIssueDateDigits_(digits);
+    if (date && out.indexOf(date) === -1) out.push(date);
+    return match;
+  });
+  return out.length === 1 ? out[0] : '';
+}
+
+function isValidIdentityDate_(date) {
+  const match = String(date || '').match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+  if (!match) return false;
+  const day = Number(match[1]);
+  const month = Number(match[2]);
+  const year = Number(match[3]);
+  if (year < 1900 || year > 2099 || month < 1 || month > 12 || day < 1 || day > 31) return false;
+  const daysInMonth = [31, isLeapYear_(year) ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31][month - 1];
+  return day <= daysInMonth;
+}
+
 function getFullOcrTextMapsForCase_(caseId, reviewJson) {
   const byFileName = {};
   const assetTexts = [];

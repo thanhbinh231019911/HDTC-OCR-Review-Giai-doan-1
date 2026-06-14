@@ -1,4 +1,4 @@
-<!doctype html>
+﻿<!doctype html>
 <html lang="vi">
 <head>
   <meta charset="utf-8">
@@ -18,9 +18,14 @@
     .grid { display: grid; grid-template-columns: minmax(280px, 420px) 1fr; gap: 16px; }
     .panel { background: white; border: 1px solid #dbe3ef; border-radius: 8px; padding: 12px; }
     img { width: 100%; height: auto; border: 1px solid #dbe3ef; border-radius: 6px; background: #eef2f7; }
+    canvas { width: 100%; height: auto; border: 1px solid #dbe3ef; border-radius: 6px; background: #eef2f7; cursor: crosshair; }
     pre { white-space: pre-wrap; word-break: break-word; margin: 0; font-size: 13px; line-height: 1.45; }
     .results { display: grid; gap: 12px; }
     textarea { min-height: 78px; resize: vertical; font: inherit; padding: 9px 10px; border: 1px solid #cbd5e1; border-radius: 6px; }
+    .final-grid { display: grid; grid-template-columns: 180px 1fr; gap: 8px 14px; font-size: 14px; }
+    .field-label { color: #64748b; }
+    .field-value { font-weight: 700; }
+    details summary { cursor: pointer; color: #334155; font-weight: 600; }
     .muted { color: #64748b; font-size: 13px; }
     .error { color: #b91c1c; font-weight: 600; }
     @media (max-width: 860px) {
@@ -34,41 +39,42 @@
     <form class="toolbar" id="form">
       <label>Skill
         <select id="skill">
-          <option value="cccd">OCR CCCD/Căn cước</option>
-          <option value="land">OCR Bìa đất</option>
+          <option value="cccd">OCR CCCD/CÄƒn cÆ°á»›c</option>
+          <option value="land">OCR BÃ¬a Ä‘áº¥t</option>
         </select>
       </label>
       <label>Engine
         <select id="engine">
           <option value="google">Google Vision OCR</option>
           <option value="openai">OpenAI Vision OCR</option>
-          <option value="both">So sánh Google + OpenAI</option>
+          <option value="both">So sÃ¡nh Google + OpenAI</option>
         </select>
       </label>
-      <label>Chế độ ảnh
+      <label>Cháº¿ Ä‘á»™ áº£nh
         <select id="imageMode">
-          <option value="full">Ảnh đầy đủ</option>
-          <option value="issueDateCrop">Crop vùng ngày cấp</option>
+          <option value="full">áº¢nh Ä‘áº§y Ä‘á»§</option>
+          <option value="autoIssueDateCrop">Tá»± crop ngÃ y cáº¥p</option>
+          <option value="issueDateCrop">Crop vÃ¹ng ngÃ y cáº¥p</option>
         </select>
       </label>
-      <label>File ảnh
-        <input id="file" type="file" accept="image/*" required>
+      <label>File áº£nh
+        <input id="file" type="file" accept="image/*" multiple required>
       </label>
-      <button id="run" type="submit">Đọc OCR</button>
+      <button id="run" type="submit">Äá»c OCR</button>
     </form>
 
     <div class="keys">
-      <label>Google Vision API key tạm thời
-        <input id="googleKey" type="password" autocomplete="off" placeholder="Để trống nếu đã đặt env">
+      <label>Google Vision API key táº¡m thá»i
+        <input id="googleKey" type="password" autocomplete="off" placeholder="Äá»ƒ trá»‘ng náº¿u Ä‘Ã£ Ä‘áº·t env">
       </label>
-      <label>OpenAI API key tạm thời
-        <input id="openaiKey" type="password" autocomplete="off" placeholder="Để trống nếu đã đặt env">
+      <label>OpenAI API key táº¡m thá»i
+        <input id="openaiKey" type="password" autocomplete="off" placeholder="Äá»ƒ trá»‘ng náº¿u Ä‘Ã£ Ä‘áº·t env">
       </label>
     </div>
 
     <section class="panel" style="margin-bottom:16px">
-      <label>Test bằng raw OCR text
-        <textarea id="ocrText" placeholder="Dán OCR text vào đây nếu muốn test parser không cần gọi OCR API"></textarea>
+      <label>Test báº±ng raw OCR text
+        <textarea id="ocrText" placeholder="DÃ¡n OCR text vÃ o Ä‘Ã¢y náº¿u muá»‘n test parser khÃ´ng cáº§n gá»i OCR API"></textarea>
       </label>
       <div style="margin-top:10px">
         <button id="parseText" type="button">Parse text</button>
@@ -77,18 +83,26 @@
 
     <div class="grid">
       <section class="panel">
-        <div id="hint" class="muted">Chọn ảnh CCCD/Căn cước hoặc bìa đất để test.</div>
-        <img id="preview" alt="" hidden>
+        <div id="hint" class="muted">Chá»n áº£nh CCCD/CÄƒn cÆ°á»›c hoáº·c bÃ¬a Ä‘áº¥t Ä‘á»ƒ test.</div>
+        <canvas id="canvas" hidden></canvas>
+        <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">
+          <button id="useCrop" type="button" disabled>DÃ¹ng crop Ä‘ang chá»n</button>
+          <button id="clearCrop" type="button" disabled>XÃ³a crop</button>
+        </div>
+        <div id="cropHint" class="muted" style="margin-top:8px">Vá»›i CCCD cÅ©, kÃ©o vÃ¹ng háº¹p báº¯t Ä‘áº§u sau chá»¯ year Ä‘áº¿n háº¿t ngÃ y.</div>
       </section>
       <section class="results">
         <div class="panel">
-          <div class="muted">Kết quả parse</div>
+          <div class="muted">Ket qua cuoi cung</div>
+          <div id="finalResult" class="final-grid"></div>
+        </div>
+        <details class="panel">
+          <summary>Chi tiet ky thuat</summary>
+          <div class="muted" style="margin-top:12px">Ket qua parse</div>
           <pre id="parsed">{}</pre>
-        </div>
-        <div class="panel">
-          <div class="muted">Raw OCR text</div>
+          <div class="muted" style="margin-top:12px">Raw OCR text</div>
           <pre id="raw"></pre>
-        </div>
+        </details>
       </section>
     </div>
   </main>
@@ -96,11 +110,20 @@
   <script>
     const form = document.getElementById('form');
     const fileInput = document.getElementById('file');
-    const preview = document.getElementById('preview');
+    const canvas = document.getElementById('canvas');
+    const ctx = canvas.getContext('2d');
     const hint = document.getElementById('hint');
     const parsed = document.getElementById('parsed');
     const raw = document.getElementById('raw');
+    const finalResult = document.getElementById('finalResult');
     const run = document.getElementById('run');
+    const useCrop = document.getElementById('useCrop');
+    const clearCrop = document.getElementById('clearCrop');
+    let image = null;
+    let imageDataUrl = '';
+    let cropDataUrl = '';
+    let dragStart = null;
+    let selection = null;
 
     function readFileAsDataUrl(file) {
       return new Promise((resolve, reject) => {
@@ -111,53 +134,377 @@
       });
     }
 
+    function cropImageDataUrl(box) {
+      if (!image || !box) return '';
+      const x = Math.max(0, Math.round(box.x));
+      const y = Math.max(0, Math.round(box.y));
+      const w = Math.min(image.naturalWidth - x, Math.round(box.width));
+      const h = Math.min(image.naturalHeight - y, Math.round(box.height));
+      if (w < 8 || h < 8) return '';
+      const out = document.createElement('canvas');
+      out.width = w;
+      out.height = h;
+      out.getContext('2d').drawImage(image, x, y, w, h, 0, 0, w, h);
+      return out.toDataURL('image/png');
+    }
+
     fileInput.addEventListener('change', async () => {
       const file = fileInput.files[0];
       if (!file) return;
+      if (fileInput.files.length > 2) {
+        alert('Chi chon toi da 2 anh cho CCCD/Can cuoc.');
+        fileInput.value = '';
+        return;
+      }
       const dataUrl = await readFileAsDataUrl(file);
-      preview.src = dataUrl;
-      preview.hidden = false;
-      hint.textContent = file.name;
+      imageDataUrl = dataUrl;
+      cropDataUrl = '';
+      selection = null;
+      image = new Image();
+      image.onload = () => {
+        canvas.width = image.naturalWidth;
+        canvas.height = image.naturalHeight;
+        canvas.hidden = false;
+        drawCanvas();
+      };
+      image.src = dataUrl;
+      hint.textContent = Array.from(fileInput.files).map(item => item.name).join(', ');
+      useCrop.disabled = true;
+      clearCrop.disabled = true;
+    });
+
+    function drawCanvas() {
+      if (!image) return;
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      ctx.drawImage(image, 0, 0);
+      if (!selection) return;
+      const x = Math.min(selection.x1, selection.x2);
+      const y = Math.min(selection.y1, selection.y2);
+      const w = Math.abs(selection.x2 - selection.x1);
+      const h = Math.abs(selection.y2 - selection.y1);
+      ctx.save();
+      ctx.fillStyle = 'rgba(15, 23, 42, .22)';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.clearRect(x, y, w, h);
+      ctx.strokeStyle = '#ef4444';
+      ctx.lineWidth = Math.max(2, Math.round(canvas.width / 500));
+      ctx.strokeRect(x, y, w, h);
+      ctx.restore();
+    }
+
+    function canvasPoint(event) {
+      const rect = canvas.getBoundingClientRect();
+      return {
+        x: Math.max(0, Math.min(canvas.width, (event.clientX - rect.left) * canvas.width / rect.width)),
+        y: Math.max(0, Math.min(canvas.height, (event.clientY - rect.top) * canvas.height / rect.height))
+      };
+    }
+
+    canvas.addEventListener('mousedown', (event) => {
+      if (!image) return;
+      dragStart = canvasPoint(event);
+      selection = { x1: dragStart.x, y1: dragStart.y, x2: dragStart.x, y2: dragStart.y };
+      cropDataUrl = '';
+      drawCanvas();
+    });
+
+    window.addEventListener('mousemove', (event) => {
+      if (!dragStart || !selection) return;
+      const point = canvasPoint(event);
+      selection.x2 = point.x;
+      selection.y2 = point.y;
+      drawCanvas();
+    });
+
+    window.addEventListener('mouseup', () => {
+      if (!dragStart || !selection) return;
+      dragStart = null;
+      const w = Math.abs(selection.x2 - selection.x1);
+      const h = Math.abs(selection.y2 - selection.y1);
+      const valid = w >= 8 && h >= 8;
+      useCrop.disabled = !valid;
+      clearCrop.disabled = !valid;
+    });
+
+    useCrop.addEventListener('click', () => {
+      if (!selection) return;
+      const x = Math.round(Math.min(selection.x1, selection.x2));
+      const y = Math.round(Math.min(selection.y1, selection.y2));
+      const w = Math.round(Math.abs(selection.x2 - selection.x1));
+      const h = Math.round(Math.abs(selection.y2 - selection.y1));
+      if (w < 8 || h < 8) return;
+      const out = document.createElement('canvas');
+      out.width = w;
+      out.height = h;
+      out.getContext('2d').drawImage(canvas, x, y, w, h, 0, 0, w, h);
+      cropDataUrl = out.toDataURL('image/png');
+      document.getElementById('imageMode').value = 'issueDateCrop';
+      hint.textContent = fileInput.files[0].name + ' - Ä‘ang dÃ¹ng crop ' + w + 'x' + h;
+    });
+
+    clearCrop.addEventListener('click', () => {
+      cropDataUrl = '';
+      selection = null;
+      useCrop.disabled = true;
+      clearCrop.disabled = true;
+      drawCanvas();
+      if (fileInput.files[0]) hint.textContent = fileInput.files[0].name;
     });
 
     form.addEventListener('submit', async (event) => {
       event.preventDefault();
-      const file = fileInput.files[0];
+      const files = Array.from(fileInput.files || []);
+      const file = files[0];
       if (!file) return;
       run.disabled = true;
-      parsed.textContent = 'Đang OCR...';
+      finalResult.innerHTML = rowHtml('Trang thai', 'Dang OCR...');
+      parsed.textContent = 'Äang OCR...';
       raw.textContent = '';
       try {
-        const dataUrl = await readFileAsDataUrl(file);
-        const response = await fetch('/api/ocr', {
-          method: 'POST',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({
-            skill: document.getElementById('skill').value,
-            engine: document.getElementById('engine').value,
-            issueDateCrop: document.getElementById('imageMode').value === 'issueDateCrop',
-            fileName: file.name,
-            mimeType: file.type,
-            googleApiKey: document.getElementById('googleKey').value,
-            openAiApiKey: document.getElementById('openaiKey').value,
-            dataUrl
-          })
-        });
-        const result = await response.json();
+        const result = await runReview(files);
+        renderFinalResult(result);
         parsed.textContent = JSON.stringify(result.results || result.parsed || result, null, 2);
         raw.textContent = (result.results || []).map(item => {
-          return '--- ' + item.engine + ' ---\n' + (item.ocr_error || item.raw_text || '');
+          return '--- ' + (item.file_name ? item.file_name + ' | ' : '') + item.engine + ' ---\n' + (item.ocr_error || item.raw_text || '');
         }).join('\n\n') || (result.ocr_error || result.raw_text || '');
         raw.className = result.ocr_error ? 'error' : '';
       } catch (err) {
+        finalResult.innerHTML = rowHtml('Loi', String(err && err.message || err));
         parsed.textContent = String(err && err.stack || err);
       } finally {
         run.disabled = false;
       }
     });
 
+    async function runReview(files) {
+      const mode = document.getElementById('imageMode').value;
+      const skill = document.getElementById('skill').value;
+      const allResults = [];
+      for (let i = 0; i < files.length; i++) {
+        const file = files[i];
+        const manualCropMode = files.length === 1 && mode === 'issueDateCrop';
+        const firstDataUrl = manualCropMode && cropDataUrl ? cropDataUrl : await readFileAsDataUrl(file);
+        let result = await runOcrRequest(file, firstDataUrl, {
+          issueDateCrop: manualCropMode,
+          engine: mode === 'autoIssueDateCrop' ? 'google' : document.getElementById('engine').value
+        });
+        if ((mode === 'autoIssueDateCrop') || (skill === 'cccd' && mode === 'full' && needsIssueDateAutoCrop(result))) {
+          const suggestion = result.results && result.results[0] && result.results[0].crop_suggestion;
+          const autoCropDataUrl = await cropImageDataUrlFromSource(firstDataUrl, suggestion);
+          if (autoCropDataUrl) {
+            const cropResult = await runOcrRequest(file, autoCropDataUrl, {
+              issueDateCrop: true,
+              engine: document.getElementById('engine').value
+            });
+            result = {
+              file_name: result.file_name,
+              results: [
+                {
+                  engine: 'FULL_IMAGE_GOOGLE_VISION',
+                  ocr_error: result.results && result.results[0] && result.results[0].ocr_error || '',
+                  raw_text: result.results && result.results[0] && result.results[0].raw_text || '',
+                  crop_suggestion: suggestion,
+                  parsed: result.results && result.results[0] && result.results[0].parsed || {}
+                },
+                {
+                  engine: 'AUTO_CROP_SUGGESTION',
+                  ocr_error: '',
+                  raw_text: JSON.stringify(suggestion, null, 2),
+                  parsed: { note: 'Crop tá»± Ä‘á»™ng tá»« anchor ' + suggestion.anchor_text }
+                }
+              ].concat(cropResult.results || [])
+            };
+          }
+        }
+        (result.results || []).forEach(item => {
+          item.file_name = file.name;
+          allResults.push(item);
+        });
+      }
+      return {
+        file_name: files.map(file => file.name).join(', '),
+        results: allResults,
+        parsed: mergeIdentityReviewResults(allResults)
+      };
+    }
+
+    function cropImageDataUrlFromSource(sourceDataUrl, box) {
+      return new Promise((resolve) => {
+        if (!box) return resolve('');
+        const sourceImage = new Image();
+        sourceImage.onload = () => {
+          const x = Math.max(0, Math.round(box.x));
+          const y = Math.max(0, Math.round(box.y));
+          const w = Math.min(sourceImage.naturalWidth - x, Math.round(box.width));
+          const h = Math.min(sourceImage.naturalHeight - y, Math.round(box.height));
+          if (w < 8 || h < 8) return resolve('');
+          const out = document.createElement('canvas');
+          out.width = w;
+          out.height = h;
+          out.getContext('2d').drawImage(sourceImage, x, y, w, h, 0, 0, w, h);
+          resolve(out.toDataURL('image/png'));
+        };
+        sourceImage.onerror = () => resolve('');
+        sourceImage.src = sourceDataUrl;
+      });
+    }
+
+    function mergeIdentityReviewResults(results) {
+      const merged = {
+        skill: 'OCR CCCD/Can cuoc',
+        mode: 'multi_image_review',
+        fields: {
+          full_name: '',
+          date_of_birth: '',
+          document_type: '',
+          id_numbers: [],
+          issue_date: '',
+          expiry_date: '',
+          issue_place: '',
+          permanent_address: ''
+        },
+        warnings: []
+      };
+      (results || []).forEach(item => {
+        const fields = item.parsed && item.parsed.fields;
+        if (!fields) return;
+        if (!merged.fields.full_name && fields.full_name) merged.fields.full_name = fields.full_name;
+        if (!merged.fields.date_of_birth && fields.date_of_birth) merged.fields.date_of_birth = fields.date_of_birth;
+        if (!merged.fields.document_type && fields.document_type) merged.fields.document_type = fields.document_type;
+        if (!merged.fields.issue_date && fields.issue_date) merged.fields.issue_date = fields.issue_date;
+        if (!merged.fields.expiry_date && fields.expiry_date) merged.fields.expiry_date = fields.expiry_date;
+        if (!merged.fields.issue_place && fields.issue_place) merged.fields.issue_place = fields.issue_place;
+        if (!merged.fields.permanent_address && fields.permanent_address) merged.fields.permanent_address = fields.permanent_address;
+        (fields.id_numbers || []).forEach(id => {
+          if (merged.fields.id_numbers.indexOf(id) === -1) merged.fields.id_numbers.push(id);
+        });
+      });
+      if (!merged.fields.issue_place && merged.fields.document_type === 'Căn cước công dân' && hasBackSideEvidence(results)) {
+        merged.fields.issue_place = 'Cục Cảnh sát quản lý hành chính về trật tự xã hội';
+      }
+      if (!merged.fields.issue_date) merged.warnings.push('Can kiem tra ngay cap thu cong');
+      return merged;
+    }
+
+    function hasBackSideEvidence(results) {
+      return (results || []).some(item => {
+        const text = String(item.raw_text || '').toLowerCase();
+        return text.indexOf('idvnm') >= 0 ||
+          text.indexOf('date, month') >= 0 ||
+          text.indexOf('date of issue') >= 0 ||
+          text.indexOf('director general') >= 0 ||
+          text.indexOf('administrative management') >= 0;
+      });
+    }
+
+    async function runOcrRequest(file, dataUrl, options) {
+      const response = await fetch('/api/ocr', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          skill: document.getElementById('skill').value,
+          engine: options.engine,
+          issueDateCrop: Boolean(options.issueDateCrop),
+          fileName: file.name,
+          mimeType: file.type,
+          googleApiKey: document.getElementById('googleKey').value,
+          openAiApiKey: document.getElementById('openaiKey').value,
+          dataUrl
+        })
+      });
+      return response.json();
+    }
+
+    function renderFinalResult(result) {
+      const skill = document.getElementById('skill').value;
+      const final = pickFinalParsed(result);
+      const fields = final && final.fields || {};
+      const warnings = final && final.warnings || [];
+      if (skill === 'land') {
+        finalResult.innerHTML = [
+          rowHtml('Loai GCN', fields.certificate_title),
+          rowHtml('So GCN', fields.certificate_number),
+          rowHtml('So vao so', fields.registry_number),
+          rowHtml('Thoi han su dung', fields.usage_term),
+          rowHtml('Trang thai', warnings.length ? 'Can kiem tra thu cong' : 'Da doc')
+        ].join('');
+        return;
+      }
+      finalResult.innerHTML = [
+        rowHtml('Ho ten', fields.full_name),
+        rowHtml('Ngay sinh', fields.date_of_birth),
+        rowHtml('Loai giay to', fields.document_type),
+        rowHtml('So CCCD/Can cuoc', (fields.id_numbers || []).join(', ')),
+        rowHtml('Ngay cap', fields.issue_date),
+        rowHtml('Ngay het han', fields.expiry_date),
+        rowHtml('Noi cap', fields.issue_place),
+        rowHtml('Noi thuong tru', fields.permanent_address),
+        rowHtml('Trang thai', warnings.length ? 'Can kiem tra thu cong' : 'Da doc')
+      ].join('');
+    }
+
+    function pickFinalParsed(result) {
+      if (result && result.parsed && result.parsed.mode === 'multi_image_review') return result.parsed;
+      const items = result && result.results || [];
+      const base = findFirstIdentityParsed(items);
+      const issueDate = findLastIssueDate(items);
+      if (base && issueDate) {
+        return mergeParsedFields(base, { issue_date: issueDate });
+      }
+      for (let i = items.length - 1; i >= 0; i--) {
+        const parsedItem = items[i].parsed;
+        if (!parsedItem || !parsedItem.fields) continue;
+        if (parsedItem.fields.issue_date || parsedItem.fields.certificate_title) return parsedItem;
+      }
+      return result && result.parsed || (items[0] && items[0].parsed) || {};
+    }
+
+    function findFirstIdentityParsed(items) {
+      for (let i = 0; i < items.length; i++) {
+        const parsedItem = items[i].parsed;
+        if (!parsedItem || !parsedItem.fields) continue;
+        if (parsedItem.fields.full_name || parsedItem.fields.id_numbers || parsedItem.fields.document_type) return parsedItem;
+      }
+      return null;
+    }
+
+    function findLastIssueDate(items) {
+      for (let i = items.length - 1; i >= 0; i--) {
+        const fields = items[i].parsed && items[i].parsed.fields;
+        if (fields && fields.issue_date) return fields.issue_date;
+      }
+      return '';
+    }
+
+    function mergeParsedFields(base, overrides) {
+      const merged = JSON.parse(JSON.stringify(base));
+      merged.fields = Object.assign({}, merged.fields || {}, overrides || {});
+      merged.warnings = merged.fields.issue_date ? [] : (merged.warnings || []);
+      return merged;
+    }
+
+    function rowHtml(label, value) {
+      return '<div class="field-label">' + escapeHtml(label) + '</div><div class="field-value">' + escapeHtml(value || 'Chua doc duoc') + '</div>';
+    }
+
+    function escapeHtml(value) {
+      return String(value == null ? '' : value)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
+    }
+
+    function needsIssueDateAutoCrop(result) {
+      const first = result && result.results && result.results[0];
+      if (!first || !first.crop_suggestion) return false;
+      const issueDate = first.parsed && first.parsed.fields && first.parsed.fields.issue_date;
+      return !issueDate;
+    }
+
     document.getElementById('parseText').addEventListener('click', async () => {
-      parsed.textContent = 'Đang parse text...';
+      parsed.textContent = 'Äang parse text...';
       raw.textContent = '';
       const response = await fetch('/api/parse-text', {
         method: 'POST',
@@ -169,9 +516,11 @@
         })
       });
       const result = await response.json();
+      renderFinalResult(result);
       parsed.textContent = JSON.stringify(result.parsed || result, null, 2);
       raw.textContent = result.raw_text || '';
     });
   </script>
 </body>
 </html>
+
