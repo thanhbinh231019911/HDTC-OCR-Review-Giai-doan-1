@@ -212,6 +212,97 @@ function extractUsageTerm(text) {
   return '';
 }
 
+function extractIndexedLandFields(text) {
+  const block = extractLandPlotBlock(text);
+  const items = extractIndexedItems(block || text);
+  return {
+    land_plot_number: cleanupIndexedValue(items.a || '').replace(/\s+to\s+ban\s+do\s+so\s*:.*$/i, ''),
+    map_sheet_number: extractMapSheetNumber(items.a || ''),
+    land_address: cleanupIndexedValue(items.b || ''),
+    area: extractAreaValue(items.c || ''),
+    area_in_words: extractAreaWords(items.c || ''),
+    usage_form: cleanupIndexedValue(items.d || ''),
+    usage_purpose: cleanupIndexedValue(items.dd || ''),
+    usage_term: normalizeUsageTerm(cleanupIndexedValue(items.e || '')),
+    usage_origin: cleanupIndexedValue(items.g || '')
+  };
+}
+
+function extractLandPlotBlock(text) {
+  const lines = String(text || '').split(/\r?\n/);
+  const out = [];
+  let inBlock = false;
+  for (const line of lines) {
+    const normalized = normalizeText(line).replace(/[.:)\-]+/g, ' ').replace(/\s+/g, ' ').trim();
+    if (!inBlock && (normalized.includes('1 thua dat') || normalized.includes(' thua dat'))) {
+      inBlock = true;
+      out.push(line);
+      continue;
+    }
+    if (inBlock && /^(?:2|ii)\s*[\).:\-]?\s+/.test(normalized)) break;
+    if (inBlock) out.push(line);
+  }
+  return out.join('\n');
+}
+
+function extractIndexedItems(text) {
+  const source = String(text || '');
+  const matches = [];
+  const regex = /(^|\n)\s*([a-g]|\u0111|d)\s*[\).:]\s*/gi;
+  let match;
+  while ((match = regex.exec(source)) !== null) {
+    matches.push({
+      key: normalizeIndexedKey(match[2]),
+      markerStart: match.index,
+      valueStart: match.index + match[0].length
+    });
+  }
+  const items = {};
+  for (let i = 0; i < matches.length; i++) {
+    const end = i + 1 < matches.length ? matches[i + 1].markerStart : source.length;
+    if (!items[matches[i].key]) items[matches[i].key] = source.slice(matches[i].valueStart, end);
+  }
+  return items;
+}
+
+function normalizeIndexedKey(key) {
+  if (String(key || '').toLowerCase() === '\u0111') return 'dd';
+  return normalizeText(key).replace(/[^a-z]/g, '');
+}
+
+function cleanupIndexedValue(value) {
+  return String(value || '')
+    .replace(/\r?\n+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .replace(/^(?:dia chi|address|hinh thuc su dung|muc dich su dung|thoi han su dung|nguon goc su dung)\s*[:.-]?\s*/i, '')
+    .replace(/[;,.:\-\s]+$/g, '')
+    .trim();
+}
+
+function extractMapSheetNumber(value) {
+  const match = normalizeText(value).match(/to\s+ban\s+do\s+so\s*:?\s*([a-z0-9-]+)/i);
+  return match ? match[1] : '';
+}
+
+function extractAreaValue(value) {
+  const text = cleanupIndexedValue(value);
+  const match = text.match(/\d+(?:[,.]\d+)?\s*m[²2]?/i);
+  return match ? match[0].replace(/m2/i, 'm²') : text;
+}
+
+function extractAreaWords(value) {
+  const match = String(value || '').match(/\(?\s*(?:Bằng chữ|Bang chu)\s*:\s*([^)]+)/i);
+  return match ? match[1].replace(/\s+/g, ' ').trim() : '';
+}
+
+function normalizeUsageTerm(value) {
+  return String(value || '')
+    .replace(/\bLâu đài\b/g, 'Lâu dài')
+    .replace(/\blâu đài\b/g, 'lâu dài')
+    .replace(/\bLau dai\b/gi, 'Lâu dài')
+    .trim();
+}
+
 function parseCccd(text, options) {
   options = options || {};
   const issueDate = extractCccdIssueDate(text, options);
@@ -535,14 +626,22 @@ function parseLand(text) {
   const title = extractCertificateTitle(text);
   const certificateNumber = (String(text || '').match(/\b[A-Z]{1,4}\s*\d{5,}\b/) || [''])[0].replace(/\s+/g, '');
   const registry = (String(text || '').match(/(?:CH|CS|CT)[-\s]?\d{3,}/i) || [''])[0].replace(/\s+/g, '');
-  const usageTerm = extractUsageTerm(text);
+  const indexed = extractIndexedLandFields(text);
   return {
     skill: SKILLS.land,
     fields: {
       certificate_title: title,
       certificate_number: certificateNumber,
       registry_number: registry,
-      usage_term: usageTerm
+      land_plot_number: indexed.land_plot_number,
+      map_sheet_number: indexed.map_sheet_number,
+      land_address: indexed.land_address,
+      area: indexed.area,
+      area_in_words: indexed.area_in_words,
+      usage_form: indexed.usage_form,
+      usage_purpose: indexed.usage_purpose,
+      usage_term: indexed.usage_term || extractUsageTerm(text),
+      usage_origin: indexed.usage_origin
     },
     warnings: title ? [] : ['Chưa nhận diện chắc tên loại GCN từ OCR text.']
   };

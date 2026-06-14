@@ -324,7 +324,7 @@
       return {
         file_name: files.map(file => file.name).join(', '),
         results: allResults,
-        parsed: mergeIdentityReviewResults(allResults)
+        parsed: skill === 'land' ? mergeLandReviewResults(allResults) : mergeIdentityReviewResults(allResults)
       };
     }
 
@@ -386,6 +386,37 @@
       return merged;
     }
 
+    function mergeLandReviewResults(results) {
+      const merged = {
+        skill: 'OCR Bia dat',
+        mode: 'multi_image_review',
+        fields: {
+          certificate_title: '',
+          certificate_number: '',
+          registry_number: '',
+          land_plot_number: '',
+          map_sheet_number: '',
+          land_address: '',
+          area: '',
+          area_in_words: '',
+          usage_form: '',
+          usage_purpose: '',
+          usage_term: '',
+          usage_origin: ''
+        },
+        warnings: []
+      };
+      (results || []).forEach(item => {
+        const fields = item.parsed && item.parsed.fields;
+        if (!fields) return;
+        Object.keys(merged.fields).forEach(key => {
+          if (!merged.fields[key] && fields[key]) merged.fields[key] = fields[key];
+        });
+      });
+      if (!merged.fields.certificate_title) merged.warnings.push('Can kiem tra loai GCN');
+      return merged;
+    }
+
     function hasBackSideEvidence(results) {
       return (results || []).some(item => {
         const text = String(item.raw_text || '').toLowerCase();
@@ -425,7 +456,15 @@
           rowHtml('Loai GCN', fields.certificate_title),
           rowHtml('So GCN', fields.certificate_number),
           rowHtml('So vao so', fields.registry_number),
+          rowHtml('Thua dat so', fields.land_plot_number),
+          rowHtml('To ban do so', fields.map_sheet_number),
+          rowHtml('Dia chi', fields.land_address),
+          rowHtml('Dien tich', fields.area),
+          rowHtml('Bang chu', fields.area_in_words),
+          rowHtml('Hinh thuc su dung', fields.usage_form),
+          rowHtml('Muc dich su dung', fields.usage_purpose),
           rowHtml('Thoi han su dung', fields.usage_term),
+          rowHtml('Nguon goc su dung', fields.usage_origin),
           rowHtml('Trang thai', warnings.length ? 'Can kiem tra thu cong' : 'Da doc')
         ].join('');
         return;
@@ -444,7 +483,7 @@
     }
 
     function pickFinalParsed(result) {
-      if (result && result.parsed && result.parsed.mode === 'multi_image_review') return result.parsed;
+      if (result && result.parsed && result.parsed.fields) return result.parsed;
       const items = result && result.results || [];
       const base = findFirstIdentityParsed(items);
       const issueDate = findLastIssueDate(items);

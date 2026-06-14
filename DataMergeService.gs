@@ -248,6 +248,27 @@ function repairAssetUsageTermInReviewJson(reviewJson, fullAssetOcrText) {
   return reviewJson;
 }
 
+function repairAssetUsageFormInReviewJson(reviewJson, fullAssetOcrText) {
+  if (!reviewJson) return reviewJson;
+  const assetText = fullAssetOcrText || (reviewJson.ocr_results || [])
+    .filter(function(item) { return item.group === 'asset'; })
+    .map(function(item) { return item.text || item.text_preview || ''; })
+    .join('\n');
+  const indexed = extractRealEstateIndexedLandFields_(assetText);
+  const usageForm = indexed.usage_form || '';
+  if (!usageForm) return reviewJson;
+  (reviewJson.assets || []).forEach(function(asset) {
+    const field = asset && asset.real_estate && asset.real_estate.usage_form;
+    if (!field || !field.hasOwnProperty('final_value') || field.manual_value) return;
+    if (!shouldReplaceUsageForm_(field, usageForm)) return;
+    field.ai_value = usageForm;
+    field.final_value = usageForm;
+    field.source = field.source || 'OCR_INDEXED_ASSET_TEXT';
+    field.confidence = Math.max(Number(field.confidence || 0), 0.86);
+  });
+  return reviewJson;
+}
+
 function isBetterLandAddress_(current, candidate) {
   const currentNorm = removeVietnameseAccents_(current).toLowerCase();
   const candidateNorm = removeVietnameseAccents_(candidate).toLowerCase();
@@ -256,6 +277,16 @@ function isBetterLandAddress_(current, candidate) {
   const currentParts = currentNorm.split(/\s*-\s*/).filter(Boolean).length;
   const candidateParts = candidateNorm.split(/\s*-\s*/).filter(Boolean).length;
   return candidateParts > currentParts && candidateNorm.length > currentNorm.length;
+}
+
+function shouldReplaceUsageForm_(field, candidate) {
+  if (!field || !candidate || field.manual_value) return false;
+  const current = String(field.final_value || field.ai_value || '').trim();
+  if (!current) return true;
+  if (/\r?\n/.test(current) && !/\r?\n/.test(candidate)) return true;
+  const currentNorm = removeVietnameseAccents_(current).toLowerCase().replace(/\s+/g, ' ').trim();
+  const candidateNorm = removeVietnameseAccents_(candidate).toLowerCase().replace(/\s+/g, ' ').trim();
+  return currentNorm && candidateNorm && currentNorm !== candidateNorm && candidateNorm.indexOf(currentNorm) >= 0;
 }
 
 function shouldReplaceUsageTerm_(field, candidate) {
@@ -568,6 +599,8 @@ function extractRealEstateIndexedLandFields_(text) {
   const items = extractIndexedCertificateItems_(block || text);
   return {
     land_address: cleanupIndexedCertificateValue_(items.b || '') || extractDislocatedLandAddressFromBlock_(block || text),
+    usage_form: cleanupIndexedCertificateValue_(items.d || ''),
+    usage_purpose: cleanupIndexedCertificateValue_(items.dd || items['Ä‘'] || ''),
     usage_term: normalizeRealEstateUsageTerm_(cleanupIndexedCertificateValue_(items.e || ''))
   };
 }
@@ -618,7 +651,7 @@ function extractIndexedCertificateItems_(text) {
 
 function normalizeCertificateItemKey_(key) {
   const normalized = removeVietnameseAccents_(String(key || '').toLowerCase());
-  return normalized === 'd' && String(key).toLowerCase() === 'đ' ? 'đ' : normalized;
+  return normalized === 'd' && String(key).toLowerCase() === 'đ' ? 'dd' : normalized;
 }
 
 function normalizeCertificateIndexLine_(line) {
@@ -633,7 +666,7 @@ function cleanupIndexedCertificateValue_(value) {
   return String(value || '')
     .replace(/\r?\n+/g, ' ')
     .replace(/\s+/g, ' ')
-    .replace(/^(?:\u0111\u1ecba\s*ch\u1ec9|dia\s*chi|dia chi|address)\s*[:.-]?\s*/i, '')
+    .replace(/^(?:\u0111\u1ecba\s*ch\u1ec9|dia\s*chi|dia chi|address|hinh\s*thuc\s*su\s*dung|muc\s*dich\s*su\s*dung|thoi\s*han\s*su\s*dung|nguon\s*goc\s*su\s*dung)\s*[:.-]?\s*/i, '')
     .replace(/[;,.:\-\s]+$/g, '')
     .trim();
 }
