@@ -50,10 +50,24 @@ function normalizeDate(value) {
   const text = String(value || '').trim();
   if (!text) return '';
   let match = text.match(/^(\d{1,2})[\/.\-](\d{1,2})[\/.\-](\d{4})$/);
-  if (match) return pad2(match[1]) + '/' + pad2(match[2]) + '/' + match[3];
+  if (match) return formatValidDate(match[1], match[2], match[3]);
   match = text.match(/^(\d{2})(\d{2})(\d{4})$/);
-  if (match) return pad2(match[1]) + '/' + pad2(match[2]) + '/' + match[3];
+  if (match) return formatValidDate(match[1], match[2], match[3]);
   return '';
+}
+
+function formatValidDate(dayValue, monthValue, yearValue) {
+  const day = Number(dayValue);
+  const month = Number(monthValue);
+  const year = Number(yearValue);
+  if (year < 1990 || year > 2099 || month < 1 || month > 12 || day < 1 || day > 31) return '';
+  const daysInMonth = [31, isLeapYear(year) ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31][month - 1];
+  if (day > daysInMonth) return '';
+  return pad2(day) + '/' + pad2(month) + '/' + year;
+}
+
+function isLeapYear(year) {
+  return year % 400 === 0 || (year % 4 === 0 && year % 100 !== 0);
 }
 
 function pad2(value) {
