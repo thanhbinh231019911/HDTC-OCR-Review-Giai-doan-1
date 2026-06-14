@@ -50,6 +50,10 @@ Forbidden behavior:
 Required behavior:
 
 - If date evidence is clear near the issue-date label, normalize to `dd/MM/yyyy`.
+- For old CCCD, scan after `Date, month, year` or after the word `year`, then scan up to the next two OCR lines.
+- For new Can cuoc, scan after `Date of issue`, then prioritize the line directly below that label.
+- Use the document type only to choose the first crop/search strategy. The final decision must still be based on the issue-date label and date position.
+- If the input is explicitly a crop of the issue-date region, accept the single valid date in that crop even when the OCR text only contains a suffix such as `year10/07/2021`.
 - If evidence is not clear, leave blank or mark manual review.
 - If the full image is clear to a human but OCR fails, implement a CCCD-specific crop/preprocess path for the issue-date region.
 

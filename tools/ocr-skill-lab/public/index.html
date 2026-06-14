@@ -9,7 +9,7 @@
     body { margin: 0; background: #f5f7fb; color: #111827; }
     main { max-width: 1180px; margin: 0 auto; padding: 24px; }
     h1 { font-size: 22px; margin: 0 0 16px; }
-    .toolbar { display: grid; grid-template-columns: 1fr 1fr 2fr auto; gap: 10px; align-items: end; margin-bottom: 16px; }
+    .toolbar { display: grid; grid-template-columns: 1fr 1fr 1fr 2fr auto; gap: 10px; align-items: end; margin-bottom: 16px; }
     .keys { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 16px; }
     label { display: grid; gap: 6px; font-size: 13px; font-weight: 600; }
     select, input, button { font: inherit; padding: 9px 10px; border: 1px solid #cbd5e1; border-radius: 6px; background: white; }
@@ -20,6 +20,7 @@
     img { width: 100%; height: auto; border: 1px solid #dbe3ef; border-radius: 6px; background: #eef2f7; }
     pre { white-space: pre-wrap; word-break: break-word; margin: 0; font-size: 13px; line-height: 1.45; }
     .results { display: grid; gap: 12px; }
+    textarea { min-height: 78px; resize: vertical; font: inherit; padding: 9px 10px; border: 1px solid #cbd5e1; border-radius: 6px; }
     .muted { color: #64748b; font-size: 13px; }
     .error { color: #b91c1c; font-weight: 600; }
     @media (max-width: 860px) {
@@ -44,6 +45,12 @@
           <option value="both">So sánh Google + OpenAI</option>
         </select>
       </label>
+      <label>Chế độ ảnh
+        <select id="imageMode">
+          <option value="full">Ảnh đầy đủ</option>
+          <option value="issueDateCrop">Crop vùng ngày cấp</option>
+        </select>
+      </label>
       <label>File ảnh
         <input id="file" type="file" accept="image/*" required>
       </label>
@@ -58,6 +65,15 @@
         <input id="openaiKey" type="password" autocomplete="off" placeholder="Để trống nếu đã đặt env">
       </label>
     </div>
+
+    <section class="panel" style="margin-bottom:16px">
+      <label>Test bằng raw OCR text
+        <textarea id="ocrText" placeholder="Dán OCR text vào đây nếu muốn test parser không cần gọi OCR API"></textarea>
+      </label>
+      <div style="margin-top:10px">
+        <button id="parseText" type="button">Parse text</button>
+      </div>
+    </section>
 
     <div class="grid">
       <section class="panel">
@@ -119,6 +135,7 @@
           body: JSON.stringify({
             skill: document.getElementById('skill').value,
             engine: document.getElementById('engine').value,
+            issueDateCrop: document.getElementById('imageMode').value === 'issueDateCrop',
             fileName: file.name,
             mimeType: file.type,
             googleApiKey: document.getElementById('googleKey').value,
@@ -137,6 +154,23 @@
       } finally {
         run.disabled = false;
       }
+    });
+
+    document.getElementById('parseText').addEventListener('click', async () => {
+      parsed.textContent = 'Đang parse text...';
+      raw.textContent = '';
+      const response = await fetch('/api/parse-text', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          skill: document.getElementById('skill').value,
+          issueDateCrop: document.getElementById('imageMode').value === 'issueDateCrop',
+          text: document.getElementById('ocrText').value
+        })
+      });
+      const result = await response.json();
+      parsed.textContent = JSON.stringify(result.parsed || result, null, 2);
+      raw.textContent = result.raw_text || '';
     });
   </script>
 </body>

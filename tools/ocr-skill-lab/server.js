@@ -75,27 +75,68 @@ function extractVietnamIds(text) {
   return Array.from(ids);
 }
 
-function extractCccdIssueDate(text) {
+function extractCccdIssueDate(text, options) {
+  options = options || {};
+  if (options.issueDateCrop) return extractCccdIssueDateFromCrop(text);
   const lines = String(text || '').split(/\r?\n/);
-  const labels = [
-    'ngay thang nam date month year',
-    'date month year',
-    'ngay thang nam cap date of issue',
-    'date of issue',
-    'ngay cap'
-  ];
   for (let i = 0; i < lines.length; i++) {
     const searchable = normalizeText(lines[i]).replace(/[^a-z0-9]+/g, ' ').replace(/\s+/g, ' ').trim();
     const compact = searchable.replace(/\s+/g, '');
-    const hasLabel = labels.some(label => searchable.includes(label)) ||
-      /ng.?y.*th.?ng.*n.?m/.test(searchable) ||
-      /datemonthyea/.test(compact);
-    if (!hasLabel) continue;
-    const windowText = [lines[i], lines[i + 1] || '', lines[i + 2] || ''].join(' ');
+    const labelType = detectIssueDateLabelType(searchable, compact);
+    if (!labelType) continue;
+    const windowText = buildIssueDateWindow(lines, i, labelType);
     const date = extractStrictDate(windowText);
-    if (date) return { value: date, evidence: windowText.trim() };
+    if (date) return { value: date, evidence: windowText.trim(), label_type: labelType };
   }
-  return { value: '', evidence: '' };
+  return { value: '', evidence: '', label_type: '' };
+}
+
+function detectIssueDateLabelType(searchable, compact) {
+  searchable = String(searchable || '');
+  compact = String(compact || '');
+  if (searchable.includes('date of issue') ||
+      searchable.includes('ngay thang nam cap') ||
+      /ng.?y.*th.?ng.*n.?m.*c.?p/.test(searchable)) {
+    return 'date_of_issue';
+  }
+  if (searchable.includes('date month year') ||
+      searchable.includes('ngay thang nam') ||
+      /ng.?y.*th.?ng.*n.?m/.test(searchable) ||
+      /datemonthyea/.test(compact)) {
+    return 'date_month_year';
+  }
+  if (searchable.includes('ngay cap')) return 'date_of_issue';
+  return '';
+}
+
+function buildIssueDateWindow(lines, lineIndex, labelType) {
+  const current = lines[lineIndex] || '';
+  const next1 = lines[lineIndex + 1] || '';
+  const next2 = lines[lineIndex + 2] || '';
+  if (labelType === 'date_of_issue') {
+    return [current, next1, next2].join(' ');
+  }
+  const yearIndex = normalizeText(current).indexOf('year');
+  if (yearIndex >= 0) {
+    return [current.slice(yearIndex), next1, next2].join(' ');
+  }
+  return [current, next1, next2].join(' ');
+}
+
+function extractCccdIssueDateFromCrop(text) {
+  const candidates = extractAllStrictDates(text);
+  if (candidates.length === 1) {
+    return {
+      value: candidates[0],
+      evidence: String(text || '').replace(/\s+/g, ' ').trim(),
+      label_type: 'issue_date_crop'
+    };
+  }
+  return {
+    value: '',
+    evidence: String(text || '').replace(/\s+/g, ' ').trim(),
+    label_type: 'issue_date_crop'
+  };
 }
 
 function extractStrictDate(text) {
@@ -107,6 +148,22 @@ function extractStrictDate(text) {
     if (date) return date;
   }
   return '';
+}
+
+function extractAllStrictDates(text) {
+  const out = [];
+  const value = String(text || '');
+  value.replace(/(\d{1,2})[\/.\-](\d{1,2})[\/.\-](\d{4})/g, (_, day, month, year) => {
+    const date = normalizeDate(day + '/' + month + '/' + year);
+    if (date && !out.includes(date)) out.push(date);
+    return _;
+  });
+  value.replace(/(?:^|\D)(\d{8})(?=\D|$)/g, (_, compact) => {
+    const date = normalizeDate(compact);
+    if (date && !out.includes(date)) out.push(date);
+    return _;
+  });
+  return out;
 }
 
 function extractCertificateTitle(text) {
@@ -138,18 +195,25 @@ function extractUsageTerm(text) {
   return '';
 }
 
-function parseCccd(text) {
-  const issueDate = extractCccdIssueDate(text);
+function parseCccd(text, options) {
+  options = options || {};
+  const issueDate = extractCccdIssueDate(text, options);
   return {
     skill: SKILLS.cccd,
+    mode: options.issueDateCrop ? 'issue_date_crop' : 'full_image',
     fields: {
       id_numbers: extractVietnamIds(text),
       issue_date: issueDate.value
     },
     evidence: {
-      issue_date: issueDate.evidence
+      issue_date: issueDate.evidence,
+      label_type: issueDate.label_type || ''
     },
-    warnings: issueDate.value ? [] : ['Không đọc chắc ngày cấp từ OCR text; cần crop/vùng ngày cấp hoặc sửa tay.']
+    warnings: issueDate.value ? [] : [
+      options.issueDateCrop
+        ? 'Crop vùng ngày cấp không có đúng một ngày hợp lệ; cần crop lại hoặc sửa tay.'
+        : 'Không đọc chắc ngày cấp từ OCR text; cần crop/vùng ngày cấp hoặc sửa tay.'
+    ]
   };
 }
 
@@ -251,7 +315,9 @@ async function handleOcr(req, res) {
         engine: ocr.provider || engine,
         ocr_error: ocr.error || '',
         raw_text: text,
-        parsed: skill === 'land' ? parseLand(text) : parseCccd(text)
+        parsed: skill === 'land' ? parseLand(text) : parseCccd(text, {
+          issueDateCrop: Boolean(payload.issueDateCrop)
+        })
       };
     });
     sendJson(res, 200, {
@@ -267,12 +333,27 @@ async function handleOcr(req, res) {
   }
 }
 
+async function handleParseText(req, res) {
+  try {
+    const payload = JSON.parse(await readBody(req));
+    const skill = payload.skill === 'land' ? 'land' : 'cccd';
+    const text = String(payload.text || '');
+    const parsed = skill === 'land' ? parseLand(text) : parseCccd(text, {
+      issueDateCrop: Boolean(payload.issueDateCrop)
+    });
+    sendJson(res, 200, { raw_text: text, parsed });
+  } catch (err) {
+    sendJson(res, 500, { error: String(err && err.stack || err) });
+  }
+}
+
 const server = http.createServer((req, res) => {
   const url = new URL(req.url, 'http://localhost');
   if (req.method === 'GET' && url.pathname === '/') {
     return sendFile(res, path.join(PUBLIC, 'index.html'), 'text/html; charset=utf-8');
   }
   if (req.method === 'POST' && url.pathname === '/api/ocr') return handleOcr(req, res);
+  if (req.method === 'POST' && url.pathname === '/api/parse-text') return handleParseText(req, res);
   sendJson(res, 404, { error: 'Not found' });
 });
 
