@@ -1,10 +1,13 @@
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
+const vm = require('vm');
 
 const PORT = Number(process.env.OCR_LAB_PORT || 5177);
 const ROOT = __dirname;
 const PUBLIC = path.join(ROOT, 'public');
+const REPO_ROOT = path.resolve(ROOT, '..', '..');
+let realLandParserCache = null;
 
 const SKILLS = {
   cccd: 'OCR CCCD/Can cuoc',
@@ -73,6 +76,25 @@ function isLeapYear(year) {
 function pad2(value) {
   value = String(value || '');
   return value.length === 1 ? '0' + value : value;
+}
+
+function getRealLandParser() {
+  if (realLandParserCache) return realLandParserCache;
+  const source = fs.readFileSync(path.join(REPO_ROOT, 'DataMergeService.gs'), 'utf8');
+  const sandbox = { console };
+  vm.createContext(sandbox);
+  vm.runInContext(source + `
+    this.__realLandParser = {
+      extractCertificateTitle_: extractCertificateTitle_,
+      extractRealEstateCertificateNumber_: extractRealEstateCertificateNumber_,
+      extractRealEstateRegistryNumber_: extractRealEstateRegistryNumber_,
+      extractRealEstateIssuingAuthority_: extractRealEstateIssuingAuthority_,
+      extractRealEstateIndexedLandFields_: extractRealEstateIndexedLandFields_,
+      extractAreaWordsFromCertificateText_: extractAreaWordsFromCertificateText_
+    };
+  `, sandbox, { filename: 'DataMergeService.gs' });
+  realLandParserCache = sandbox.__realLandParser;
+  return realLandParserCache;
 }
 
 function extractVietnamIds(text) {
@@ -216,7 +238,7 @@ function extractIndexedLandFields(text) {
   const block = extractLandPlotBlock(text);
   const items = extractIndexedItems(block || text);
   return {
-    land_plot_number: cleanupIndexedValue(items.a || '').replace(/\s+to\s+ban\s+do\s+so\s*:.*$/i, ''),
+    land_plot_number: cleanupIndexedValue(items.a || '').replace(/\s+to\s+ban\s+do\s+so\s*:.*$/i, '').replace(/^(?:thua\s+dat\s+so|thửa\s+đất\s+số)\s*[:.-]?\s*/i, '').trim(),
     map_sheet_number: extractMapSheetNumber(items.a || ''),
     land_address: cleanupIndexedValue(items.b || ''),
     area: extractAreaValue(items.c || ''),
@@ -274,7 +296,7 @@ function cleanupIndexedValue(value) {
   return String(value || '')
     .replace(/\r?\n+/g, ' ')
     .replace(/\s+/g, ' ')
-    .replace(/^(?:dia chi|address|hinh thuc su dung|muc dich su dung|thoi han su dung|nguon goc su dung)\s*[:.-]?\s*/i, '')
+    .replace(/^(?:địa\s*chỉ|dia chi|address|hình\s*thức\s*sử\s*dụng|hinh thuc su dung|mục\s*đích\s*sử\s*dụng|muc dich su dung|thời\s*hạn\s*sử\s*dụng|thoi han su dung|nguồn\s*gốc\s*sử\s*dụng|nguon goc su dung)\s*[:.-]?\s*/i, '')
     .replace(/[;,.:\-\s]+$/g, '')
     .trim();
 }
@@ -637,27 +659,28 @@ function boundingRect(box) {
 }
 
 function parseLand(text) {
-  const title = extractCertificateTitle(text);
-  const certificateNumber = (String(text || '').match(/\b[A-Z]{1,4}\s*\d{5,}\b/) || [''])[0].replace(/\s+/g, '');
-  const registry = (String(text || '').match(/(?:CH|CS|CT)[-\s]?\d{3,}/i) || [''])[0].replace(/\s+/g, '');
+  const real = getRealLandParser();
+  const realIndexed = real.extractRealEstateIndexedLandFields_(text) || {};
   const indexed = extractIndexedLandFields(text);
   return {
     skill: SKILLS.land,
+    mode: 'real_data_merge_parser',
     fields: {
-      certificate_title: title,
-      certificate_number: certificateNumber,
-      registry_number: registry,
+      certificate_title: real.extractCertificateTitle_(text),
+      certificate_number: real.extractRealEstateCertificateNumber_(text),
+      registry_number: real.extractRealEstateRegistryNumber_(text),
+      issuing_authority: real.extractRealEstateIssuingAuthority_(text),
       land_plot_number: indexed.land_plot_number,
       map_sheet_number: indexed.map_sheet_number,
-      land_address: indexed.land_address,
+      land_address: realIndexed.land_address || indexed.land_address,
       area: indexed.area,
-      area_in_words: indexed.area_in_words,
-      usage_form: indexed.usage_form,
-      usage_purpose: indexed.usage_purpose,
-      usage_term: indexed.usage_term || extractUsageTerm(text),
+      area_in_words: real.extractAreaWordsFromCertificateText_(text) || indexed.area_in_words,
+      usage_form: realIndexed.usage_form || indexed.usage_form,
+      usage_purpose: realIndexed.usage_purpose || indexed.usage_purpose,
+      usage_term: realIndexed.usage_term || indexed.usage_term || extractUsageTerm(text),
       usage_origin: indexed.usage_origin
     },
-    warnings: title ? [] : ['Chưa nhận diện chắc tên loại GCN từ OCR text.']
+    warnings: real.extractCertificateTitle_(text) ? [] : ['Chưa nhận diện chắc tên loại GCN từ OCR text.']
   };
 }
 

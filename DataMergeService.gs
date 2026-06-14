@@ -898,6 +898,8 @@ function cleanCertificateTitleForMerge_(value) {
     .replace(/\s+/g, ' ')
     .replace(/\s+,/g, ',')
     .replace(/,\s*/g, ', ')
+    .replace(/\s+(?:s\u1ed1|so)\s+[A-Z]{1,4}\s*\d.*$/i, '')
+    .replace(/\s*\(?\s*(?:S\u1ed1|So)\s+v\u00e0o\s+s\u1ed5.*$/i, '')
     .replace(/^(giay|gi\u1ea5y)\s+chung\s+nhan/i, 'Gi\u1ea5y ch\u1ee9ng nh\u1eadn')
     .trim());
 }
@@ -990,9 +992,9 @@ function normalizeCertificateCodeValue_(value) {
 
 function extractRealEstateRegistryNumber_(text) {
   const normalized = removeVietnameseAccents_(String(text || '')).replace(/\s+/g, ' ');
-  const direct = normalized.match(/(?:so vao so|vao so cap gcn|so cap gcn|registry)[^A-Z0-9]{0,20}([A-Z]{1,5}\s*[0-9][A-Z0-9.\/-]{1,20})/i);
+  const direct = normalized.match(/(?:so vao so|vao so cap gcn|so cap gcn|registry)[^A-Z0-9]{0,20}([A-Z]{1,5}\s*-?\s*[0-9][A-Z0-9.\/-]{1,20})/i);
   if (direct) return normalizeCertificateCodeValue_(direct[1]);
-  const candidates = normalized.match(/\b(?:CS|CT|CN|CH|CL|HX|VP|DC|DL)[0-9][A-Z0-9.\/-]{1,20}\b/gi) || [];
+  const candidates = normalized.match(/\b(?:CS|CT|CN|CH|CL|HX|VP|DC|DL)\s*-?\s*[0-9][A-Z0-9.\/-]{1,20}\b/gi) || [];
   return candidates.length ? normalizeCertificateCodeValue_(candidates[0]) : '';
 }
 
