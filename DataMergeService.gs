@@ -94,6 +94,7 @@ function repairIdentityIssueDatesInReviewJson(reviewJson, ocrTextByFileOverride)
   const ocrTextByFile = ocrTextByFileOverride || buildOcrTextMapFromReviewJson_(reviewJson);
   function repairPerson(person) {
     if (!person || !person.id_issue_date) return;
+    clearInvalidIdentityIssueDateValue_(person.id_issue_date);
     const id = normalizeId_(person.id_number && person.id_number.final_value);
     if (!id) return;
     const documentType = person.id_document_type && person.id_document_type.final_value;
@@ -137,6 +138,17 @@ function repairAssetAreaWordsInReviewJson(reviewJson, fullAssetOcrText) {
     field.confidence = field.confidence || 0.82;
   });
   return reviewJson;
+}
+
+function clearInvalidIdentityIssueDateValue_(field) {
+  if (!field || field.manual_value) return;
+  const value = String(field.final_value || field.ai_value || '').trim();
+  if (!/^\d{1,2}[\/.\-]\d{1,2}[\/.\-]\d{2,4}$/.test(value)) return;
+  if (normalizeDateValue_(value)) return;
+  field.ai_value = '';
+  field.final_value = 'Không rõ, đề nghị sửa thủ công';
+  field.source = field.source || 'OCR_DATE_INVALID';
+  field.confidence = '';
 }
 
 function repairAssetCertificateTitleInReviewJson(reviewJson, fullAssetOcrText) {
@@ -1662,12 +1674,22 @@ function normalizeDateValue_(value) {
   value = String(value || '').trim();
   if (!value) return '';
   let match = value.match(/^(\d{4})[-\/.](\d{1,2})[-\/.](\d{1,2})$/);
-  if (match) return pad2_(match[3]) + '/' + pad2_(match[2]) + '/' + match[1];
+  if (match) return normalizeDateParts_(match[3], match[2], match[1]);
   match = value.match(/^(\d{1,2})[-\/.](\d{1,2})[-\/.](\d{2,4})$/);
-  if (match) return pad2_(match[1]) + '/' + pad2_(match[2]) + '/' + normalizeYear_(match[3]);
+  if (match) return normalizeDateParts_(match[1], match[2], normalizeYear_(match[3]));
   match = value.match(/(?:ngày|ngay|day)?\s*(\d{1,2})\D+(?:tháng|thang|month)?\s*(\d{1,2})\D+(?:năm|nam|year)?\s*(\d{4})/i);
-  if (match) return pad2_(match[1]) + '/' + pad2_(match[2]) + '/' + match[3];
+  if (match) return normalizeDateParts_(match[1], match[2], match[3]);
   return value;
+}
+
+function normalizeDateParts_(dayValue, monthValue, yearValue) {
+  const day = Number(dayValue);
+  const month = Number(monthValue);
+  const year = Number(yearValue);
+  if (year < 1900 || year > 2099 || month < 1 || month > 12 || day < 1 || day > 31) return '';
+  const daysInMonth = [31, isLeapYear_(year) ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31][month - 1];
+  if (day > daysInMonth) return '';
+  return pad2_(day) + '/' + pad2_(month) + '/' + year;
 }
 
 function pad2_(value) {

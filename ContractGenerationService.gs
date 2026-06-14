@@ -1246,10 +1246,20 @@ function extractAllDatesFromContractOcr_(text) {
 function normalizeContractDateValue_(value) {
   value = String(value || '').trim();
   let match = value.match(/^(\d{4})[-\/.](\d{1,2})[-\/.](\d{1,2})$/);
-  if (match) return String(match[3]).padStart(2, '0') + '/' + String(match[2]).padStart(2, '0') + '/' + match[1];
+  if (match) return normalizeContractDateParts_(match[3], match[2], match[1]);
   match = value.match(/^(\d{1,2})[-\/.](\d{1,2})[-\/.](\d{2,4})$/);
-  if (match) return String(match[1]).padStart(2, '0') + '/' + String(match[2]).padStart(2, '0') + '/' + (match[3].length === 2 ? '20' + match[3] : match[3]);
+  if (match) return normalizeContractDateParts_(match[1], match[2], (match[3].length === 2 ? '20' + match[3] : match[3]));
   return value;
+}
+
+function normalizeContractDateParts_(dayValue, monthValue, yearValue) {
+  const day = Number(dayValue);
+  const month = Number(monthValue);
+  const year = Number(yearValue);
+  if (year < 1900 || year > 2099 || month < 1 || month > 12 || day < 1 || day > 31) return '';
+  const daysInMonth = [31, isLeapYearForContract_(year) ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31][month - 1];
+  if (day > daysInMonth) return '';
+  return String(day).padStart(2, '0') + '/' + String(month).padStart(2, '0') + '/' + year;
 }
 
 function joinVietnameseList_(items) {
