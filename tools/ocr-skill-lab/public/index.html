@@ -1,0 +1,143 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>OCR Skill Lab</title>
+  <style>
+    :root { color-scheme: light; font-family: Arial, sans-serif; }
+    body { margin: 0; background: #f5f7fb; color: #111827; }
+    main { max-width: 1180px; margin: 0 auto; padding: 24px; }
+    h1 { font-size: 22px; margin: 0 0 16px; }
+    .toolbar { display: grid; grid-template-columns: 1fr 1fr 2fr auto; gap: 10px; align-items: end; margin-bottom: 16px; }
+    .keys { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 16px; }
+    label { display: grid; gap: 6px; font-size: 13px; font-weight: 600; }
+    select, input, button { font: inherit; padding: 9px 10px; border: 1px solid #cbd5e1; border-radius: 6px; background: white; }
+    button { background: #111827; color: white; cursor: pointer; border-color: #111827; }
+    button:disabled { opacity: .55; cursor: default; }
+    .grid { display: grid; grid-template-columns: minmax(280px, 420px) 1fr; gap: 16px; }
+    .panel { background: white; border: 1px solid #dbe3ef; border-radius: 8px; padding: 12px; }
+    img { width: 100%; height: auto; border: 1px solid #dbe3ef; border-radius: 6px; background: #eef2f7; }
+    pre { white-space: pre-wrap; word-break: break-word; margin: 0; font-size: 13px; line-height: 1.45; }
+    .results { display: grid; gap: 12px; }
+    .muted { color: #64748b; font-size: 13px; }
+    .error { color: #b91c1c; font-weight: 600; }
+    @media (max-width: 860px) {
+      .toolbar, .grid { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>OCR Skill Lab</h1>
+    <form class="toolbar" id="form">
+      <label>Skill
+        <select id="skill">
+          <option value="cccd">OCR CCCD/Căn cước</option>
+          <option value="land">OCR Bìa đất</option>
+        </select>
+      </label>
+      <label>Engine
+        <select id="engine">
+          <option value="google">Google Vision OCR</option>
+          <option value="openai">OpenAI Vision OCR</option>
+          <option value="both">So sánh Google + OpenAI</option>
+        </select>
+      </label>
+      <label>File ảnh
+        <input id="file" type="file" accept="image/*" required>
+      </label>
+      <button id="run" type="submit">Đọc OCR</button>
+    </form>
+
+    <div class="keys">
+      <label>Google Vision API key tạm thời
+        <input id="googleKey" type="password" autocomplete="off" placeholder="Để trống nếu đã đặt env">
+      </label>
+      <label>OpenAI API key tạm thời
+        <input id="openaiKey" type="password" autocomplete="off" placeholder="Để trống nếu đã đặt env">
+      </label>
+    </div>
+
+    <div class="grid">
+      <section class="panel">
+        <div id="hint" class="muted">Chọn ảnh CCCD/Căn cước hoặc bìa đất để test.</div>
+        <img id="preview" alt="" hidden>
+      </section>
+      <section class="results">
+        <div class="panel">
+          <div class="muted">Kết quả parse</div>
+          <pre id="parsed">{}</pre>
+        </div>
+        <div class="panel">
+          <div class="muted">Raw OCR text</div>
+          <pre id="raw"></pre>
+        </div>
+      </section>
+    </div>
+  </main>
+
+  <script>
+    const form = document.getElementById('form');
+    const fileInput = document.getElementById('file');
+    const preview = document.getElementById('preview');
+    const hint = document.getElementById('hint');
+    const parsed = document.getElementById('parsed');
+    const raw = document.getElementById('raw');
+    const run = document.getElementById('run');
+
+    function readFileAsDataUrl(file) {
+      return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result);
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+      });
+    }
+
+    fileInput.addEventListener('change', async () => {
+      const file = fileInput.files[0];
+      if (!file) return;
+      const dataUrl = await readFileAsDataUrl(file);
+      preview.src = dataUrl;
+      preview.hidden = false;
+      hint.textContent = file.name;
+    });
+
+    form.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      const file = fileInput.files[0];
+      if (!file) return;
+      run.disabled = true;
+      parsed.textContent = 'Đang OCR...';
+      raw.textContent = '';
+      try {
+        const dataUrl = await readFileAsDataUrl(file);
+        const response = await fetch('/api/ocr', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({
+            skill: document.getElementById('skill').value,
+            engine: document.getElementById('engine').value,
+            fileName: file.name,
+            mimeType: file.type,
+            googleApiKey: document.getElementById('googleKey').value,
+            openAiApiKey: document.getElementById('openaiKey').value,
+            dataUrl
+          })
+        });
+        const result = await response.json();
+        parsed.textContent = JSON.stringify(result.results || result.parsed || result, null, 2);
+        raw.textContent = (result.results || []).map(item => {
+          return '--- ' + item.engine + ' ---\n' + (item.ocr_error || item.raw_text || '');
+        }).join('\n\n') || (result.ocr_error || result.raw_text || '');
+        raw.className = result.ocr_error ? 'error' : '';
+      } catch (err) {
+        parsed.textContent = String(err && err.stack || err);
+      } finally {
+        run.disabled = false;
+      }
+    });
+  </script>
+</body>
+</html>

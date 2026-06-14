@@ -1,4 +1,7 @@
 {
+  "scripts": {
+    "ocr-lab": "node tools/ocr-skill-lab/server.js"
+  },
   "dependencies": {
     "7zip-bin": "^5.2.0",
     "fast-xml-parser": "^5.8.0",
