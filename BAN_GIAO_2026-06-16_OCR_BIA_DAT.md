@@ -5,11 +5,12 @@
 - Project local: `C:\Users\Administrator\Documents\HDTC-OCR-Review-Giai-doan-1`
 - Apps Script project đã push source bằng `npx.cmd clasp push --force`.
 - Web app review hiện tại đã được cập nhật đúng deployment cũ:
-  - Deployment ID: `AKfycbyXkDTtk4PVPzjdCwy1duKEtbqJrNUHlbsF7TO_jTaMJ1JCCz8PJUf7vzerZijF1KyD`
-  - Version đang chạy: `@89`
-  - Mô tả version: `land certificate OCR review fixes`
+- Deployment ID: `AKfycbyXkDTtk4PVPzjdCwy1duKEtbqJrNUHlbsF7TO_jTaMJ1JCCz8PJUf7vzerZijF1KyD`
+- Version đang chạy: `@89`
+- Mô tả version: `land certificate OCR review fixes`
 - Không tạo deployment/web app mới.
-- Git local chưa commit. Các thay đổi đã push lên Apps Script nhưng trong repo vẫn đang là working tree dirty.
+- Git đã commit và push lên `origin/main`.
+- Commit sửa chính: `e68e588` - `Fix land certificate OCR review and lab training`.
 
 ## Kiểm tra đã chạy
 
@@ -143,9 +144,10 @@
   - Mục `4/5/6` hiển thị dù không có thông tin.
   - Mục `IV` hiển thị `Không có`, nội dung đọc được, hoặc cảnh báo mờ tùy ảnh.
 
-## Trạng thái cuối phiên
+## Trạng thái Git cuối phiên
 
 - Source Apps Script đã upload.
 - Review web app chính đã chạy version `@89`.
-- Chưa commit git.
-- Nếu chuyển máy, nên copy/pull cả thư mục project hiện tại hoặc tạo commit trước khi chuyển.
+- GitHub đã nhận commit sửa chính `e68e588`.
+- Sau khi cập nhật nội dung bàn giao này, có thể có thêm một commit nhỏ chỉ để cập nhật file bàn giao. Máy mới chỉ cần `git pull origin main`.
+- Nếu kiểm tra lại bằng `git status --short`, working tree nên sạch.
