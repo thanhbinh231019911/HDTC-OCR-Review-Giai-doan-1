@@ -317,6 +317,8 @@ function cleanupIndexedValue(value) {
   return String(value || '')
     .replace(/\r?\n+/g, ' ')
     .replace(/\s+/g, ' ')
+    .replace(/\s+(?:số|so)\s+vào\s+sổ\s+cấp\s+gcn\s*:?.*$/i, '')
+    .replace(/\s+so\s+vao\s+so\s+cap\s+gcn\s*:?.*$/i, '')
     .replace(/^(?:địa\s*chỉ|dia chi|address|hình\s*thức\s*sử\s*dụng|hinh thuc su dung|mục\s*đích\s*sử\s*dụng|muc dich su dung|thời\s*hạn\s*sử\s*dụng|thoi han su dung|nguồn\s*gốc\s*sử\s*dụng|nguon goc su dung)\s*[:.-]?\s*/i, '')
     .replace(/[;,.:\-\s]+$/g, '')
     .trim();
@@ -344,7 +346,7 @@ function extractMapSheetNumber(value) {
 function extractAreaValue(value) {
   const text = cleanupIndexedValue(value);
   const match = text.match(/\d+(?:[,.]\d+)?\s*m[²2]?/i);
-  return match ? match[0].replace(/m2/i, 'm²') : text;
+  return match ? match[0].replace(/\s*m(?:[²2])?/i, ' m²') : text;
 }
 
 function extractAreaWords(value) {

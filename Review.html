@@ -704,6 +704,11 @@
       pushAssetLine(lines, 'g. ' + t('Nguon goc su dung'), valueOf(re.usage_origin));
       lines.push('<div class="asset-doc-line"><strong>2. ' + t('Nha o') + ':</strong> ' + escapeHtml(simplifyAbsentCertificateText(valueOf(re.attached_assets))) + '</div>');
       lines.push('<div class="asset-doc-line"><strong>3. ' + t('Cong trinh xay dung khac') + ':</strong> ' + escapeHtml(simplifyAbsentCertificateText('')) + '</div>');
+      lines.push('<div class="asset-doc-line"><strong>4. ' + t('Rung san xuat la rung trong') + ':</strong> ' + escapeHtml(certificateOptionalItemValue(ocrText, 4, '-/-')) + '</div>');
+      lines.push('<div class="asset-doc-line"><strong>5. ' + t('Cay lau nam') + ':</strong> ' + escapeHtml(certificateOptionalItemValue(ocrText, 5, '-/-')) + '</div>');
+      lines.push('<div class="asset-doc-line"><strong>6. ' + t('Ghi chu') + ':</strong> ' + escapeHtml(certificateOptionalItemValue(ocrText, 6, 'Kh\u00f4ng')) + '</div>');
+      lines.push('<div class="asset-doc-line"><strong>IV. ' + t('Nhung thay doi sau khi cap Giay chung nhan') + ':</strong></div>');
+      lines.push('<div class="asset-doc-line">' + escapeHtml(postIssueChangesDisplayValue(valueOf(re.post_issue_changes), ocrText)) + '</div>');
       lines.push('</div><div class="asset-doc-edit">' + fieldTable(flattenFields(asset, root)) + '</div></section>');
       lines.push('</div>');
       return lines.join('');
@@ -734,6 +739,10 @@
         'Dia chi': '\u0110\u1ecb\u0061 \u0063\u0068\u1ec9',
         'Nha o': 'Nh\u00e0 \u1edf',
         'Cong trinh xay dung khac': 'C\u00f4ng tr\u00ecnh x\u00e2y d\u1ef1ng kh\u00e1c',
+        'Rung san xuat la rung trong': 'R\u1eebng s\u1ea3n xu\u1ea5t l\u00e0 r\u1eebng tr\u1ed3ng',
+        'Cay lau nam': 'C\u00e2y l\u00e2u n\u0103m',
+        'Ghi chu': 'Ghi ch\u00fa',
+        'Nhung thay doi sau khi cap Giay chung nhan': 'Nh\u1eefng thay \u0111\u1ed5i sau khi c\u1ea5p Gi\u1ea5y ch\u1ee9ng nh\u1eadn',
         'Thong tin tai san gan lien voi dat': '\u0054\u0068\u00f4\u006e\u0067 \u0074\u0069\u006e \u0074\u00e0\u0069 \u0073\u1ea3\u006e \u0067\u1eaf\u006e \u006c\u0069\u1ec1\u006e \u0076\u1edb\u0069 \u0111\u1ea5\u0074',
         'Ten tai san': '\u0054\u00ea\u006e \u0074\u00e0\u0069 \u0073\u1ea3\u006e',
         'Dien tich su dung': '\u0044\u0069\u1ec7\u006e \u0074\u00ed\u0063\u0068 \u0073\u1eed \u0064\u1ee5\u006e\u0067',
@@ -769,7 +778,13 @@
     }
 
     function formatAreaWithWords(area, areaWords) {
-      return joinNonEmpty([cleanValue(area), normalizeAreaWordsForDisplay(areaWords)], ' ');
+      return joinNonEmpty([normalizeAreaForDisplay(area), normalizeAreaWordsForDisplay(areaWords)], ' ');
+    }
+
+    function normalizeAreaForDisplay(area) {
+      const text = cleanValue(area).replace(/\s+/g, ' ').trim();
+      const match = text.match(/([0-9]+(?:[,.][0-9]+)?)\s*m(?:2|²)?/i);
+      return match ? match[1] + ' m\u00b2' : text;
     }
 
     function normalizeAreaWordsForDisplay(value) {
@@ -784,6 +799,67 @@
       value = cleanValue(value);
       if (!value || isAbsentCertificateText(value)) return 'Ch\u01b0a ch\u1ee9ng nh\u1eadn quy\u1ec1n s\u1edf h\u1eefu';
       return value;
+    }
+
+    function certificateOptionalItemValue(ocrText, number, fallback) {
+      const value = extractNumberedCertificateItemFromOcr(ocrText, number);
+      if (!value) return fallback;
+      return isAbsentCertificateText(value) ? fallback : value;
+    }
+
+    function extractNumberedCertificateItemFromOcr(ocrText, number) {
+      const text = String(ocrText || '').replace(/\r/g, '\n');
+      const pattern = new RegExp('(?:^|\\n|\\s)' + number + '\\s*[\\).:]\\s*([\\s\\S]*?)(?=(?:\\n|\\s)(?:' + (number + 1) + '|IV|III|II)\\s*[\\).:]|$)', 'i');
+      const match = text.match(pattern);
+      return match ? oneLineCertificateValue(match[1]).replace(/^[;:.,\\-\\s]+|[;:.,\\-\\s]+$/g, '') : '';
+    }
+
+    function postIssueChangesDisplayValue(value, ocrText) {
+      value = cleanValue(value);
+      if (value && !isAbsentCertificateText(value)) return value;
+      const inferred = inferPostIssueChangesFromOcr(ocrText);
+      return inferred || 'Kh\u00f4ng c\u00f3';
+    }
+
+    function inferPostIssueChangesFromOcr(ocrText) {
+      const lines = String(ocrText || '').split(/\r?\n/)
+        .map(line => line.replace(/\s+/g, ' ').trim())
+        .filter(Boolean);
+      let start = -1;
+      for (let i = 0; i < lines.length; i++) {
+        const normalized = removeVietnameseMarks(lines[i]).toLowerCase();
+        if (normalized.indexOf('iv') >= 0 && normalized.indexOf('nhung thay doi') >= 0) {
+          start = i;
+          break;
+        }
+      }
+      if (start < 0) return '';
+      const content = [];
+      for (let j = start + 1; j < lines.length; j++) {
+        const line = lines[j];
+        const normalized = removeVietnameseMarks(line).toLowerCase();
+        if (normalized.indexOf('noi dung thay doi') >= 0 ||
+            normalized.indexOf('xac nhan cua co quan') >= 0 ||
+            normalized.indexOf('co tham quyen') >= 0 ||
+            normalized.indexOf('giam doc') >= 0 ||
+            normalized.indexOf('so tai nguyen') >= 0) {
+          continue;
+        }
+        if (/^[ivx]+\s*[\).]/i.test(normalized) && content.length) break;
+        content.push(line);
+      }
+      const cleaned = content.join('\n').replace(/\n{3,}/g, '\n\n').trim();
+      if (!cleaned) return 'C\u00f3 n\u1ed9i dung nh\u01b0ng b\u1ecb m\u1edd/kh\u00f4ng \u0111\u1ecdc r\u00f5, \u0111\u1ec1 ngh\u1ecb ki\u1ec3m tra k\u1ef9';
+      if (isUnclearPostIssueText(cleaned)) return cleaned + '\nC\u1ea3nh b\u00e1o: ph\u1ea7n n\u00e0y b\u1ecb m\u1edd/vi\u1ebft tay kh\u00f3 \u0111\u1ecdc, \u0111\u1ec1 ngh\u1ecb ki\u1ec3m tra k\u1ef9.';
+      return cleaned;
+    }
+
+    function isUnclearPostIssueText(value) {
+      const text = removeVietnameseMarks(value).toLowerCase();
+      if (text.indexOf('khong doc ro') >= 0 || text.indexOf('bi mo') >= 0) return true;
+      const letters = (text.match(/[a-z]/g) || []).length;
+      const digits = (text.match(/[0-9]/g) || []).length;
+      return letters < 20 && digits > 6;
     }
 
     function isAbsentCertificateText(value) {

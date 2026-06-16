@@ -7,9 +7,13 @@ function onOpen() {
     .addItem('2b. Update Google Form to OCR only', 'updateGoogleFormToOcrOnly')
     .addItem('2c. Fix Google Form labels only', 'fixGoogleFormLabelsOnly')
     .addItem('2d. Show Google Form URLs', 'showGoogleFormUrls')
+    .addItem('2e. Recover production Form properties', 'recoverProductionFormProperties')
     .addItem('3. Install Form Submit trigger', 'installFormSubmitTrigger')
     .addItem('3b. Reinstall Form Submit trigger', 'reinstallFormSubmitTrigger')
     .addItem('3c. Reset Form trigger now', 'resetFormSubmitTriggerNow')
+    .addItem('3d. Setup OCR lab training forms', 'setupOcrLabTrainingForms')
+    .addItem('3e. Show OCR lab training form URLs', 'showOcrLabTrainingFormUrls')
+    .addItem('3f. Check OCR lab training configuration', 'checkOcrLabTrainingConfiguration')
     .addItem('4. Check configuration', 'checkPhase1Configuration')
     .addItem('4b. Diagnose latest case', 'runDiagnoseLatestCase')
     .addItem('4c. Reprocess latest case', 'runReprocessLatestCase')
@@ -155,7 +159,27 @@ function saveGoogleFormUrls_(form) {
     FORM_ID: urls.id,
     FORM_EDIT_URL: urls.editUrl,
     FORM_PUBLIC_URL: urls.publicUrl
-  }, true);
+  }, false);
+  return urls;
+}
+
+function recoverProductionFormProperties() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const formUrl = ss.getFormUrl && ss.getFormUrl();
+  if (!formUrl) {
+    throw new Error('Spreadsheet does not report a linked production Google Form. Open the production Form edit URL manually or provide FORM_ID.');
+  }
+  const form = FormApp.openByUrl(formUrl);
+  const urls = saveGoogleFormUrls_(form);
+  const message = [
+    'Recovered production Google Form properties.',
+    'FORM_ID: ' + urls.id,
+    'FORM_EDIT_URL: ' + urls.editUrl,
+    'FORM_PUBLIC_URL: ' + urls.publicUrl
+  ].join('\n');
+  const ui = getSpreadsheetUiSafe_();
+  if (ui) ui.alert(message);
+  console.log(message);
   return urls;
 }
 

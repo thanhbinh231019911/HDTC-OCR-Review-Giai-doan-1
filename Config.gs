@@ -147,7 +147,8 @@ const SHEETS = {
   REVIEW_OVERRIDES: 'REVIEW_OVERRIDES',
   FINAL_DATA: 'FINAL_DATA',
   GENERATED_CONTRACTS: 'GENERATED_CONTRACTS',
-  AUDIT_LOGS: 'AUDIT_LOGS'
+  AUDIT_LOGS: 'AUDIT_LOGS',
+  LAB_TRAINING_RESULTS: 'LAB_TRAINING_RESULTS'
 };
 
 const CASE_STATUS = {
@@ -196,6 +197,12 @@ const SHEET_HEADERS = {
   ],
   AUDIT_LOGS: [
     'Case ID', 'Action', 'Detail', 'User', 'Timestamp'
+  ],
+  LAB_TRAINING_RESULTS: [
+    'Timestamp', 'Case ID', 'Lab Skill', 'Mode', 'Source Form ID',
+    'Uploaded File Count', 'Drive Folder URL', 'Review URL', 'OCR Text JSON',
+    'AI JSON File URL', 'AI JSON', 'Review JSON File URL',
+    'Final Fields JSON', 'Validation Status', 'Warnings', 'Error'
   ]
 };
 

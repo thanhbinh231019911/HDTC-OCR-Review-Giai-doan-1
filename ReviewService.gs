@@ -46,11 +46,14 @@ function repairReviewDataFromFullOcr_(data, caseId) {
   const fullOcr = getFullOcrTextMapsForCase_(caseId, data);
   repairIdentityIssueDatesInReviewJson(data, fullOcr.byFileName);
   repairAssetCertificateTitleInReviewJson(data, fullOcr.assetText);
+  repairAssetCertificateCodesInReviewJson(data, fullOcr.assetText);
   repairAssetIssuingAuthorityInReviewJson(data, fullOcr.assetText);
   repairAssetLandAddressInReviewJson(data, fullOcr.assetText);
+  repairAssetAreaInReviewJson(data, fullOcr.assetText);
   repairAssetUsageFormInReviewJson(data, fullOcr.assetText);
   repairAssetUsageTermInReviewJson(data, fullOcr.assetText);
   repairAssetAreaWordsInReviewJson(data, fullOcr.assetText);
+  repairAssetPostIssueChangesInReviewJson(data, fullOcr.assetText);
   return data;
 }
 
