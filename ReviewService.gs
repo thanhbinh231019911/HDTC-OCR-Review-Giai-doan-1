@@ -115,6 +115,63 @@ function ocrIdentityIssueDateCrop(caseId, token, dataUrl) {
   return { date: date, raw_text: text, reason: date ? 'OK' : 'NO_SINGLE_VALID_DATE' };
 }
 
+function suggestLandRegistryCrop(caseId, token, fileId) {
+  assertValidToken_(caseId, token);
+  const apiKey = PropertiesService.getScriptProperties().getProperty(CONFIG.CLOUD_VISION_API_KEY_PROPERTY);
+  if (!apiKey) return { ok: false, reason: 'MISSING_CLOUD_VISION_API_KEY' };
+  const file = DriveApp.getFileById(fileId);
+  const blob = file.getBlob();
+  const contentType = blob.getContentType() || 'image/jpeg';
+  if (contentType.indexOf('image/') !== 0) return { ok: false, reason: 'NOT_IMAGE' };
+  const response = withRetry('Vision land registry crop suggestion ' + file.getName(), function() {
+    const res = UrlFetchApp.fetch('https://vision.googleapis.com/v1/images:annotate?key=' + encodeURIComponent(apiKey), {
+      method: 'post',
+      contentType: 'application/json',
+      payload: JSON.stringify({
+        requests: [{
+          image: { content: Utilities.base64Encode(blob.getBytes()) },
+          features: [{ type: 'DOCUMENT_TEXT_DETECTION' }],
+          imageContext: { languageHints: ['vi', 'en'] }
+        }]
+      }),
+      muteHttpExceptions: true
+    });
+    if (res.getResponseCode() >= 300) throw new Error(res.getContentText());
+    return JSON.parse(res.getContentText());
+  }, 2);
+  const annotation = response.responses && response.responses[0];
+  const suggestion = suggestLandRegistryCropFromVisionAnnotation_(annotation);
+  return suggestion ? { ok: true, crop: suggestion } : { ok: false, reason: 'NO_REGISTRY_ANCHOR' };
+}
+
+function ocrLandRegistryCrop(caseId, token, dataUrl) {
+  assertValidToken_(caseId, token);
+  const apiKey = PropertiesService.getScriptProperties().getProperty(CONFIG.CLOUD_VISION_API_KEY_PROPERTY);
+  if (!apiKey) return { registry_number: '', raw_text: '', reason: 'MISSING_CLOUD_VISION_API_KEY' };
+  const match = String(dataUrl || '').match(/^data:image\/[a-zA-Z0-9.+-]+;base64,(.+)$/);
+  if (!match) return { registry_number: '', raw_text: '', reason: 'INVALID_IMAGE_DATA' };
+  const response = withRetry('Vision OCR land registry crop', function() {
+    const res = UrlFetchApp.fetch('https://vision.googleapis.com/v1/images:annotate?key=' + encodeURIComponent(apiKey), {
+      method: 'post',
+      contentType: 'application/json',
+      payload: JSON.stringify({
+        requests: [{
+          image: { content: match[1] },
+          features: [{ type: 'DOCUMENT_TEXT_DETECTION' }],
+          imageContext: { languageHints: ['vi', 'en'] }
+        }]
+      }),
+      muteHttpExceptions: true
+    });
+    if (res.getResponseCode() >= 300) throw new Error(res.getContentText());
+    return JSON.parse(res.getContentText());
+  }, 2);
+  const annotation = response.responses && response.responses[0] && response.responses[0].fullTextAnnotation;
+  const text = annotation && annotation.text || '';
+  const registry = extractLandRegistryNumberFromCropText_(text);
+  return { registry_number: registry, raw_text: text, reason: registry ? 'OK' : 'NO_FULL_REGISTRY_NUMBER' };
+}
+
 function saveAutoOcrFieldValue(caseId, token, fieldPath, newValue, source) {
   assertValidToken_(caseId, token);
   newValue = normalizeManualOverrideValueForStorage_(newValue);
@@ -207,6 +264,41 @@ function suggestNewIdentityIssueDateCropFromVisionAnnotation_(annotation) {
     };
   }
   return null;
+}
+
+function suggestLandRegistryCropFromVisionAnnotation_(annotation) {
+  const words = collectVisionWords_(annotation);
+  for (let i = 0; i < words.length; i++) {
+    const windowWords = words.slice(i, Math.min(words.length, i + 7));
+    const normalized = windowWords.map(function(word) {
+      return removeVietnameseAccents_(String(word.text || '')).toLowerCase().replace(/[^a-z0-9]+/g, '');
+    }).join(' ');
+    if (!/so\s+vao\s+so\s+cap\s+(?:gcn|giay\s+chung\s+nhan)/.test(normalized)) continue;
+    const labelRects = windowWords.slice(0, Math.min(windowWords.length, 5)).map(function(word) { return word.box; });
+    const labelBox = mergeVisionRects_(labelRects);
+    const pageWidth = words[i].pageWidth;
+    const pageHeight = words[i].pageHeight;
+    const x = Math.max(0, Math.round(labelBox.x - labelBox.height * 0.4));
+    const y = Math.max(0, Math.round(labelBox.y - labelBox.height * 1.6));
+    const width = Math.max(8, Math.min(pageWidth - x, Math.round(Math.max(labelBox.width * 2.4, pageWidth * 0.55))));
+    const height = Math.max(8, Math.min(pageHeight - y, Math.round(labelBox.height * 5.2)));
+    return {
+      x: x,
+      y: y,
+      width: width,
+      height: height,
+      reason: 'land_registry_label',
+      anchor_text: windowWords.map(function(word) { return word.text; }).join(' ')
+    };
+  }
+  return null;
+}
+
+function extractLandRegistryNumberFromCropText_(text) {
+  const raw = String(text || '').replace(/\r?\n+/g, ' ').replace(/\s+/g, ' ').trim();
+  const fromLabel = extractRealEstateRegistryNumber_(raw);
+  if (fromLabel) return fromLabel;
+  return normalizeRegistryCodeValue_(raw);
 }
 
 function collectVisionWords_(annotation) {

@@ -43,6 +43,12 @@ function reviewApi(body) {
   if (action === 'ocrIdentityIssueDateCrop') {
     return ocrIdentityIssueDateCrop(body.caseId, body.token, body.dataUrl);
   }
+  if (action === 'suggestLandRegistryCrop') {
+    return suggestLandRegistryCrop(body.caseId, body.token, body.fileId);
+  }
+  if (action === 'ocrLandRegistryCrop') {
+    return ocrLandRegistryCrop(body.caseId, body.token, body.dataUrl);
+  }
   if (action === 'saveAutoOcrFieldValue') {
     return saveAutoOcrFieldValue(body.caseId, body.token, body.fieldPath, body.newValue, body.source);
   }

@@ -64,6 +64,7 @@ Rules:
 - Reject partial numeric-only values such as `027`; leave blank or warn for manual review.
 - Do not use certificate serial numbers such as `CO402507` as registry numbers.
 - If the full value is handwritten over a dotted line and OCR reads only the tail, add a warning or use a dedicated crop/OCR pass for this registry region; do not infer the missing prefix.
+- The crop/OCR pass for registry number must remain field-specific: find the registry label region, crop around that line, OCR only that crop, and write only `assets[].real_estate.registry_number`.
 
 ## Usage Form
 

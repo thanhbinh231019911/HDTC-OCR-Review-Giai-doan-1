@@ -330,6 +330,7 @@
     let confirmBusy = false;
     let generateBusy = false;
     let autoOcrBusy = false;
+    let autoRegistryOcrBusy = false;
     let autoOcrDonePaths = {};
 
     function vi(key) {
@@ -1091,6 +1092,7 @@
         }
       }
       autoRepairIdentityIssueDatesFromImageCrops();
+      autoRepairAssetRegistryNumbersFromImageCrops();
     }
 
     async function autoRepairIdentityIssueDatesFromImageCrops() {
@@ -1163,6 +1165,70 @@
       return year % 400 === 0 || (year % 4 === 0 && year % 100 !== 0);
     }
 
+    async function autoRepairAssetRegistryNumbersFromImageCrops() {
+      if (autoRegistryOcrBusy || !reviewData) return;
+      autoRegistryOcrBusy = true;
+      try {
+        const jobs = [];
+        (reviewData.assets || []).forEach(function(asset, index) {
+          const field = asset && asset.real_estate && asset.real_estate.registry_number;
+          if (!isMissingLandRegistryField_(field)) return;
+          const files = getFilesForObject(asset, 'asset');
+          const fallbackFiles = files.length ? files : getLandCertificateFilesFromOcr_();
+          if (!fallbackFiles.length) return;
+          jobs.push({
+            fieldPath: 'assets[' + index + '].real_estate.registry_number',
+            field: field,
+            files: fallbackFiles
+          });
+        });
+        for (const job of jobs) {
+          if (autoOcrDonePaths[job.fieldPath]) continue;
+          autoOcrDonePaths[job.fieldPath] = true;
+          const registry = await readLandRegistryFromAssetFiles_(job.files);
+          if (!registry) continue;
+          const saved = await api('saveAutoOcrFieldValue', {
+            fieldPath: job.fieldPath,
+            newValue: registry,
+            source: 'AUTO_OCR_LAND_REGISTRY_CROP'
+          });
+          if (saved && saved.ok) {
+            job.field.ai_value = registry;
+            job.field.final_value = registry;
+            job.field.source = 'AUTO_OCR_LAND_REGISTRY_CROP';
+            job.field.confidence = '0.82';
+            render();
+            break;
+          }
+        }
+      } catch (err) {
+        console.warn('Auto OCR land registry failed', err);
+      } finally {
+        autoRegistryOcrBusy = false;
+      }
+    }
+
+    function isMissingLandRegistryField_(field) {
+      if (!field || field.manual_value) return false;
+      const value = cleanValue(field.final_value || field.ai_value);
+      if (!value) return true;
+      const normalized = value.replace(/\s+/g, '');
+      if (/^\d+$/.test(normalized)) return true;
+      if (/^[A-Z][A-Z0O]\d{6}$/i.test(normalized)) return true;
+      return !/^(?:CS|CT|CN|CH|CL|HX|VP|DC|DL)[-.]?[0-9A-Z.\/-]{2,24}$/i.test(normalized);
+    }
+
+    function getLandCertificateFilesFromOcr_() {
+      return (reviewData.ocr_results || []).filter(function(file) {
+        const text = removeVietnameseMarks(((file && file.file_name) || '') + ' ' + ((file && file.text_preview) || '')).toLowerCase();
+        return text.indexOf('giay chung nhan') >= 0 ||
+          text.indexOf('quyen su dung dat') >= 0 ||
+          text.indexOf('thua dat') >= 0 ||
+          text.indexOf('so vao so') >= 0 ||
+          text.indexOf('dien tich') >= 0;
+      });
+    }
+
     async function readIssueDateFromIdentityFiles_(files) {
       for (const file of files || []) {
         if (!file.file_id) continue;
@@ -1175,6 +1241,22 @@
         if (!cropDataUrl) continue;
         const ocr = await api('ocrIdentityIssueDateCrop', { dataUrl: cropDataUrl });
         if (ocr && ocr.date) return ocr.date;
+      }
+      return '';
+    }
+
+    async function readLandRegistryFromAssetFiles_(files) {
+      for (const file of files || []) {
+        if (!file.file_id) continue;
+        const preview = imageCache[file.file_id] || await api('getCaseImagePreview', { fileId: file.file_id });
+        imageCache[file.file_id] = preview;
+        if (!preview || !preview.is_image || !preview.data_url) continue;
+        const suggestion = await api('suggestLandRegistryCrop', { fileId: file.file_id });
+        if (!suggestion || !suggestion.ok || !suggestion.crop) continue;
+        const cropDataUrl = await cropDataUrlFromImage_(preview.data_url, suggestion.crop);
+        if (!cropDataUrl) continue;
+        const ocr = await api('ocrLandRegistryCrop', { dataUrl: cropDataUrl });
+        if (ocr && ocr.registry_number) return ocr.registry_number;
       }
       return '';
     }
