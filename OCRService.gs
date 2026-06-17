@@ -8,6 +8,7 @@ function ocrFilesForCase(caseId, uploadedFiles, folders) {
     }
     try {
       const result = ocrSingleFile_(fileMeta);
+      fileMeta = reclassifyOcrFileMetaByContent_(fileMeta, result.text);
       return saveOcrResult_(caseId, fileMeta, result.text, 'DONE', result.confidence, folders, '', result.orientation_degrees);
     } catch (err) {
       logAudit(caseId, 'OCR_FILE_ERROR', { file: fileMeta, error: String(err) });
@@ -17,6 +18,37 @@ function ocrFilesForCase(caseId, uploadedFiles, folders) {
   updateCase(caseId, { 'Status': CASE_STATUS.OCR_DONE, 'OCR Done At': nowIso() });
   logAudit(caseId, 'OCR_DONE', { file_count: results.length });
   return results;
+}
+
+function reclassifyOcrFileMetaByContent_(fileMeta, text) {
+  if (!shouldReclassifyOcrAsLandAsset_(text)) return fileMeta;
+  const updated = Object.assign({}, fileMeta || {});
+  updated.group = 'asset';
+  updated.fileName = String(updated.fileName || '').replace(/^(?:secured_party|obligor)__/, 'asset__');
+  return updated;
+}
+
+function shouldReclassifyOcrAsLandAsset_(text) {
+  const normalized = removeVietnameseAccents_(String(text || ''))
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  if (!normalized) return false;
+  const looksLikeIdentityCard = normalized.indexOf('can cuoc cong dan') >= 0 ||
+    normalized.indexOf('chung minh nhan dan') >= 0 ||
+    normalized.indexOf('noi thuong tru') >= 0 && normalized.indexOf('ngay sinh') >= 0;
+  if (looksLikeIdentityCard) return false;
+  let score = 0;
+  if (normalized.indexOf('giay chung nhan') >= 0) score += 3;
+  if (normalized.indexOf('quyen su dung dat') >= 0) score += 3;
+  if (normalized.indexOf('quyen so huu nha o') >= 0) score += 2;
+  if (normalized.indexOf('thua dat') >= 0) score += 2;
+  if (normalized.indexOf('to ban do') >= 0) score += 2;
+  if (normalized.indexOf('dien tich') >= 0 && normalized.indexOf('hinh thuc su dung') >= 0) score += 2;
+  if (normalized.indexOf('so vao so cap gcn') >= 0 || normalized.indexOf('so vao so cap giay chung nhan') >= 0) score += 2;
+  if (normalized.indexOf('so tai nguyen') >= 0 && normalized.indexOf('moi truong') >= 0) score += 1;
+  return score >= 4;
 }
 
 function ocrSingleFile_(fileMeta) {

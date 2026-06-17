@@ -1,6 +1,7 @@
 {
   "scripts": {
-    "ocr-lab": "node tools/ocr-skill-lab/server.js"
+    "ocr-lab": "node tools/ocr-skill-lab/server.js",
+    "test:land-ocr": "node tools/land_ocr_regression_test.js"
   },
   "dependencies": {
     "7zip-bin": "^5.2.0",

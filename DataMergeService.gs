@@ -403,7 +403,10 @@ function shouldReplaceUsageForm_(field, candidate) {
   if (/\r?\n/.test(current) && !/\r?\n/.test(candidate)) return true;
   const currentNorm = removeVietnameseAccents_(current).toLowerCase().replace(/\s+/g, ' ').trim();
   const candidateNorm = removeVietnameseAccents_(candidate).toLowerCase().replace(/\s+/g, ' ').trim();
-  return currentNorm && candidateNorm && currentNorm !== candidateNorm && candidateNorm.indexOf(currentNorm) >= 0;
+  if (!currentNorm || !candidateNorm || currentNorm === candidateNorm) return false;
+  if (currentNorm.indexOf(candidateNorm) >= 0 && current.length > candidate.length + 8) return true;
+  if (candidateNorm.indexOf(currentNorm) >= 0) return true;
+  return hasOtherLandFieldLabel_(currentNorm);
 }
 
 function normalizeRealEstateUsageForm_(value) {
@@ -426,7 +429,19 @@ function shouldReplaceUsageTerm_(field, candidate) {
   if (!current) return true;
   const currentNorm = removeVietnameseAccents_(current).toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
   const candidateNorm = removeVietnameseAccents_(candidate).toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
-  return currentNorm && candidateNorm && currentNorm === candidateNorm && current !== candidate;
+  if (!currentNorm || !candidateNorm || currentNorm === candidateNorm) return current !== candidate;
+  if (currentNorm.indexOf(candidateNorm) >= 0 && current.length > candidate.length + 8) return true;
+  return hasOtherLandFieldLabel_(currentNorm);
+}
+
+function hasOtherLandFieldLabel_(normalizedText) {
+  const text = String(normalizedText || '').toLowerCase();
+  return text.indexOf('dien tich') >= 0 ||
+    text.indexOf('hinh thuc su dung') >= 0 ||
+    text.indexOf('muc dich su dung') >= 0 ||
+    text.indexOf('thoi han su dung') >= 0 ||
+    text.indexOf('nguon goc su dung') >= 0 ||
+    /\b[0-9]+(?:[,.][0-9]+)?\s*m(?:2|²)?\b/i.test(text);
 }
 
 function normalizeRealEstateUsageTerm_(value) {
@@ -792,16 +807,86 @@ function shouldReplaceOwnerListField_(field, newValue, expectedCount) {
 function extractRealEstateIndexedLandFields_(text) {
   const block = extractLandPlotIndexedBlock_(text);
   const items = extractIndexedCertificateItems_(block || text);
-  return {
-    land_plot_number: extractLandPlotNumberFromIndexedValue_(items.a || ''),
-    map_sheet_number: extractMapSheetNumberFromIndexedValue_(items.a || ''),
-    land_address: cleanupIndexedCertificateValue_(items.b || '') || extractDislocatedLandAddressFromBlock_(block || text),
-    area: normalizeRealEstateAreaValue_(cleanupIndexedCertificateValue_(items.c || '')) || extractRealEstateArea_(block || text),
-    usage_form: normalizeRealEstateUsageForm_(cleanupIndexedCertificateValue_(items.d || '')),
-    usage_purpose: cleanupIndexedCertificateValue_(items.dd || items['Ä‘'] || ''),
-    usage_term: normalizeRealEstateUsageTerm_(cleanupIndexedCertificateValue_(items.e || '')),
-    usage_origin: cleanupUsageOriginCertificateValue_(items.g || '')
+  const source = block || text;
+  const semantic = {
+    land_plot_number: findSemanticLandFieldValue_(source, ['thua dat so']),
+    map_sheet_number: findSemanticLandFieldValue_(source, ['to ban do so']),
+    land_address: findSemanticLandFieldValue_(source, ['dia chi']),
+    area: findSemanticLandFieldValue_(source, ['dien tich']),
+    usage_form: findSemanticLandFieldValue_(source, ['hinh thuc su dung']),
+    usage_purpose: findSemanticLandFieldValue_(source, ['muc dich su dung']),
+    usage_term: findSemanticLandFieldValue_(source, ['thoi han su dung']),
+    usage_origin: findSemanticLandFieldValue_(source, ['nguon goc su dung'])
   };
+  return {
+    land_plot_number: extractLandPlotNumberFromIndexedValue_(semantic.land_plot_number || items.a || ''),
+    map_sheet_number: extractMapSheetNumberFromIndexedValue_(semantic.map_sheet_number || items.a || ''),
+    land_address: cleanupIndexedCertificateValue_(semantic.land_address || items.b || '') || extractDislocatedLandAddressFromBlock_(source),
+    area: normalizeRealEstateAreaValue_(cleanupIndexedCertificateValue_(semantic.area || items.c || '')) || extractRealEstateArea_(source),
+    usage_form: normalizeRealEstateUsageForm_(cleanupIndexedCertificateValue_(semantic.usage_form || '')),
+    usage_purpose: cleanupIndexedCertificateValue_(semantic.usage_purpose || ''),
+    usage_term: normalizeRealEstateUsageTerm_(cleanupIndexedCertificateValue_(semantic.usage_term || '')),
+    usage_origin: cleanupUsageOriginCertificateValue_(semantic.usage_origin || '')
+  };
+}
+
+function findSemanticLandFieldValue_(text, normalizedAliases) {
+  const source = String(text || '').replace(/\r?\n+/g, ' ').replace(/\s+/g, ' ').trim();
+  if (!source) return '';
+  const normalized = removeVietnameseAccents_(source).toLowerCase();
+  const labelStarts = collectSemanticLandLabelStarts_(normalized);
+  let best = null;
+  (normalizedAliases || []).forEach(function(alias) {
+    const label = removeVietnameseAccents_(alias).toLowerCase();
+    const index = normalized.indexOf(label);
+    if (index < 0) return;
+    if (!best || index < best.index) best = { index: index, length: label.length };
+  });
+  if (!best) return '';
+  let start = best.index + best.length;
+  while (start < source.length && /[\s:;.,)\-]/.test(source.charAt(start))) start++;
+  let end = source.length;
+  labelStarts.forEach(function(pos) {
+    if (pos > start && pos < end) end = pos;
+  });
+  const tail = normalized.slice(start);
+  const boundary = tail.search(/(?:^|\s)(?:2|3|4|5|6|iv)\s*[\).:]\s+/i);
+  if (boundary >= 0 && start + boundary < end) end = start + boundary;
+  return cleanupSemanticLandFieldValue_(source.slice(start, end));
+}
+
+function collectSemanticLandLabelStarts_(normalizedText) {
+  const labels = [
+    'thua dat so',
+    'to ban do so',
+    'dia chi',
+    'dien tich',
+    'hinh thuc su dung',
+    'muc dich su dung',
+    'thoi han su dung',
+    'nguon goc su dung',
+    'bang chu'
+  ];
+  const starts = [];
+  labels.forEach(function(label) {
+    let from = 0;
+    while (from < normalizedText.length) {
+      const index = normalizedText.indexOf(label, from);
+      if (index < 0) break;
+      starts.push(index);
+      from = index + label.length;
+    }
+  });
+  return starts.sort(function(a, b) { return a - b; });
+}
+
+function cleanupSemanticLandFieldValue_(value) {
+  return String(value || '')
+    .replace(/\s+/g, ' ')
+    .replace(/^[\s:;.,)\-]+/, '')
+    .replace(/(?:^|\s)[a-g]\s*[\).:]\s*$/i, '')
+    .replace(/[\s:;.,)\-]+$/, '')
+    .trim();
 }
 
 function extractLandPlotIndexedBlock_(text) {
@@ -892,7 +977,9 @@ function extractLandPlotNumberFromIndexedValue_(value) {
 function extractMapSheetNumberFromIndexedValue_(value) {
   const text = String(value || '');
   const match = removeVietnameseAccents_(text).match(/to\s+ban\s+do\s+so\s*:?\s*([0-9A-Z.\/-]+)/i);
-  return match ? match[1].trim() : '';
+  if (match) return match[1].trim();
+  const direct = text.trim().match(/^([0-9A-Z.\/-]{1,20})$/i);
+  return direct ? direct[1].trim() : '';
 }
 
 function extractRealEstateArea_(text) {
