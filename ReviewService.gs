@@ -281,10 +281,10 @@ function getFullOcrTextMapsForCase_(caseId, reviewJson) {
   function addText(fileName, text, group) {
     fileName = String(fileName || '');
     text = String(text || '');
-    if (!fileName || !text) return;
-    byFileName[fileName] = byFileName[fileName] ? byFileName[fileName] + '\n\n' + text : text;
+    if (!text) return;
+    if (fileName) byFileName[fileName] = byFileName[fileName] ? byFileName[fileName] + '\n\n' + text : text;
     const normalizedGroup = String(group || '').toLowerCase();
-    if (normalizedGroup === 'asset' || /^asset/i.test(fileName)) assetTexts.push(text);
+    if (normalizedGroup === 'asset' || /^asset/i.test(fileName) || isLandCertificateOcrText_(text)) assetTexts.push(text);
   }
   (reviewJson && reviewJson.ocr_results || []).forEach(function(item) {
     addText(item.file_name, item.text || item.text_preview || '', item.group);
@@ -311,6 +311,24 @@ function inferOcrGroupFromFileName_(fileName) {
   if (name.indexOf('obligor__') === 0 || name.indexOf('obligor') === 0) return 'obligor';
   if (name.indexOf('asset__') === 0 || name.indexOf('asset') === 0) return 'asset';
   return '';
+}
+
+function isLandCertificateOcrText_(text) {
+  const normalized = removeVietnameseAccents_(String(text || ''))
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  if (!normalized) return false;
+  let score = 0;
+  if (normalized.indexOf('giay chung nhan') >= 0) score += 3;
+  if (normalized.indexOf('quyen su dung dat') >= 0) score += 3;
+  if (normalized.indexOf('thua dat') >= 0) score += 2;
+  if (normalized.indexOf('to ban do') >= 0) score += 2;
+  if (normalized.indexOf('dien tich') >= 0 && normalized.indexOf('hinh thuc su dung') >= 0) score += 2;
+  if (normalized.indexOf('so vao so cap gcn') >= 0 || normalized.indexOf('so vao so cap giay chung nhan') >= 0) score += 2;
+  if (normalized.indexOf('so tai nguyen') >= 0 && normalized.indexOf('moi truong') >= 0) score += 1;
+  return score >= 4;
 }
 
 function readOcrTextFileFromUrl_(url) {
