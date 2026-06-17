@@ -1451,12 +1451,9 @@ function scoreRegistryCodeCandidate_(value) {
 function normalizeRegistryCodeValue_(value) {
   value = String(value || '').replace(/\s+/g, '').replace(/\.{2,}/g, '.').trim();
   if (!isPlausibleRegistryCode_(value)) return '';
-  const match = value.match(/^([A-Z]{2,3})[-.]?([0-9][A-Z0-9.\/-]{1,20})$/i);
-  if (!match) return value;
-  const prefix = match[1].toUpperCase();
-  const number = match[2].replace(/^[.-]+/, '');
-  if (/^\d+$/.test(number) && number.length >= 4) return prefix + '.' + number;
-  return prefix + '-' + number;
+  return value.replace(/^([a-z]{2,3})/, function(prefix) {
+    return prefix.toUpperCase();
+  });
 }
 
 function extractRealEstateIssuingAuthority_(text) {
