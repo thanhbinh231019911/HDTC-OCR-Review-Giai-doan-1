@@ -981,7 +981,11 @@ function accentUsageOriginCertificateValue_(value) {
     .replace(/\bs\u1eed\s+dung\s+\u0111\u1ea5t\b/ig, 's\u1eed d\u1ee5ng \u0111\u1ea5t')
     .replace(/\bthu\s+tien\b/ig, 'thu ti\u1ec1n')
     .replace(/\bdat\b/ig, '\u0111\u1ea5t');
-  return text.replace(/^nh\u1eadn\b/, 'Nh\u1eadn').trim();
+  return fixVietnameseUsageWord_(text).replace(/^nh\u1eadn\b/, 'Nh\u1eadn').trim();
+}
+
+function fixVietnameseUsageWord_(value) {
+  return String(value || '').replace(/s\u1eed\s+dung/ig, 's\u1eed d\u1ee5ng');
 }
 
 function extractLandPlotNumberFromIndexedValue_(value) {

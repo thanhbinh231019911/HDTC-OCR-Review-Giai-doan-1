@@ -151,7 +151,11 @@ function accentUsageOriginCertificateValue_(value) {
     .replace(/\bs\u1eed\s+dung\s+\u0111\u1ea5t\b/ig, 's\u1eed d\u1ee5ng \u0111\u1ea5t')
     .replace(/\bthu\s+tien\b/ig, 'thu ti\u1ec1n')
     .replace(/\bdat\b/ig, '\u0111\u1ea5t');
-  return text.replace(/^nh\u1eadn\b/, 'Nh\u1eadn').trim();
+  return fixVietnameseUsageWord_(text).replace(/^nh\u1eadn\b/, 'Nh\u1eadn').trim();
+}
+
+function fixVietnameseUsageWord_(value) {
+  return String(value || '').replace(/s\u1eed\s+dung/ig, 's\u1eed d\u1ee5ng');
 }
 
 function hasOtherLandFieldLabel_(normalizedText) {
@@ -240,6 +244,7 @@ assert.strictEqual(
   cleanupUsageOriginCertificateValue_('Nh\u1eadn chuy\u1ec3n nh\u01b0\u1ee3ng \u0111\u1ea5t \u0111\u01b0\u1ee3c Nh\u00e0 n\u01b0\u1edbc giao \u0111\u1ea5t c\u00f3 thu ti\u1ec1n s\u1eed dung \u0111\u1ea5t'),
   'Nh\u1eadn chuy\u1ec3n nh\u01b0\u1ee3ng \u0111\u1ea5t \u0111\u01b0\u1ee3c Nh\u00e0 n\u01b0\u1edbc giao \u0111\u1ea5t c\u00f3 thu ti\u1ec1n s\u1eed d\u1ee5ng \u0111\u1ea5t'
 );
+assert.strictEqual(fixVietnameseUsageWord_('Ngu\u1ed3n g\u1ed1c s\u1eed dung'), 'Ngu\u1ed3n g\u1ed1c s\u1eed d\u1ee5ng');
 
 const fileMeta = reclassifyOcrFileMetaByContent_({
   group: 'secured_party',

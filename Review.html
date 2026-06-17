@@ -702,7 +702,7 @@
       pushAssetLine(lines, 'd. ' + t('Hinh thuc su dung'), valueOf(re.usage_form));
       pushAssetLine(lines, '\u0111. ' + t('Muc dich su dung'), valueOf(re.usage_purpose));
       pushAssetLine(lines, 'e. ' + t('Thoi han su dung'), valueOf(re.usage_term));
-      pushAssetLine(lines, 'g. ' + t('Nguon goc su dung'), displayUsageOriginValue(valueOf(re.usage_origin)));
+      pushAssetLine(lines, 'g. ' + fixVietnameseUsageWord(t('Nguon goc su dung')), displayUsageOriginValue(valueOf(re.usage_origin)));
       lines.push('<div class="asset-doc-line"><strong>2. ' + t('Nha o') + ':</strong> ' + escapeHtml(certificateOptionalItemValue(ocrText, 2, '-/-')) + '</div>');
       lines.push('<div class="asset-doc-line"><strong>3. ' + t('Cong trinh xay dung khac') + ':</strong> ' + escapeHtml(certificateOptionalItemValue(ocrText, 3, '-/-')) + '</div>');
       lines.push('<div class="asset-doc-line"><strong>4. ' + t('Rung san xuat la rung trong') + ':</strong> ' + escapeHtml(certificateOptionalItemValue(ocrText, 4, '-/-')) + '</div>');
@@ -992,7 +992,11 @@
         .replace(/\bs\u1eed\s+dung\s+\u0111\u1ea5t\b/ig, 's\u1eed d\u1ee5ng \u0111\u1ea5t')
         .replace(/\bthu\s+tien\b/ig, 'thu ti\u1ec1n')
         .replace(/\bdat\b/ig, '\u0111\u1ea5t');
-      return text.replace(/^nh\u1eadn\b/, 'Nh\u1eadn').trim();
+      return fixVietnameseUsageWord(text).replace(/^nh\u1eadn\b/, 'Nh\u1eadn').trim();
+    }
+
+    function fixVietnameseUsageWord(value) {
+      return String(value || '').replace(/s\u1eed\s+dung/ig, 's\u1eed d\u1ee5ng');
     }
 
     function accentCertificateTitleForReview(value) {
