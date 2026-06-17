@@ -48,6 +48,7 @@ function repairReviewDataFromFullOcr_(data, caseId) {
   repairAssetCertificateTitleInReviewJson(data, fullOcr.assetText);
   repairAssetCertificateCodesInReviewJson(data, fullOcr.assetText);
   repairAssetIssuingAuthorityInReviewJson(data, fullOcr.assetText);
+  repairAssetPlotAndMapSheetInReviewJson(data, fullOcr.assetText);
   repairAssetLandAddressInReviewJson(data, fullOcr.assetText);
   repairAssetAreaInReviewJson(data, fullOcr.assetText);
   repairAssetUsageFormInReviewJson(data, fullOcr.assetText);
