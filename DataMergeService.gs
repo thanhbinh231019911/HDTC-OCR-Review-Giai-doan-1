@@ -1449,7 +1449,13 @@ function scoreRegistryCodeCandidate_(value) {
 }
 
 function normalizeRegistryCodeValue_(value) {
-  value = String(value || '').replace(/\s+/g, '').replace(/\.{2,}/g, '.').trim();
+  value = String(value || '')
+    .replace(/\.{2,}/g, '')
+    .replace(/[;,:]+$/g, '')
+    .trim();
+  const direct = value.match(/\b(?:CS|CT|CN|CH|CL|HX|VP|DC|DL)\s*[-.]?\s*[0-9][A-Z0-9.\/-]{1,20}\b/i);
+  if (direct) value = direct[0];
+  value = value.replace(/\s+/g, '').trim();
   if (!isPlausibleRegistryCode_(value)) return '';
   return value.replace(/^([a-z]{2,3})/, function(prefix) {
     return prefix.toUpperCase();

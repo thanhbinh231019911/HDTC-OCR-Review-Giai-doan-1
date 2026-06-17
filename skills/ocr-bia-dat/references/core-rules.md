@@ -44,6 +44,25 @@ Rules:
 - A field continues until the next section/index boundary.
 - Do not take only the last wrapped line.
 - Do not move content between fields.
+- Apply a broad rule only when it is genuinely layout-wide, such as section boundary handling or wrapped-line handling.
+- Keep field-specific repairs scoped to that field. Do not put a fix for one field in a shared cleanup helper if it can change other certificate fields.
+
+## Registry Number
+
+Scope: `So vao so cap GCN` / `So vao so cap Giay chung nhan`.
+
+Rules:
+
+- Extract by the registry-label context, not by scanning the whole certificate for code-like text.
+- Accept labels with or without `:` because OCR may drop punctuation.
+- Treat `So vao so cap GCN` as including OCR variants of Vietnamese diacritics, including cases where `so` is read for `so/so`.
+- Take the short text region on the same line or immediately after the registry label.
+- Remove the printed dotted fill line only when OCR reads it as a run of dots, for example `........`.
+- Preserve a single punctuation mark such as `.`, `/`, or `-` when OCR reads it inside the candidate value; it may be handwritten.
+- Remove internal spaces only. Do not invent punctuation. Examples: `CS 03027` -> `CS03027`; `CL 2017` -> `CL2017`; `CL.2017` -> `CL.2017`.
+- Reject partial numeric-only values such as `027`; leave blank or warn for manual review.
+- Do not use certificate serial numbers such as `CO402507` as registry numbers.
+- If the full value is handwritten over a dotted line and OCR reads only the tail, add a warning or use a dedicated crop/OCR pass for this registry region; do not infer the missing prefix.
 
 ## Usage Form
 
