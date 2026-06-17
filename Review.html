@@ -826,7 +826,7 @@
 
     function truncateCertificateNoteValue(value) {
       return String(value || '')
-        .replace(/\s+(?:s\u1ed1|so)\s+v(?:\u00e0o|ao)\s+s(?:\u1ed5|o)\s+c(?:\u1ea5p|ap)\s+(?:gcn|gi(?:\u1ea5y|ay)\s+ch(?:\u1ee9ng|ung)\s+nh(?:\u1eadn|an))\b.*$/i, '')
+        .replace(/\s+(?:s\u1ed1|so)\s+v(?:\u00e0o|ao)\s+s(?:\u1ed5|\u1ed1|o)\s+c(?:\u1ea5p|ap)\s+(?:gcn|gi(?:\u1ea5y|ay)\s+ch(?:\u1ee9ng|ung)\s+nh(?:\u1eadn|an))\b.*$/i, '')
         .replace(/\s+iv\s*[\).:]?\s*nh(?:\u1eefng|ung)\s+thay\s+(?:\u0111\u1ed5i|doi)\b.*$/i, '')
         .trim();
     }
@@ -1287,6 +1287,9 @@
           }
           out.push({ x: 0, y: Math.round(h * 0.78), width: Math.round(w * 0.62), height: Math.round(h * 0.20), reason: 'land_registry_bottom_left_fallback' });
           out.push({ x: 0, y: Math.round(h * 0.70), width: Math.round(w * 0.78), height: Math.round(h * 0.28), reason: 'land_registry_bottom_wide_fallback' });
+          out.push({ x: 0, y: Math.round(h * 0.58), width: Math.round(w * 0.28), height: Math.round(h * 0.40), reason: 'land_registry_left_edge_rotated_fallback' });
+          out.push({ x: 0, y: 0, width: Math.round(w * 0.30), height: h, reason: 'land_registry_left_strip_rotated_fallback' });
+          out.push({ x: Math.round(w * 0.70), y: 0, width: Math.round(w * 0.30), height: h, reason: 'land_registry_right_strip_rotated_fallback' });
           resolve(out.filter(Boolean));
         };
         img.onerror = function() { resolve(suggestedBox ? [suggestedBox] : []); };

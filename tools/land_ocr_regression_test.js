@@ -78,7 +78,7 @@ function oneLineCertificateValue(value) {
 
 function truncateCertificateNoteValue(value) {
   return String(value || '')
-    .replace(/\s+(?:số|so)\s+v(?:ào|ao)\s+s(?:ổ|o)\s+c(?:ấp|ap)\s+(?:gcn|gi(?:ấy|ay)\s+ch(?:ứng|ung)\s+nh(?:ận|an))\b.*$/i, '')
+    .replace(/\s+(?:số|so)\s+v(?:ào|ao)\s+s(?:ổ|ố|o)\s+c(?:ấp|ap)\s+(?:gcn|gi(?:ấy|ay)\s+ch(?:ứng|ung)\s+nh(?:ận|an))\b.*$/i, '')
     .replace(/\s+iv\s*[\).:]?\s*nh(?:ững|ung)\s+thay\s+(?:đổi|doi)\b.*$/i, '')
     .trim();
 }
@@ -191,6 +191,10 @@ assert.strictEqual(shouldReplaceUsageTerm_({ final_value: 'Diện tích: 108,0m�
 assert.strictEqual(cleanupSemanticLandFieldValue_('Sử dụng riêng đ'), 'Sử dụng riêng');
 assert.strictEqual(
   normalizeNumberedCertificateItemValue('Ghi chú: Không Số vào sổ cấp GCN: 027 coquan có 15.00 m', 6),
+  'Không'
+);
+assert.strictEqual(
+  normalizeNumberedCertificateItemValue('Ghi chú: Không Số vào số cấp GCN: 027 coquan có 15.00 m', 6),
   'Không'
 );
 
