@@ -146,7 +146,9 @@ function accentUsageOriginCertificateValue_(value) {
     .replace(/\bduoc\b/ig, '\u0111\u01b0\u1ee3c')
     .replace(/\bnha\s+nuoc\b/ig, 'Nh\u00e0 n\u01b0\u1edbc')
     .replace(/\bco\s+thu\s+tien\s+su\s+dung\s+dat\b/ig, 'c\u00f3 thu ti\u1ec1n s\u1eed d\u1ee5ng \u0111\u1ea5t')
+    .replace(/\bc\u00f3\s+thu\s+ti\u1ec1n\s+s\u1eed\s+dung\s+\u0111\u1ea5t\b/ig, 'c\u00f3 thu ti\u1ec1n s\u1eed d\u1ee5ng \u0111\u1ea5t')
     .replace(/\bsu\s+dung\s+dat\b/ig, 's\u1eed d\u1ee5ng \u0111\u1ea5t')
+    .replace(/\bs\u1eed\s+dung\s+\u0111\u1ea5t\b/ig, 's\u1eed d\u1ee5ng \u0111\u1ea5t')
     .replace(/\bthu\s+tien\b/ig, 'thu ti\u1ec1n')
     .replace(/\bdat\b/ig, '\u0111\u1ea5t');
   return text.replace(/^nh\u1eadn\b/, 'Nh\u1eadn').trim();
@@ -232,6 +234,10 @@ assert.strictEqual(
 );
 assert.strictEqual(
   cleanupUsageOriginCertificateValue_('Nh\u1eadn chuy\u1ec3n nh\u01b0\u1ee3ng \u0111\u1ea5t \u0111\u01b0\u1ee3c Nh\u00e0 n\u01b0\u1edbc giao \u0111\u1ea5t co thu tien su dung dat'),
+  'Nh\u1eadn chuy\u1ec3n nh\u01b0\u1ee3ng \u0111\u1ea5t \u0111\u01b0\u1ee3c Nh\u00e0 n\u01b0\u1edbc giao \u0111\u1ea5t c\u00f3 thu ti\u1ec1n s\u1eed d\u1ee5ng \u0111\u1ea5t'
+);
+assert.strictEqual(
+  cleanupUsageOriginCertificateValue_('Nh\u1eadn chuy\u1ec3n nh\u01b0\u1ee3ng \u0111\u1ea5t \u0111\u01b0\u1ee3c Nh\u00e0 n\u01b0\u1edbc giao \u0111\u1ea5t c\u00f3 thu ti\u1ec1n s\u1eed dung \u0111\u1ea5t'),
   'Nh\u1eadn chuy\u1ec3n nh\u01b0\u1ee3ng \u0111\u1ea5t \u0111\u01b0\u1ee3c Nh\u00e0 n\u01b0\u1edbc giao \u0111\u1ea5t c\u00f3 thu ti\u1ec1n s\u1eed d\u1ee5ng \u0111\u1ea5t'
 );
 
