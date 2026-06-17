@@ -128,6 +128,30 @@ function normalizeRealEstateUsageTerm_(value) {
   return String(value || '').replace(/\s+/g, ' ').trim();
 }
 
+function cleanupUsageOriginCertificateValue_(value) {
+  return accentUsageOriginCertificateValue_(String(value || '')
+    .replace(/\r?\n+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .replace(/\s+(?:2|3|4|5|6)\s*[\).:]\s*(?:nha\s*o|cong\s*trinh|rung|cay|ghi\s*chu)\b.*$/i, '')
+    .replace(/\s+iv\s*[\).:]?\s*nhung\s+thay\s+doi.*$/i, '')
+    .replace(/[;,.:\-\s]+$/g, '')
+    .trim());
+}
+
+function accentUsageOriginCertificateValue_(value) {
+  let text = String(value || '').replace(/\s+/g, ' ').trim();
+  if (!text) return '';
+  text = text
+    .replace(/\bnhan\s+chuyen\s+nhuong\b/ig, 'nh\u1eadn chuy\u1ec3n nh\u01b0\u1ee3ng')
+    .replace(/\bduoc\b/ig, '\u0111\u01b0\u1ee3c')
+    .replace(/\bnha\s+nuoc\b/ig, 'Nh\u00e0 n\u01b0\u1edbc')
+    .replace(/\bco\s+thu\s+tien\s+su\s+dung\s+dat\b/ig, 'c\u00f3 thu ti\u1ec1n s\u1eed d\u1ee5ng \u0111\u1ea5t')
+    .replace(/\bsu\s+dung\s+dat\b/ig, 's\u1eed d\u1ee5ng \u0111\u1ea5t')
+    .replace(/\bthu\s+tien\b/ig, 'thu ti\u1ec1n')
+    .replace(/\bdat\b/ig, '\u0111\u1ea5t');
+  return text.replace(/^nh\u1eadn\b/, 'Nh\u1eadn').trim();
+}
+
 function hasOtherLandFieldLabel_(normalizedText) {
   const text = String(normalizedText || '').toLowerCase();
   return text.indexOf('dien tich') >= 0 ||
@@ -164,7 +188,8 @@ function extractRealEstateIndexedLandFields_(text) {
     area: normalizeRealEstateAreaValue_(findSemanticLandFieldValue_(text, ['dien tich'])),
     usage_form: normalizeRealEstateUsageForm_(findSemanticLandFieldValue_(text, ['hinh thuc su dung'])),
     usage_purpose: findSemanticLandFieldValue_(text, ['muc dich su dung']),
-    usage_term: normalizeRealEstateUsageTerm_(findSemanticLandFieldValue_(text, ['thoi han su dung']))
+    usage_term: normalizeRealEstateUsageTerm_(findSemanticLandFieldValue_(text, ['thoi han su dung'])),
+    usage_origin: cleanupUsageOriginCertificateValue_(findSemanticLandFieldValue_(text, ['nguon goc su dung']))
   };
 }
 
@@ -185,6 +210,10 @@ const fields = extractRealEstateIndexedLandFields_(landOcrText);
 assert.strictEqual(fields.usage_form, 'Sử dụng riêng');
 assert.strictEqual(fields.usage_purpose, 'Đất ở tại nông thôn');
 assert.strictEqual(fields.usage_term, 'Lâu dài');
+assert.strictEqual(
+  fields.usage_origin,
+  'Nh\u1eadn chuy\u1ec3n nh\u01b0\u1ee3ng \u0111\u1ea5t \u0111\u01b0\u1ee3c Nh\u00e0 n\u01b0\u1edbc giao \u0111\u1ea5t c\u00f3 thu ti\u1ec1n s\u1eed d\u1ee5ng \u0111\u1ea5t'
+);
 assert.strictEqual(fields.area, '108,0 m²');
 assert.strictEqual(shouldReplaceUsageForm_({ final_value: 'Sử dụng riêng ) Mục đích sử dụng: Đất ở tại nông thôn' }, fields.usage_form), true);
 assert.strictEqual(shouldReplaceUsageTerm_({ final_value: 'Diện tích: 108,0m² (Bằng chữ: một trăm linh tám phẩy không mét vuông)' }, fields.usage_term), true);
@@ -196,6 +225,14 @@ assert.strictEqual(
 assert.strictEqual(
   normalizeNumberedCertificateItemValue('Ghi chú: Không Số vào số cấp GCN: 027 coquan có 15.00 m', 6),
   'Không'
+);
+assert.strictEqual(
+  cleanupUsageOriginCertificateValue_('Nhan chuyen nhuong dat duoc Nha nuoc giao dat co thu tien su dung dat'),
+  'Nh\u1eadn chuy\u1ec3n nh\u01b0\u1ee3ng \u0111\u1ea5t \u0111\u01b0\u1ee3c Nh\u00e0 n\u01b0\u1edbc giao \u0111\u1ea5t c\u00f3 thu ti\u1ec1n s\u1eed d\u1ee5ng \u0111\u1ea5t'
+);
+assert.strictEqual(
+  cleanupUsageOriginCertificateValue_('Nh\u1eadn chuy\u1ec3n nh\u01b0\u1ee3ng \u0111\u1ea5t \u0111\u01b0\u1ee3c Nh\u00e0 n\u01b0\u1edbc giao \u0111\u1ea5t co thu tien su dung dat'),
+  'Nh\u1eadn chuy\u1ec3n nh\u01b0\u1ee3ng \u0111\u1ea5t \u0111\u01b0\u1ee3c Nh\u00e0 n\u01b0\u1edbc giao \u0111\u1ea5t c\u00f3 thu ti\u1ec1n s\u1eed d\u1ee5ng \u0111\u1ea5t'
 );
 
 const fileMeta = reclassifyOcrFileMetaByContent_({

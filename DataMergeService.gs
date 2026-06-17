@@ -960,12 +960,26 @@ function cleanupIndexedCertificateValue_(value) {
 }
 
 function cleanupUsageOriginCertificateValue_(value) {
-  return cleanupIndexedCertificateValue_(value)
+  return accentUsageOriginCertificateValue_(cleanupIndexedCertificateValue_(value)
     .replace(/\s+(?:2|3|4|5|6)\s*[\).:]\s*(?:nh[aà]\s*[oở]|nha\s*o|c[oô]ng\s*tr[ìi]nh|cong\s*trinh|r[ưừ]ng|rung|c[aâ]y|cay|ghi\s*ch[uú]|ghi\s*chu)\b.*$/i, '')
     .replace(/\s+iv\s*[\).:]?\s*nh[uữ]ng\s+thay\s+[dđ][oổ]i.*$/i, '')
     .replace(/\s+iv\s*[\).:]?\s*nhung\s+thay\s+doi.*$/i, '')
     .replace(/[;,.:\-\s]+$/g, '')
-    .trim();
+    .trim());
+}
+
+function accentUsageOriginCertificateValue_(value) {
+  var text = String(value || '').replace(/\s+/g, ' ').trim();
+  if (!text) return '';
+  text = text
+    .replace(/\bnhan\s+chuyen\s+nhuong\b/ig, 'nh\u1eadn chuy\u1ec3n nh\u01b0\u1ee3ng')
+    .replace(/\bduoc\b/ig, '\u0111\u01b0\u1ee3c')
+    .replace(/\bnha\s+nuoc\b/ig, 'Nh\u00e0 n\u01b0\u1edbc')
+    .replace(/\bco\s+thu\s+tien\s+su\s+dung\s+dat\b/ig, 'c\u00f3 thu ti\u1ec1n s\u1eed d\u1ee5ng \u0111\u1ea5t')
+    .replace(/\bsu\s+dung\s+dat\b/ig, 's\u1eed d\u1ee5ng \u0111\u1ea5t')
+    .replace(/\bthu\s+tien\b/ig, 'thu ti\u1ec1n')
+    .replace(/\bdat\b/ig, '\u0111\u1ea5t');
+  return text.replace(/^nh\u1eadn\b/, 'Nh\u1eadn').trim();
 }
 
 function extractLandPlotNumberFromIndexedValue_(value) {
