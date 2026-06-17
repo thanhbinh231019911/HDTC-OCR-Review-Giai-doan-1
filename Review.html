@@ -703,7 +703,7 @@
       pushAssetLine(lines, 'e. ' + t('Thoi han su dung'), valueOf(re.usage_term));
       pushAssetLine(lines, 'g. ' + t('Nguon goc su dung'), valueOf(re.usage_origin));
       lines.push('<div class="asset-doc-line"><strong>2. ' + t('Nha o') + ':</strong> ' + escapeHtml(certificateOptionalItemValue(ocrText, 2, '-/-')) + '</div>');
-      lines.push('<div class="asset-doc-line"><strong>3. ' + t('Cong trinh xay dung khac') + ':</strong> ' + escapeHtml(simplifyAbsentCertificateText('')) + '</div>');
+      lines.push('<div class="asset-doc-line"><strong>3. ' + t('Cong trinh xay dung khac') + ':</strong> ' + escapeHtml(certificateOptionalItemValue(ocrText, 3, '-/-')) + '</div>');
       lines.push('<div class="asset-doc-line"><strong>4. ' + t('Rung san xuat la rung trong') + ':</strong> ' + escapeHtml(certificateOptionalItemValue(ocrText, 4, '-/-')) + '</div>');
       lines.push('<div class="asset-doc-line"><strong>5. ' + t('Cay lau nam') + ':</strong> ' + escapeHtml(certificateOptionalItemValue(ocrText, 5, '-/-')) + '</div>');
       lines.push('<div class="asset-doc-line"><strong>6. ' + t('Ghi chu') + ':</strong> ' + escapeHtml(certificateOptionalItemValue(ocrText, 6, 'Kh\u00f4ng')) + '</div>');
