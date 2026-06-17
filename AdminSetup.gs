@@ -14,6 +14,7 @@ function onOpen() {
     .addItem('3d. Setup OCR lab training forms', 'setupOcrLabTrainingForms')
     .addItem('3e. Show OCR lab training form URLs', 'showOcrLabTrainingFormUrls')
     .addItem('3f. Check OCR lab training configuration', 'checkOcrLabTrainingConfiguration')
+    .addItem('3g. Diagnose OCR lab runtime', 'diagnoseOcrLabTrainingRuntime')
     .addItem('4. Check configuration', 'checkPhase1Configuration')
     .addItem('4b. Diagnose latest case', 'runDiagnoseLatestCase')
     .addItem('4c. Reprocess latest case', 'runReprocessLatestCase')

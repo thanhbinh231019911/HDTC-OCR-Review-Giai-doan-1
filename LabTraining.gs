@@ -58,21 +58,84 @@ function showOcrLabTrainingFormUrls() {
 
 function checkOcrLabTrainingConfiguration() {
   const props = PropertiesService.getScriptProperties();
+  const routeTest = simulateOcrLabLandRoute_();
   const checks = [
     ['OPENAI_API_KEY', Boolean(props.getProperty(CONFIG.OPENAI_API_KEY_PROPERTY))],
     ['CLOUD_VISION_API_KEY', Boolean(props.getProperty(CONFIG.CLOUD_VISION_API_KEY_PROPERTY))],
     ['REVIEW_WEB_APP_URL/default', Boolean(getReviewBaseUrl())],
     ['LAB_CCCD_FORM_ID', Boolean(props.getProperty(OCR_LAB_TRAINING.CCCD.propertyPrefix + '_FORM_ID'))],
     ['LAB_LAND_FORM_ID', Boolean(props.getProperty(OCR_LAB_TRAINING.LAND.propertyPrefix + '_FORM_ID'))],
-    ['FORM_ID production', Boolean(props.getProperty('FORM_ID'))]
+    ['FORM_ID production', Boolean(props.getProperty('FORM_ID'))],
+    ['LAB_LAND_ROUTE_TO_ASSET', routeTest.ok]
   ];
   const message = checks.map(function(item) {
     return (item[1] ? 'OK ' : 'MISSING ') + item[0];
-  }).join('\n');
+  }).join('\n') + '\nLAND route test: ' + routeTest.detail;
   const ui = getSpreadsheetUiSafe_();
   if (ui) ui.alert(message);
   console.log(message);
   return message;
+}
+
+function diagnoseOcrLabTrainingRuntime() {
+  const props = PropertiesService.getScriptProperties();
+  const cccd = readOcrLabFormUrls_(OCR_LAB_TRAINING.CCCD, props);
+  const land = readOcrLabFormUrls_(OCR_LAB_TRAINING.LAND, props);
+  const routeTest = simulateOcrLabLandRoute_();
+  const triggerLines = ScriptApp.getProjectTriggers().map(function(trigger) {
+    const handler = trigger.getHandlerFunction && trigger.getHandlerFunction();
+    const eventType = trigger.getEventType && trigger.getEventType();
+    const source = trigger.getTriggerSource && trigger.getTriggerSource();
+    const sourceId = trigger.getTriggerSourceId && trigger.getTriggerSourceId();
+    return [
+      'handler=' + handler,
+      'event=' + eventType,
+      'source=' + source,
+      'sourceId=' + sourceId
+    ].join(' | ');
+  });
+  const message = [
+    'OCR lab runtime diagnostic',
+    'Script ID: ' + ScriptApp.getScriptId(),
+    'CCCD form ID: ' + (cccd.id || ''),
+    'CCCD form title: ' + getOcrLabFormTitleSafe_(cccd.id),
+    'CCCD public URL: ' + (cccd.publicUrl || ''),
+    'LAND form ID: ' + (land.id || ''),
+    'LAND form title: ' + getOcrLabFormTitleSafe_(land.id),
+    'LAND public URL: ' + (land.publicUrl || ''),
+    'LAND route test: ' + routeTest.detail,
+    'Triggers:',
+    triggerLines.length ? triggerLines.join('\n') : '(none)'
+  ].join('\n');
+  const ui = getSpreadsheetUiSafe_();
+  if (ui) ui.alert(message);
+  console.log(message);
+  return message;
+}
+
+function simulateOcrLabLandRoute_() {
+  const resolved = resolveOcrLabConfigFromNamedValues_(OCR_LAB_TRAINING.CCCD, {
+    'Upload anh bia dat/giay chung nhan': ['fake-file-id']
+  });
+  const formData = makeOcrLabFormData_(resolved, '', ['fake-file-id']);
+  const ok = resolved.skill === OCR_LAB_TRAINING.LAND.skill
+    && formData.fileIdsByGroup.asset.length === 1
+    && formData.fileIdsByGroup.secured_party.length === 0;
+  return {
+    ok: ok,
+    detail: 'skill=' + resolved.skill
+      + ', asset=' + formData.fileIdsByGroup.asset.length
+      + ', secured_party=' + formData.fileIdsByGroup.secured_party.length
+  };
+}
+
+function getOcrLabFormTitleSafe_(formId) {
+  if (!formId) return '';
+  try {
+    return FormApp.openById(formId).getTitle();
+  } catch (err) {
+    return 'ERROR: ' + err;
+  }
 }
 
 function onLabCccdSubmit(e) {
