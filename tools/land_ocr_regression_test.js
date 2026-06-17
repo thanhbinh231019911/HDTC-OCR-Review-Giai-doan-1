@@ -114,6 +114,49 @@ function findSemanticLandFieldValue_(text, normalizedAliases) {
   return cleanupSemanticLandFieldValue_(source.slice(start, end));
 }
 
+function normalizeCertificateIndexLine_(line) {
+  return removeVietnameseAccents_(String(line || ''))
+    .toLowerCase()
+    .replace(/[.:)\-]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function selectBestLandPlotText_(text) {
+  const source = String(text || '');
+  const lines = source.split(/\r?\n/);
+  let best = { text: '', score: 0, trusted: false };
+  for (let i = 0; i < lines.length; i++) {
+    const normalized = normalizeCertificateIndexLine_(lines[i]);
+    if (normalized.indexOf('ii thua dat') < 0 && normalized.indexOf('1 thua dat') < 0 && normalized.indexOf('thua dat so') < 0) continue;
+    const out = [];
+    for (let j = i; j < lines.length; j++) {
+      const current = normalizeCertificateIndexLine_(lines[j]);
+      if (j > i && current.indexOf('iv nhung thay doi') >= 0) break;
+      out.push(lines[j]);
+      if (j > i && /^(?:6|ghi chu)\b/.test(current) && out.length > 3) break;
+    }
+    const candidate = out.join('\n');
+    const score = scoreLandPlotTextCandidate_(candidate);
+    if (score > best.score) best = { text: candidate, score, trusted: score >= 6 };
+  }
+  return best;
+}
+
+function scoreLandPlotTextCandidate_(value) {
+  const normalized = removeVietnameseAccents_(String(value || '')).toLowerCase().replace(/\s+/g, ' ').trim();
+  let score = 0;
+  if (normalized.indexOf('ii thua dat') >= 0) score += 2;
+  if (normalized.indexOf('1 thua dat') >= 0) score += 2;
+  if (normalized.indexOf('thua dat so') >= 0) score += 2;
+  ['to ban do', 'dien tich', 'hinh thuc su dung', 'muc dich su dung', 'thoi han su dung', 'nguon goc su dung'].forEach(label => {
+    if (normalized.indexOf(label) >= 0) score += 1;
+  });
+  if (normalized.indexOf('dia chi thuong tru') >= 0) score -= 3;
+  if (normalized.indexOf('iv nhung thay doi') >= 0) score -= 1;
+  return score;
+}
+
 function normalizeRealEstateAreaValue_(value) {
   const text = String(value || '').replace(/\s+/g, ' ').trim();
   const match = text.match(/([0-9]+(?:[,.][0-9]+)?)\s*m(?:2|²)?/i);
@@ -189,13 +232,46 @@ function shouldReplaceUsageTerm_(field, candidate) {
   return hasOtherLandFieldLabel_(currentNorm);
 }
 
+function isUnsafeLandAddressValue_(value) {
+  const normalized = removeVietnameseAccents_(String(value || '')).toLowerCase().replace(/\s+/g, ' ').trim();
+  return normalized.indexOf('dia chi thuong tru') >= 0 ||
+    normalized.indexOf('thuong tru') >= 0 ||
+    normalized.indexOf('cmnd') >= 0 ||
+    normalized.indexOf('cccd') >= 0 ||
+    /\bco\s*\d{5,}\b/i.test(normalized) ||
+    containsLaterLandCertificateContext_(normalized);
+}
+
+function isUnsafeIndexedLandFieldValue_(value) {
+  const normalized = removeVietnameseAccents_(String(value || '')).toLowerCase().replace(/\s+/g, ' ').trim();
+  return containsLaterLandCertificateContext_(normalized) ||
+    normalized.indexOf('so tai nguyen') >= 0 ||
+    normalized.indexOf('giam doc') >= 0 ||
+    normalized.indexOf('so vao so') >= 0;
+}
+
+function containsLaterLandCertificateContext_(normalized) {
+  const text = String(normalized || '');
+  return text.indexOf('thoi han su dung') >= 0 ||
+    text.indexOf('nguon goc su dung') >= 0 ||
+    text.indexOf('muc dich su dung') >= 0 ||
+    text.indexOf('hinh thuc su dung') >= 0 ||
+    text.indexOf('nha o') >= 0 ||
+    text.indexOf('cong trinh') >= 0 ||
+    text.indexOf('ghi chu') >= 0 ||
+    text.indexOf('iv nhung thay doi') >= 0;
+}
+
 function extractRealEstateIndexedLandFields_(text) {
+  const selected = selectBestLandPlotText_(text);
+  const source = selected.text || text;
   return {
-    area: normalizeRealEstateAreaValue_(findSemanticLandFieldValue_(text, ['dien tich'])),
-    usage_form: normalizeRealEstateUsageForm_(findSemanticLandFieldValue_(text, ['hinh thuc su dung'])),
-    usage_purpose: findSemanticLandFieldValue_(text, ['muc dich su dung']),
-    usage_term: normalizeRealEstateUsageTerm_(findSemanticLandFieldValue_(text, ['thoi han su dung'])),
-    usage_origin: cleanupUsageOriginCertificateValue_(findSemanticLandFieldValue_(text, ['nguon goc su dung']))
+    area: normalizeRealEstateAreaValue_(findSemanticLandFieldValue_(source, ['dien tich'])),
+    usage_form: normalizeRealEstateUsageForm_(findSemanticLandFieldValue_(source, ['hinh thuc su dung'])),
+    usage_purpose: findSemanticLandFieldValue_(source, ['muc dich su dung']),
+    usage_term: normalizeRealEstateUsageTerm_(findSemanticLandFieldValue_(source, ['thoi han su dung'])),
+    usage_origin: cleanupUsageOriginCertificateValue_(findSemanticLandFieldValue_(source, ['nguon goc su dung'])),
+    _quality: selected
   };
 }
 
@@ -245,6 +321,27 @@ assert.strictEqual(
   'Nh\u1eadn chuy\u1ec3n nh\u01b0\u1ee3ng \u0111\u1ea5t \u0111\u01b0\u1ee3c Nh\u00e0 n\u01b0\u1edbc giao \u0111\u1ea5t c\u00f3 thu ti\u1ec1n s\u1eed d\u1ee5ng \u0111\u1ea5t'
 );
 assert.strictEqual(fixVietnameseUsageWord_('Ngu\u1ed3n g\u1ed1c s\u1eed dung'), 'Ngu\u1ed3n g\u1ed1c s\u1eed d\u1ee5ng');
+const noisyTwoPageText = `
+I. Người sử dụng đất, chủ sở hữu nhà ở và tài sản khác gắn liền với đất
+Bà: Đặng Thị Quỳnh
+Địa chỉ thường trú: Tỉnh Nhuệ, Thanh Sơn, tỉnh Phú Thọ
+II. Thửa đất, nhà ở và tài sản khác gắn liền với đất
+1. Thửa đất:
+a) Thửa đất số: 1623 tờ bản đồ số: 10
+b) Địa chỉ: xã Sủ Ngòi, thành phố Hòa Bình, tỉnh Hòa Bình
+c) Diện tích: 150,0m²
+d) Hình thức sử dụng: Sử dụng riêng
+đ) Mục đích sử dụng: Đất ở tại nông thôn
+e) Thời hạn sử dụng: Lâu dài
+g) Nguồn gốc sử dụng: Nhận chuyển nhượng đất được Nhà nước giao đất có thu tiền sử dụng đất
+2. Nhà ở: -/-
+IV. Những thay đổi sau khi cấp Giấy chứng nhận
+`;
+const noisyFields = extractRealEstateIndexedLandFields_(noisyTwoPageText);
+assert.strictEqual(noisyFields._quality.trusted, true);
+assert.strictEqual(noisyFields.usage_purpose, 'Đất ở tại nông thôn');
+assert.strictEqual(isUnsafeLandAddressValue_('Địa chỉ thường trú: Tỉnh Nhuệ, Thanh Sơn, tỉnh Phú Thọ. CO 402508'), true);
+assert.strictEqual(isUnsafeIndexedLandFieldValue_('Đất ở tại nông thôn Thời hạn sử dụng: Lâu dài Nguồn gốc sử dụng: Nhận chuyển nhượng đất'), true);
 
 const fileMeta = reclassifyOcrFileMetaByContent_({
   group: 'secured_party',

@@ -63,6 +63,10 @@ function buildReviewJson(caseId, formData, aiData, ocrResults) {
     final_confirmed_data: {}
   };
   applyFormPriorityRules_(reviewJson);
+  repairUnsafeLandCertificateFieldsInReviewJson(reviewJson, (ocrResults || [])
+    .filter(function(item) { return item.group === 'asset'; })
+    .map(function(item) { return item.text || item.text_preview || ''; })
+    .join('\n'));
   applyTemplateDecisionToReviewJson(reviewJson);
   reviewJson.final_confirmed_data = buildFinalConfirmedData(reviewJson);
   return reviewJson;
@@ -282,6 +286,86 @@ function repairAssetPostIssueChangesInReviewJson(reviewJson, fullAssetOcrText) {
     }
   });
   return reviewJson;
+}
+
+function repairUnsafeLandCertificateFieldsInReviewJson(reviewJson, fullAssetOcrText) {
+  if (!reviewJson) return reviewJson;
+  const assetText = fullAssetOcrText || (reviewJson.ocr_results || [])
+    .filter(function(item) { return item.group === 'asset'; })
+    .map(function(item) { return item.text || item.text_preview || ''; })
+    .join('\n');
+  const indexed = extractRealEstateIndexedLandFields_(assetText);
+  const hasTrustedLandBlock = indexed && indexed._quality && indexed._quality.trusted;
+  (reviewJson.assets || []).forEach(function(asset) {
+    const re = asset && asset.real_estate;
+    if (!re) return;
+    clearUnsafeLandField_(reviewJson, re.land_address, 'assets[].real_estate.land_address', isUnsafeLandAddressValue_, hasTrustedLandBlock ? indexed.land_address : '');
+    clearUnsafeLandField_(reviewJson, re.usage_form, 'assets[].real_estate.usage_form', isUnsafeIndexedLandFieldValue_, hasTrustedLandBlock ? indexed.usage_form : '');
+    clearUnsafeLandField_(reviewJson, re.usage_purpose, 'assets[].real_estate.usage_purpose', isUnsafeIndexedLandFieldValue_, hasTrustedLandBlock ? indexed.usage_purpose : '');
+    clearUnsafeLandField_(reviewJson, re.usage_term, 'assets[].real_estate.usage_term', isUnsafeIndexedLandFieldValue_, hasTrustedLandBlock ? indexed.usage_term : '');
+    clearUnsafeLandField_(reviewJson, re.usage_origin, 'assets[].real_estate.usage_origin', isUnsafeIndexedLandFieldValue_, hasTrustedLandBlock ? indexed.usage_origin : '');
+  });
+  return reviewJson;
+}
+
+function clearUnsafeLandField_(reviewJson, field, fieldPath, predicate, replacement) {
+  if (!field || !field.hasOwnProperty('final_value') || field.manual_value) return;
+  const current = String(field.final_value || field.ai_value || '').trim();
+  if (!current || !predicate(current)) return;
+  if (replacement && !predicate(replacement)) {
+    field.ai_value = replacement;
+    field.final_value = replacement;
+    field.source = 'OCR_TRUSTED_LAND_BLOCK_REPAIR';
+    field.confidence = Math.max(Number(field.confidence || 0), 0.86);
+    return;
+  }
+  field.ai_value = '';
+  field.final_value = '';
+  field.source = 'OCR_REJECTED_UNTRUSTED_LAND_CONTEXT';
+  field.confidence = '';
+  addReviewWarningOnce_(reviewJson, fieldPath, 'Trường bìa đất có dấu hiệu lấy nhầm từ trang/chữ khác; cần kiểm tra lại ảnh gốc hoặc khoanh vùng OCR thủ công.');
+}
+
+function isUnsafeLandAddressValue_(value) {
+  const normalized = removeVietnameseAccents_(String(value || '')).toLowerCase().replace(/\s+/g, ' ').trim();
+  if (!normalized) return false;
+  if (normalized.indexOf('dia chi thuong tru') >= 0 || normalized.indexOf('thuong tru') >= 0) return true;
+  if (normalized.indexOf('cmnd') >= 0 || normalized.indexOf('cccd') >= 0 || normalized.indexOf('nam sinh') >= 0) return true;
+  if (normalized.indexOf('giay chung nhan') >= 0 || normalized.indexOf('so vao so') >= 0) return true;
+  if (/\bco\s*\d{5,}\b/i.test(normalized)) return true;
+  return containsLaterLandCertificateContext_(normalized);
+}
+
+function isUnsafeIndexedLandFieldValue_(value) {
+  const normalized = removeVietnameseAccents_(String(value || '')).toLowerCase().replace(/\s+/g, ' ').trim();
+  if (!normalized) return false;
+  if (containsLaterLandCertificateContext_(normalized)) return true;
+  if (normalized.indexOf('so tai nguyen') >= 0 || normalized.indexOf('giam doc') >= 0 || normalized.indexOf('van phong dang ky') >= 0) return true;
+  if (normalized.indexOf('so vao so') >= 0 || normalized.indexOf('giay chung nhan') >= 0) return true;
+  if (normalized.length > 120 && countLandFieldLabels_(normalized) > 0) return true;
+  return false;
+}
+
+function containsLaterLandCertificateContext_(normalized) {
+  const text = String(normalized || '');
+  return text.indexOf('thoi han su dung') >= 0 ||
+    text.indexOf('nguon goc su dung') >= 0 ||
+    text.indexOf('muc dich su dung') >= 0 ||
+    text.indexOf('hinh thuc su dung') >= 0 ||
+    text.indexOf('nha o') >= 0 ||
+    text.indexOf('cong trinh') >= 0 ||
+    text.indexOf('rung san xuat') >= 0 ||
+    text.indexOf('cay lau nam') >= 0 ||
+    text.indexOf('ghi chu') >= 0 ||
+    text.indexOf('iv nhung thay doi') >= 0;
+}
+
+function countLandFieldLabels_(normalized) {
+  let count = 0;
+  ['dien tich', 'hinh thuc su dung', 'muc dich su dung', 'thoi han su dung', 'nguon goc su dung', 'nha o', 'cong trinh', 'ghi chu'].forEach(function(label) {
+    if (String(normalized || '').indexOf(label) >= 0) count++;
+  });
+  return count;
 }
 
 function isShortCertificateTitleForReviewRepair_(current, extracted) {
@@ -805,7 +889,8 @@ function shouldReplaceOwnerListField_(field, newValue, expectedCount) {
 }
 
 function extractRealEstateIndexedLandFields_(text) {
-  const block = extractLandPlotIndexedBlock_(text);
+  const selected = selectBestLandPlotText_(text);
+  const block = selected.text;
   const items = extractIndexedCertificateItems_(block || text);
   const source = block || text;
   const semantic = {
@@ -826,8 +911,82 @@ function extractRealEstateIndexedLandFields_(text) {
     usage_form: normalizeRealEstateUsageForm_(cleanupIndexedCertificateValue_(semantic.usage_form || '')),
     usage_purpose: cleanupIndexedCertificateValue_(semantic.usage_purpose || ''),
     usage_term: normalizeRealEstateUsageTerm_(cleanupIndexedCertificateValue_(semantic.usage_term || '')),
-    usage_origin: cleanupUsageOriginCertificateValue_(semantic.usage_origin || '')
+    usage_origin: cleanupUsageOriginCertificateValue_(semantic.usage_origin || ''),
+    _quality: selected
   };
+}
+
+function selectBestLandPlotText_(text) {
+  const candidates = buildLandPlotTextCandidates_(text);
+  let best = { text: extractLandPlotIndexedBlock_(text), score: 0, trusted: false, reason: 'legacy_block' };
+  best.score = scoreLandPlotTextCandidate_(best.text);
+  candidates.forEach(function(candidate) {
+    const score = scoreLandPlotTextCandidate_(candidate.text);
+    if (score > best.score) {
+      best = {
+        text: candidate.text,
+        score: score,
+        trusted: score >= 6,
+        reason: candidate.reason
+      };
+    }
+  });
+  best.trusted = best.score >= 6;
+  if (!best.text && String(text || '').trim()) {
+    return { text: '', score: 0, trusted: false, reason: 'no_land_plot_block' };
+  }
+  return best;
+}
+
+function buildLandPlotTextCandidates_(text) {
+  const source = String(text || '');
+  const normalizedLines = source.split(/\r?\n/).map(function(line) {
+    return {
+      raw: line,
+      normalized: normalizeCertificateIndexLine_(line)
+    };
+  });
+  const candidates = [];
+  for (let i = 0; i < normalizedLines.length; i++) {
+    const line = normalizedLines[i].normalized;
+    if (line.indexOf('ii thua dat') < 0 && line.indexOf('1 thua dat') < 0 && line.indexOf('thua dat so') < 0) continue;
+    const out = [];
+    for (let j = i; j < normalizedLines.length; j++) {
+      const current = normalizedLines[j].normalized;
+      if (j > i && /^(?:iii|iv)\s+/.test(current)) break;
+      if (j > i && current.indexOf('iv nhung thay doi') >= 0) break;
+      out.push(normalizedLines[j].raw);
+      if (j > i && /^(?:6|ghi chu)\b/.test(current) && out.length > 3) break;
+    }
+    candidates.push({ text: out.join('\n'), reason: 'line_anchor_' + i });
+  }
+  const compact = source.replace(/\r?\n+/g, ' ').replace(/\s+/g, ' ').trim();
+  const normalized = removeVietnameseAccents_(compact).toLowerCase();
+  ['ii thua dat', '1 thua dat', 'thua dat so'].forEach(function(anchor) {
+    const index = normalized.indexOf(anchor);
+    if (index < 0) return;
+    candidates.push({ text: compact, reason: 'compact_anchor_' + anchor });
+  });
+  return candidates;
+}
+
+function scoreLandPlotTextCandidate_(value) {
+  const normalized = removeVietnameseAccents_(String(value || '')).toLowerCase().replace(/\s+/g, ' ').trim();
+  if (!normalized) return 0;
+  let score = 0;
+  if (normalized.indexOf('ii thua dat') >= 0) score += 2;
+  if (normalized.indexOf('1 thua dat') >= 0) score += 2;
+  if (normalized.indexOf('thua dat so') >= 0) score += 2;
+  if (normalized.indexOf('to ban do') >= 0) score += 1;
+  if (normalized.indexOf('dien tich') >= 0) score += 1;
+  if (normalized.indexOf('hinh thuc su dung') >= 0) score += 1;
+  if (normalized.indexOf('muc dich su dung') >= 0) score += 1;
+  if (normalized.indexOf('thoi han su dung') >= 0) score += 1;
+  if (normalized.indexOf('nguon goc su dung') >= 0) score += 1;
+  if (normalized.indexOf('dia chi thuong tru') >= 0) score -= 3;
+  if (normalized.indexOf('giay chung nhan') >= 0 && normalized.indexOf('ii thua dat') < 0) score -= 2;
+  if (normalized.indexOf('iv nhung thay doi') >= 0) score -= 1;
+  return score;
 }
 
 function findSemanticLandFieldValue_(text, normalizedAliases) {
@@ -884,6 +1043,7 @@ function cleanupSemanticLandFieldValue_(value) {
   return String(value || '')
     .replace(/\s+/g, ' ')
     .replace(/^[\s:;.,)\-]+/, '')
+    .replace(/\s+(?:hinh\s*thuc\s*su\s*dung|muc\s*dich\s*su\s*dung|thoi\s*han\s*su\s*dung|nguon\s*goc\s*su\s*dung)\s*[:.-]?.*$/i, '')
     .replace(/(?:^|\s)(?:[a-g]|\u0111)\s*[\).:]?\s*$/i, '')
     .replace(/[\s:;.,)\-]+$/, '')
     .trim();
