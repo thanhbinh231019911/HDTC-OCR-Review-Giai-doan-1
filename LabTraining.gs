@@ -76,11 +76,51 @@ function checkOcrLabTrainingConfiguration() {
 }
 
 function onLabCccdSubmit(e) {
-  return processOcrLabTrainingSubmit_(OCR_LAB_TRAINING.CCCD, e);
+  return processOcrLabTrainingSubmit_(resolveOcrLabConfigForEvent_(OCR_LAB_TRAINING.CCCD, e), e);
 }
 
 function onLabLandSubmit(e) {
-  return processOcrLabTrainingSubmit_(OCR_LAB_TRAINING.LAND, e);
+  return processOcrLabTrainingSubmit_(resolveOcrLabConfigForEvent_(OCR_LAB_TRAINING.LAND, e), e);
+}
+
+function resolveOcrLabConfigForEvent_(preferredConfig, e) {
+  const sourceInfo = getOcrLabEventSourceInfo_(e);
+  const configs = [OCR_LAB_TRAINING.CCCD, OCR_LAB_TRAINING.LAND];
+  const props = PropertiesService.getScriptProperties();
+  for (let i = 0; i < configs.length; i++) {
+    const config = configs[i];
+    const formId = props.getProperty(config.propertyPrefix + '_FORM_ID') || '';
+    if (sourceInfo.id && formId && sourceInfo.id === formId) {
+      return config;
+    }
+  }
+
+  const title = removeVietnameseAccents_(sourceInfo.title).toLowerCase();
+  if (title.indexOf('bia dat') >= 0 || title.indexOf('giay chung nhan') >= 0 || title.indexOf('land') >= 0) {
+    return OCR_LAB_TRAINING.LAND;
+  }
+  if (title.indexOf('cccd') >= 0 || title.indexOf('can cuoc') >= 0) {
+    return OCR_LAB_TRAINING.CCCD;
+  }
+
+  return preferredConfig;
+}
+
+function getOcrLabEventSourceInfo_(e) {
+  const source = e && e.source;
+  let id = '';
+  let title = '';
+  try {
+    id = source && typeof source.getId === 'function' ? source.getId() : '';
+  } catch (err) {
+    id = '';
+  }
+  try {
+    title = source && typeof source.getTitle === 'function' ? source.getTitle() : '';
+  } catch (err) {
+    title = '';
+  }
+  return { id: id, title: title };
 }
 
 function createOrUpdateOcrLabForm_(labConfig) {
