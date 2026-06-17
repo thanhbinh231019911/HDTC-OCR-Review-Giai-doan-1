@@ -818,7 +818,17 @@
         6: /^(?:ghi\s*ch[uú]|ghi\s*chu)\s*[:;.-]?\s*/i
       };
       if (labels[number]) text = text.replace(labels[number], '').trim();
+      if (number === 6) {
+        text = truncateCertificateNoteValue(text);
+      }
       return text.replace(/^[;:.,\-\s]+|[;:.,\-\s]+$/g, '').trim();
+    }
+
+    function truncateCertificateNoteValue(value) {
+      return String(value || '')
+        .replace(/\s+(?:s\u1ed1|so)\s+v(?:\u00e0o|ao)\s+s(?:\u1ed5|o)\s+c(?:\u1ea5p|ap)\s+(?:gcn|gi(?:\u1ea5y|ay)\s+ch(?:\u1ee9ng|ung)\s+nh(?:\u1eadn|an))\b.*$/i, '')
+        .replace(/\s+iv\s*[\).:]?\s*nh(?:\u1eefng|ung)\s+thay\s+(?:\u0111\u1ed5i|doi)\b.*$/i, '')
+        .trim();
     }
 
     function extractNumberedCertificateItemFromOcr(ocrText, number) {
@@ -1252,17 +1262,49 @@
         imageCache[file.file_id] = preview;
         if (!preview || !preview.is_image || !preview.data_url) continue;
         const suggestion = await api('suggestLandRegistryCrop', { fileId: file.file_id });
-        if (!suggestion || !suggestion.ok || !suggestion.crop) continue;
-        const cropDataUrl = await cropDataUrlFromImage_(preview.data_url, suggestion.crop);
-        if (!cropDataUrl) continue;
-        const ocr = await api('ocrLandRegistryCrop', { dataUrl: cropDataUrl });
-        if (ocr && ocr.registry_number) return ocr.registry_number;
+        const crops = await buildLandRegistryCropCandidates_(preview.data_url, suggestion && suggestion.crop);
+        for (const crop of crops) {
+          const cropDataUrl = await cropDataUrlFromImage_(preview.data_url, crop, { scale: 3, enhance: true });
+          if (!cropDataUrl) continue;
+          const ocr = await api('ocrLandRegistryCrop', { dataUrl: cropDataUrl });
+          if (ocr && ocr.registry_number) return ocr.registry_number;
+        }
       }
       return '';
     }
 
-    function cropDataUrlFromImage_(dataUrl, box) {
+    function buildLandRegistryCropCandidates_(dataUrl, suggestedBox) {
       return new Promise(function(resolve) {
+        const img = new Image();
+        img.onload = function() {
+          const w = img.naturalWidth;
+          const h = img.naturalHeight;
+          const out = [];
+          if (suggestedBox) {
+            out.push(suggestedBox);
+            out.push(expandCropBox_(suggestedBox, w, h, 0.35, 1.1, 0.35, 0.9));
+            out.push(expandCropBox_(suggestedBox, w, h, 0.15, 2.2, 0.55, 1.2));
+          }
+          out.push({ x: 0, y: Math.round(h * 0.78), width: Math.round(w * 0.62), height: Math.round(h * 0.20), reason: 'land_registry_bottom_left_fallback' });
+          out.push({ x: 0, y: Math.round(h * 0.70), width: Math.round(w * 0.78), height: Math.round(h * 0.28), reason: 'land_registry_bottom_wide_fallback' });
+          resolve(out.filter(Boolean));
+        };
+        img.onerror = function() { resolve(suggestedBox ? [suggestedBox] : []); };
+        img.src = dataUrl;
+      });
+    }
+
+    function expandCropBox_(box, pageWidth, pageHeight, leftFactor, rightFactor, topFactor, bottomFactor) {
+      const x = Math.max(0, Math.round((box.x || 0) - (box.width || 0) * leftFactor));
+      const y = Math.max(0, Math.round((box.y || 0) - (box.height || 0) * topFactor));
+      const right = Math.min(pageWidth, Math.round((box.x || 0) + (box.width || 0) * (1 + rightFactor)));
+      const bottom = Math.min(pageHeight, Math.round((box.y || 0) + (box.height || 0) * (1 + bottomFactor)));
+      return { x: x, y: y, width: Math.max(0, right - x), height: Math.max(0, bottom - y), reason: 'expanded_land_registry_crop' };
+    }
+
+    function cropDataUrlFromImage_(dataUrl, box, options) {
+      return new Promise(function(resolve) {
+        options = options || {};
         const img = new Image();
         img.onload = function() {
           const x = Math.max(0, Math.round(box.x || 0));
@@ -1270,15 +1312,32 @@
           const w = Math.min(img.naturalWidth - x, Math.round(box.width || 0));
           const h = Math.min(img.naturalHeight - y, Math.round(box.height || 0));
           if (w < 8 || h < 8) return resolve('');
+          const scale = Math.max(1, Number(options.scale || 1));
           const canvas = document.createElement('canvas');
-          canvas.width = w;
-          canvas.height = h;
-          canvas.getContext('2d').drawImage(img, x, y, w, h, 0, 0, w, h);
+          canvas.width = Math.round(w * scale);
+          canvas.height = Math.round(h * scale);
+          const ctx = canvas.getContext('2d');
+          ctx.imageSmoothingEnabled = true;
+          ctx.drawImage(img, x, y, w, h, 0, 0, canvas.width, canvas.height);
+          if (options.enhance) enhanceOcrCanvas_(ctx, canvas.width, canvas.height);
           resolve(canvas.toDataURL('image/png'));
         };
         img.onerror = function() { resolve(''); };
         img.src = dataUrl;
       });
+    }
+
+    function enhanceOcrCanvas_(ctx, width, height) {
+      const imgData = ctx.getImageData(0, 0, width, height);
+      const data = imgData.data;
+      for (let i = 0; i < data.length; i += 4) {
+        const gray = data[i] * 0.299 + data[i + 1] * 0.587 + data[i + 2] * 0.114;
+        const v = Math.max(0, Math.min(255, (gray - 118) * 1.45 + 128));
+        data[i] = v;
+        data[i + 1] = v;
+        data[i + 2] = v;
+      }
+      ctx.putImageData(imgData, 0, 0);
     }
 
     function autoOrientReviewImage(img) {

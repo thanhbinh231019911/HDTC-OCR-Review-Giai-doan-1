@@ -884,7 +884,7 @@ function cleanupSemanticLandFieldValue_(value) {
   return String(value || '')
     .replace(/\s+/g, ' ')
     .replace(/^[\s:;.,)\-]+/, '')
-    .replace(/(?:^|\s)[a-g]\s*[\).:]\s*$/i, '')
+    .replace(/(?:^|\s)(?:[a-g]|\u0111)\s*[\).:]?\s*$/i, '')
     .replace(/[\s:;.,)\-]+$/, '')
     .trim();
 }

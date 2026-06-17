@@ -43,6 +43,7 @@ Rules:
 - Use section/index boundaries such as `II`, `1`, `2`, `a)`, `b)`, `c)`, `d)`, `đ)`, `e)`, `g)`.
 - A field continues until the next section/index boundary.
 - Section/index markers such as `a)`, `b)`, `c)`, `d)`, `đ)`, `e)`, and `g)` are boundaries only. They do not define field meaning by themselves.
+- If OCR attaches the next section/index marker to the end of the previous value, for example `Sử dụng riêng đ`, remove that trailing marker from the previous field value.
 - Field meaning must come from the actual label printed/read on the certificate, for example `Hình thức sử dụng`, `Mục đích sử dụng`, `Thời hạn sử dụng`, `Diện tích`, or `Nguồn gốc sử dụng`.
 - If another certificate uses a different printed label such as `Loại đất`, preserve that label in the certificate text/review and do not force it into `Mục đích sử dụng` unless a mapping rule has been explicitly agreed.
 - Do not take only the last wrapped line.
@@ -52,6 +53,7 @@ Rules:
 - When repairing review data from stored OCR, include a text block as land-certificate asset OCR if its content contains certificate/land markers. Do not rely only on file group, filename prefix, or even filename presence, because lab/prod uploads may lose metadata.
 - In the OCR Bia dat lab form, uploaded certificate files must be routed as asset files. If an installed trigger calls the wrong lab handler, resolve the lab type again from the actual Google Form ID, form title, or submitted upload-question title before creating the case.
 - After OCR, if the OCR text itself clearly matches a land/property certificate, classify that OCR result as asset even if the original upload group was wrong. Do not apply the reverse rule to identity-card OCR.
+- Optional item `Ghi chú` must stop at later certificate boundaries such as `Số vào sổ cấp GCN/Giấy chứng nhận`, section `IV`, or the next numbered section. Do not let registry/date/map text become note content.
 
 ## Registry Number
 

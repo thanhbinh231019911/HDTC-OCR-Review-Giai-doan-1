@@ -67,9 +67,27 @@ function cleanupSemanticLandFieldValue_(value) {
   return String(value || '')
     .replace(/\s+/g, ' ')
     .replace(/^[\s:;.,)\-]+/, '')
-    .replace(/(?:^|\s)[a-g]\s*[\).:]\s*$/i, '')
+    .replace(/(?:^|\s)(?:[a-g]|\u0111)\s*[\).:]?\s*$/i, '')
     .replace(/[\s:;.,)\-]+$/, '')
     .trim();
+}
+
+function oneLineCertificateValue(value) {
+  return String(value || '').replace(/\r?\n+/g, ' ').replace(/\s+/g, ' ').trim();
+}
+
+function truncateCertificateNoteValue(value) {
+  return String(value || '')
+    .replace(/\s+(?:số|so)\s+v(?:ào|ao)\s+s(?:ổ|o)\s+c(?:ấp|ap)\s+(?:gcn|gi(?:ấy|ay)\s+ch(?:ứng|ung)\s+nh(?:ận|an))\b.*$/i, '')
+    .replace(/\s+iv\s*[\).:]?\s*nh(?:ững|ung)\s+thay\s+(?:đổi|doi)\b.*$/i, '')
+    .trim();
+}
+
+function normalizeNumberedCertificateItemValue(value, number) {
+  let text = oneLineCertificateValue(value).replace(/[.。]+$/g, '').trim();
+  if (number === 6) text = text.replace(/^(?:ghi\s*chú|ghi\s*chu)\s*[:;.-]?\s*/i, '').trim();
+  if (number === 6) text = truncateCertificateNoteValue(text);
+  return text.replace(/^[;:.,\-\s]+|[;:.,\-\s]+$/g, '').trim();
 }
 
 function findSemanticLandFieldValue_(text, normalizedAliases) {
@@ -170,6 +188,11 @@ assert.strictEqual(fields.usage_term, 'Lâu dài');
 assert.strictEqual(fields.area, '108,0 m²');
 assert.strictEqual(shouldReplaceUsageForm_({ final_value: 'Sử dụng riêng ) Mục đích sử dụng: Đất ở tại nông thôn' }, fields.usage_form), true);
 assert.strictEqual(shouldReplaceUsageTerm_({ final_value: 'Diện tích: 108,0m² (Bằng chữ: một trăm linh tám phẩy không mét vuông)' }, fields.usage_term), true);
+assert.strictEqual(cleanupSemanticLandFieldValue_('Sử dụng riêng đ'), 'Sử dụng riêng');
+assert.strictEqual(
+  normalizeNumberedCertificateItemValue('Ghi chú: Không Số vào sổ cấp GCN: 027 coquan có 15.00 m', 6),
+  'Không'
+);
 
 const fileMeta = reclassifyOcrFileMetaByContent_({
   group: 'secured_party',
