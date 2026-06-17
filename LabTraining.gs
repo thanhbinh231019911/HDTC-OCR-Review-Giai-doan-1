@@ -196,10 +196,12 @@ function installOcrLabTrainingTrigger_(labConfig) {
 
 function processOcrLabTrainingSubmit_(labConfig, e) {
   setupSpreadsheet();
-  const caseId = makeOcrLabCaseId_(labConfig);
+  let caseId = '';
   let folders = null;
   try {
     const namedValues = labEventToNamedValues_(e);
+    labConfig = resolveOcrLabConfigFromNamedValues_(labConfig, namedValues);
+    caseId = makeOcrLabCaseId_(labConfig);
     const reviewEmail = getNamedValue(namedValues, OCR_LAB_TRAINING.REVIEW_EMAIL_FIELD) || getActiveUserEmail();
     const uploadValue = getNamedValue(namedValues, labConfig.uploadField);
     const fileIds = extractFileIds(uploadValue);
@@ -274,6 +276,24 @@ function processOcrLabTrainingSubmit_(labConfig, e) {
     logCaseError(caseId, err, 'processOcrLabTrainingSubmit_' + labConfig.skill);
     throw err;
   }
+}
+
+function resolveOcrLabConfigFromNamedValues_(preferredConfig, namedValues) {
+  const keys = Object.keys(namedValues || {});
+  const normalizedKeys = keys.map(function(key) {
+    return removeVietnameseAccents_(key).toLowerCase();
+  });
+  const hasLandUpload = normalizedKeys.some(function(key) {
+    return key.indexOf('upload anh bia dat') >= 0 || key.indexOf('giay chung nhan') >= 0 || key.indexOf('bia dat') >= 0;
+  });
+  if (hasLandUpload) return OCR_LAB_TRAINING.LAND;
+
+  const hasCccdUpload = normalizedKeys.some(function(key) {
+    return key.indexOf('upload anh cccd') >= 0 || key.indexOf('can cuoc') >= 0 || key.indexOf('cccd') >= 0;
+  });
+  if (hasCccdUpload) return OCR_LAB_TRAINING.CCCD;
+
+  return preferredConfig;
 }
 
 function makeOcrLabFormData_(labConfig, reviewEmail, fileIds) {
