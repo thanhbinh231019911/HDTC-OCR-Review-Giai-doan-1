@@ -677,6 +677,7 @@
       const root = 'assets[' + index + ']';
       const re = asset.real_estate || {};
       const ocrText = getAssetOcrText();
+      const landPlotOcrText = selectTrustedLandPlotOcrText(ocrText);
       const important = [
         [t('Loai GCN'), valueOf(asset.certificate_title) || inferCertificateTitleFromText(ocrText)],
         [t('So GCN'), valueOf(re.certificate_number) || inferCertificateNumberFromText(ocrText)],
@@ -703,11 +704,11 @@
       pushAssetLine(lines, '\u0111. ' + t('Muc dich su dung'), valueOf(re.usage_purpose));
       pushAssetLine(lines, 'e. ' + t('Thoi han su dung'), valueOf(re.usage_term));
       pushAssetLine(lines, 'g. ' + fixVietnameseUsageWord(t('Nguon goc su dung')), displayUsageOriginValue(valueOf(re.usage_origin)));
-      lines.push('<div class="asset-doc-line"><strong>2. ' + t('Nha o') + ':</strong> ' + escapeHtml(certificateOptionalItemValue(ocrText, 2, '-/-')) + '</div>');
-      lines.push('<div class="asset-doc-line"><strong>3. ' + t('Cong trinh xay dung khac') + ':</strong> ' + escapeHtml(certificateOptionalItemValue(ocrText, 3, '-/-')) + '</div>');
-      lines.push('<div class="asset-doc-line"><strong>4. ' + t('Rung san xuat la rung trong') + ':</strong> ' + escapeHtml(certificateOptionalItemValue(ocrText, 4, '-/-')) + '</div>');
-      lines.push('<div class="asset-doc-line"><strong>5. ' + t('Cay lau nam') + ':</strong> ' + escapeHtml(certificateOptionalItemValue(ocrText, 5, '-/-')) + '</div>');
-      lines.push('<div class="asset-doc-line"><strong>6. ' + t('Ghi chu') + ':</strong> ' + escapeHtml(certificateOptionalItemValue(ocrText, 6, 'Kh\u00f4ng')) + '</div>');
+      lines.push('<div class="asset-doc-line"><strong>2. ' + t('Nha o') + ':</strong> ' + escapeHtml(certificateOptionalItemValue(landPlotOcrText, 2, '-/-')) + '</div>');
+      lines.push('<div class="asset-doc-line"><strong>3. ' + t('Cong trinh xay dung khac') + ':</strong> ' + escapeHtml(certificateOptionalItemValue(landPlotOcrText, 3, '-/-')) + '</div>');
+      lines.push('<div class="asset-doc-line"><strong>4. ' + t('Rung san xuat la rung trong') + ':</strong> ' + escapeHtml(certificateOptionalItemValue(landPlotOcrText, 4, '-/-')) + '</div>');
+      lines.push('<div class="asset-doc-line"><strong>5. ' + t('Cay lau nam') + ':</strong> ' + escapeHtml(certificateOptionalItemValue(landPlotOcrText, 5, '-/-')) + '</div>');
+      lines.push('<div class="asset-doc-line"><strong>6. ' + t('Ghi chu') + ':</strong> ' + escapeHtml(certificateOptionalItemValue(landPlotOcrText, 6, 'Kh\u00f4ng')) + '</div>');
       lines.push('<div class="asset-doc-line"><strong>IV. ' + t('Nhung thay doi sau khi cap Giay chung nhan') + ':</strong></div>');
       lines.push('<div class="asset-doc-line">' + escapeHtml(postIssueChangesDisplayValue(valueOf(re.post_issue_changes), ocrText)) + '</div>');
       lines.push('</div><div class="asset-doc-edit">' + fieldTable(flattenFields(asset, root)) + '</div></section>');
@@ -803,9 +804,55 @@
     }
 
     function certificateOptionalItemValue(ocrText, number, fallback) {
+      if (!ocrText) return fallback;
       const value = normalizeNumberedCertificateItemValue(extractNumberedCertificateItemFromOcr(ocrText, number), number);
       if (!value) return fallback;
       return isAbsentCertificateText(value) ? fallback : value;
+    }
+
+    function selectTrustedLandPlotOcrText(ocrText) {
+      const selected = selectBestLandPlotOcrText(ocrText);
+      return selected.trusted ? selected.text : '';
+    }
+
+    function selectBestLandPlotOcrText(ocrText) {
+      const source = String(ocrText || '');
+      const lines = source.split(/\r?\n/);
+      let best = { text: '', score: 0, trusted: false };
+      for (let i = 0; i < lines.length; i++) {
+        const normalized = normalizeCertificateIndexLineForReview(lines[i]);
+        if (normalized.indexOf('ii thua dat') < 0 && normalized.indexOf('1 thua dat') < 0 && normalized.indexOf('thua dat so') < 0) continue;
+        const out = [];
+        for (let j = i; j < lines.length; j++) {
+          const current = normalizeCertificateIndexLineForReview(lines[j]);
+          if (j > i && /^(?:iii|iv)\s+/.test(current)) break;
+          if (j > i && current.indexOf('iv nhung thay doi') >= 0) break;
+          out.push(lines[j]);
+          if (j > i && /^(?:6|ghi chu)\b/.test(current) && out.length > 3) break;
+        }
+        const text = out.join('\n');
+        const score = scoreLandPlotOcrTextForReview(text);
+        if (score > best.score) best = { text: text, score: score, trusted: score >= 6 };
+      }
+      return best;
+    }
+
+    function normalizeCertificateIndexLineForReview(line) {
+      return removeVietnameseMarks(line).toLowerCase().replace(/[.:)\-]+/g, ' ').replace(/\s+/g, ' ').trim();
+    }
+
+    function scoreLandPlotOcrTextForReview(value) {
+      const normalized = removeVietnameseMarks(value).toLowerCase().replace(/\s+/g, ' ').trim();
+      let score = 0;
+      if (normalized.indexOf('ii thua dat') >= 0) score += 2;
+      if (normalized.indexOf('1 thua dat') >= 0) score += 2;
+      if (normalized.indexOf('thua dat so') >= 0) score += 2;
+      ['to ban do', 'dien tich', 'hinh thuc su dung', 'muc dich su dung', 'thoi han su dung', 'nguon goc su dung'].forEach(label => {
+        if (normalized.indexOf(label) >= 0) score += 1;
+      });
+      if (normalized.indexOf('dia chi thuong tru') >= 0) score -= 3;
+      if (normalized.indexOf('iv nhung thay doi') >= 0) score -= 1;
+      return score;
     }
 
     function normalizeNumberedCertificateItemValue(value, number) {

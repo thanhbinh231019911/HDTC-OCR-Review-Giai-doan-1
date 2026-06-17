@@ -299,6 +299,20 @@ function repairUnsafeLandCertificateFieldsInReviewJson(reviewJson, fullAssetOcrT
   (reviewJson.assets || []).forEach(function(asset) {
     const re = asset && asset.real_estate;
     if (!re) return;
+    if (!hasTrustedLandBlock) {
+      clearUntrustedLandIndexedField_(reviewJson, re.land_plot_number, 'assets[].real_estate.land_plot_number');
+      clearUntrustedLandIndexedField_(reviewJson, re.map_sheet_number, 'assets[].real_estate.map_sheet_number');
+      clearUntrustedLandIndexedField_(reviewJson, re.land_address, 'assets[].real_estate.land_address');
+      clearUntrustedLandIndexedField_(reviewJson, re.area, 'assets[].real_estate.area');
+      clearUntrustedLandIndexedField_(reviewJson, re.usage_form, 'assets[].real_estate.usage_form');
+      clearUntrustedLandIndexedField_(reviewJson, re.usage_purpose, 'assets[].real_estate.usage_purpose');
+      clearUntrustedLandIndexedField_(reviewJson, re.usage_term, 'assets[].real_estate.usage_term');
+      clearUntrustedLandIndexedField_(reviewJson, re.usage_origin, 'assets[].real_estate.usage_origin');
+      return;
+    }
+    replaceFromTrustedLandBlock_(re.land_plot_number, indexed.land_plot_number);
+    replaceFromTrustedLandBlock_(re.map_sheet_number, indexed.map_sheet_number);
+    replaceFromTrustedLandBlock_(re.area, indexed.area);
     clearUnsafeLandField_(reviewJson, re.land_address, 'assets[].real_estate.land_address', isUnsafeLandAddressValue_, hasTrustedLandBlock ? indexed.land_address : '');
     clearUnsafeLandField_(reviewJson, re.usage_form, 'assets[].real_estate.usage_form', isUnsafeIndexedLandFieldValue_, hasTrustedLandBlock ? indexed.usage_form : '');
     clearUnsafeLandField_(reviewJson, re.usage_purpose, 'assets[].real_estate.usage_purpose', isUnsafeIndexedLandFieldValue_, hasTrustedLandBlock ? indexed.usage_purpose : '');
@@ -306,6 +320,27 @@ function repairUnsafeLandCertificateFieldsInReviewJson(reviewJson, fullAssetOcrT
     clearUnsafeLandField_(reviewJson, re.usage_origin, 'assets[].real_estate.usage_origin', isUnsafeIndexedLandFieldValue_, hasTrustedLandBlock ? indexed.usage_origin : '');
   });
   return reviewJson;
+}
+
+function clearUntrustedLandIndexedField_(reviewJson, field, fieldPath) {
+  if (!field || !field.hasOwnProperty('final_value') || field.manual_value) return;
+  const current = String(field.final_value || field.ai_value || '').trim();
+  if (!current) return;
+  field.ai_value = '';
+  field.final_value = '';
+  field.source = 'OCR_REJECTED_NO_TRUSTED_LAND_BLOCK';
+  field.confidence = '';
+  addReviewWarningOnce_(reviewJson, fieldPath, 'Không tìm được block II. Thửa đất đủ tin cậy; trường này được để trống để tránh lấy nhầm dữ liệu từ trang khác.');
+}
+
+function replaceFromTrustedLandBlock_(field, replacement) {
+  if (!field || !field.hasOwnProperty('final_value') || field.manual_value || !replacement) return;
+  const current = String(field.final_value || field.ai_value || '').trim();
+  if (current === replacement) return;
+  field.ai_value = replacement;
+  field.final_value = replacement;
+  field.source = 'OCR_TRUSTED_LAND_BLOCK_REPAIR';
+  field.confidence = Math.max(Number(field.confidence || 0), 0.86);
 }
 
 function clearUnsafeLandField_(reviewJson, field, fieldPath, predicate, replacement) {
