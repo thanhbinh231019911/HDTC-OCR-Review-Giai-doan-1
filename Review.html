@@ -702,7 +702,7 @@
       pushAssetLine(lines, '\u0111. ' + t('Muc dich su dung'), valueOf(re.usage_purpose));
       pushAssetLine(lines, 'e. ' + t('Thoi han su dung'), valueOf(re.usage_term));
       pushAssetLine(lines, 'g. ' + t('Nguon goc su dung'), valueOf(re.usage_origin));
-      lines.push('<div class="asset-doc-line"><strong>2. ' + t('Nha o') + ':</strong> ' + escapeHtml(simplifyAbsentCertificateText(valueOf(re.attached_assets))) + '</div>');
+      lines.push('<div class="asset-doc-line"><strong>2. ' + t('Nha o') + ':</strong> ' + escapeHtml(certificateOptionalItemValue(ocrText, 2, '-/-')) + '</div>');
       lines.push('<div class="asset-doc-line"><strong>3. ' + t('Cong trinh xay dung khac') + ':</strong> ' + escapeHtml(simplifyAbsentCertificateText('')) + '</div>');
       lines.push('<div class="asset-doc-line"><strong>4. ' + t('Rung san xuat la rung trong') + ':</strong> ' + escapeHtml(certificateOptionalItemValue(ocrText, 4, '-/-')) + '</div>');
       lines.push('<div class="asset-doc-line"><strong>5. ' + t('Cay lau nam') + ':</strong> ' + escapeHtml(certificateOptionalItemValue(ocrText, 5, '-/-')) + '</div>');
@@ -802,9 +802,22 @@
     }
 
     function certificateOptionalItemValue(ocrText, number, fallback) {
-      const value = extractNumberedCertificateItemFromOcr(ocrText, number);
+      const value = normalizeNumberedCertificateItemValue(extractNumberedCertificateItemFromOcr(ocrText, number), number);
       if (!value) return fallback;
       return isAbsentCertificateText(value) ? fallback : value;
+    }
+
+    function normalizeNumberedCertificateItemValue(value, number) {
+      let text = oneLineCertificateValue(value).replace(/[.。]+$/g, '').trim();
+      const labels = {
+        2: /^(?:nh[aà]\s*[oở]|nha\s*o)\s*[:;.-]?\s*/i,
+        3: /^(?:c[oô]ng\s*tr[ìi]nh\s*x[aâ]y\s*d[ựu]ng\s*kh[aá]c|cong\s*trinh\s*xay\s*dung\s*khac)\s*[:;.-]?\s*/i,
+        4: /^(?:r[ưừ]ng\s*s[aả]n\s*xu[aấ]t\s*l[aà]\s*r[ưừ]ng\s*tr[oồ]ng|rung\s*san\s*xuat\s*la\s*rung\s*trong)\s*[:;.-]?\s*/i,
+        5: /^(?:c[aâ]y\s*l[aâ]u\s*n[aă]m|cay\s*lau\s*nam)\s*[:;.-]?\s*/i,
+        6: /^(?:ghi\s*ch[uú]|ghi\s*chu)\s*[:;.-]?\s*/i
+      };
+      if (labels[number]) text = text.replace(labels[number], '').trim();
+      return text.replace(/^[;:.,\-\s]+|[;:.,\-\s]+$/g, '').trim();
     }
 
     function extractNumberedCertificateItemFromOcr(ocrText, number) {

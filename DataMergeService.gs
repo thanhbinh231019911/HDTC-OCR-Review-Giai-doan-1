@@ -218,7 +218,7 @@ function repairAssetCertificateCodesInReviewJson(reviewJson, fullAssetOcrText) {
       re.registry_number.final_value = registry;
       re.registry_number.source = re.registry_number.source || 'OCR_ASSET_TEXT_REGISTRY_CODE_REPAIR';
       re.registry_number.confidence = Math.max(Number(re.registry_number.confidence || 0), 0.86);
-    } else if (certificate && isCertificateNumberLike_(currentRegistry)) {
+    } else if (isCertificateNumberLike_(currentRegistry)) {
       re.registry_number.ai_value = '';
       re.registry_number.final_value = '';
       re.registry_number.source = re.registry_number.source || 'OCR_ASSET_TEXT_REGISTRY_REJECTED_CERTIFICATE_CODE';
@@ -621,7 +621,7 @@ function enrichAssetFromOcr_(asset, text) {
     asset.real_estate.registry_number.final_value = registry;
     asset.real_estate.registry_number.source = 'OCR_ASSET_TEXT';
     asset.real_estate.registry_number.confidence = asset.real_estate.registry_number.confidence || 0.72;
-  } else if (certificate && isCertificateNumberLike_(asset.real_estate.registry_number.final_value || asset.real_estate.registry_number.ai_value)) {
+  } else if (isCertificateNumberLike_(asset.real_estate.registry_number.final_value || asset.real_estate.registry_number.ai_value)) {
     asset.real_estate.registry_number.ai_value = '';
     asset.real_estate.registry_number.final_value = '';
     asset.real_estate.registry_number.source = asset.real_estate.registry_number.source || 'OCR_ASSET_TEXT_REJECTED_CERTIFICATE_CODE';
@@ -830,6 +830,9 @@ function cleanupIndexedCertificateValue_(value) {
     .replace(/\s+/g, ' ')
     .replace(/\s+(?:s\u1ed1|so)\s+v\u00e0o\s+s\u1ed5\s+c\u1ea5p\s+gcn\s*:?.*$/i, '')
     .replace(/\s+so\s+vao\s+so\s+cap\s+gcn\s*:?.*$/i, '')
+    .replace(/\s+(?:2|3|4|5|6)\s*[\).:]\s*(?:nh[aà]\s*[oở]|nha\s*o|c[oô]ng\s*tr[ìi]nh|cong\s*trinh|r[ưừ]ng|rung|c[aâ]y|cay|ghi\s*ch[uú]|ghi\s*chu)\b.*$/i, '')
+    .replace(/\s+iv\s*[\).:]?\s*nh[uữ]ng\s+thay\s+[dđ][oổ]i.*$/i, '')
+    .replace(/\s+iv\s*[\).:]?\s*nhung\s+thay\s+doi.*$/i, '')
     .replace(/^(?:\u0111\u1ecba\s*ch\u1ec9|dia\s*chi|dia chi|address|hinh\s*thuc\s*su\s*dung|muc\s*dich\s*su\s*dung|thoi\s*han\s*su\s*dung|nguon\s*goc\s*su\s*dung)\s*[:.-]?\s*/i, '')
     .replace(/[;,.:\-\s]+$/g, '')
     .trim();
@@ -1286,6 +1289,8 @@ function shouldReplaceCertificateNumber_(field) {
   if (!field) return true;
   const current = String(field.final_value || field.ai_value || '').trim();
   if (!current) return true;
+  const normalizedCurrent = removeVietnameseAccents_(current).toLowerCase().replace(/\s+/g, ' ').trim();
+  if (normalizedCurrent === 'khong' || normalizedCurrent === 'khong co' || normalizedCurrent.indexOf('khong ro') >= 0 || normalizedCurrent.indexOf('chua doc') >= 0) return true;
   if (current === 'Không rõ, đề nghị sửa thủ công') return true;
   return isRegistryNumberLike_(current);
 }
