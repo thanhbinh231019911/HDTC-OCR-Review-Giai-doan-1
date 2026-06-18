@@ -37,31 +37,6 @@ function saveManualOverride(caseId, token, fieldPath, newValue, reason) {
   return { ok: true, field_path: fieldPath, new_value: newValue };
 }
 
-function clearManualOverrides(caseId, token, fieldPaths, newValue, reasonContains) {
-  assertValidToken_(caseId, token);
-  const paths = (fieldPaths || []).map(String);
-  if (!paths.length) throw new Error('No override field paths supplied');
-  const sheet = getSheet(SHEETS.REVIEW_OVERRIDES);
-  const headers = getHeaders_(sheet);
-  if (sheet.getLastRow() < 2) return { ok: true, deleted: 0 };
-  const data = sheet.getRange(2, 1, sheet.getLastRow() - 1, headers.length).getValues();
-  const caseCol = headers.indexOf('Case ID');
-  const pathCol = headers.indexOf('Field Path');
-  const valueCol = headers.indexOf('New Value');
-  const reasonCol = headers.indexOf('Reason');
-  let deleted = 0;
-  for (let i = data.length - 1; i >= 0; i--) {
-    if (String(data[i][caseCol]) !== String(caseId)) continue;
-    if (paths.indexOf(String(data[i][pathCol])) < 0) continue;
-    if (newValue != null && String(data[i][valueCol]) !== String(newValue)) continue;
-    if (reasonContains && String(data[i][reasonCol]).indexOf(String(reasonContains)) < 0) continue;
-    sheet.deleteRow(i + 2);
-    deleted++;
-  }
-  logAudit(caseId, 'MANUAL_OVERRIDES_CLEARED', { field_paths: paths, deleted: deleted });
-  return { ok: true, deleted: deleted };
-}
-
 function normalizeManualOverrideValueForStorage_(value) {
   if (Object.prototype.toString.call(value) === '[object Date]') return formatDateVi_(value);
   return value == null ? '' : String(value);
@@ -331,6 +306,88 @@ function saveAutoOcrFieldValue(caseId, token, fieldPath, newValue, source) {
   });
   logAudit(caseId, 'AUTO_OCR_FIELD_SAVED', { field_path: fieldPath, value: newValue, source: source || '' });
   return { ok: true, field_path: fieldPath, new_value: newValue };
+}
+
+function saveAutoOcrRegistryValue(caseId, token, fieldPath, newValue, currentValue, readings) {
+  assertValidToken_(caseId, token);
+  if (!/^assets\[\d+\]\.real_estate\.registry_number$/.test(String(fieldPath || ''))) {
+    throw new Error('Field path is not a registry number: ' + fieldPath);
+  }
+  if (getLatestFinalData(caseId)) return { ok: false, reason: 'CASE_FINALIZED' };
+  const consensus = registryCropConsensus_(readings || []);
+  const candidate = normalizeRegistryCodeValue_(newValue);
+  if (!candidate || !isPlausibleRegistryCode_(candidate)) return { ok: false, reason: 'INVALID_REGISTRY_VALUE' };
+  if (!consensus.value || consensus.value !== candidate || consensus.count < 2) {
+    return { ok: false, reason: 'NO_REGISTRY_CROP_CONSENSUS' };
+  }
+  const manualOverride = getOverrides(caseId).some(function(item) {
+    return item.field_path === fieldPath && item.edited_by !== 'AUTO_OCR';
+  });
+  if (manualOverride) return { ok: false, reason: 'HAS_MANUAL_OVERRIDE' };
+  let data = getLatestExtractedData(caseId);
+  if (!data) throw new Error('No extracted review data for case ' + caseId);
+  repairReviewDataFromFullOcr_(data, caseId);
+  const field = getByPath(data, fieldPath);
+  if (!field || typeof field !== 'object' || !field.hasOwnProperty('final_value')) {
+    throw new Error('Field path is not editable: ' + fieldPath);
+  }
+  const storedCurrent = normalizeRegistryCodeValue_(field.final_value || field.ai_value || '');
+  const expectedCurrent = normalizeRegistryCodeValue_(currentValue || '');
+  if (expectedCurrent && storedCurrent && expectedCurrent !== storedCurrent) {
+    return { ok: false, reason: 'STALE_REGISTRY_VALUE' };
+  }
+  field.ai_value = candidate;
+  field.final_value = candidate;
+  field.manual_value = '';
+  field.source = 'AUTO_OCR_LAND_REGISTRY_CROP_CONSENSUS';
+  field.confidence = 0.92;
+  field.confirmed = false;
+  field.evidence = 'Focused registry OCR consensus: ' + consensus.count + ' crops';
+  data = validateReviewJson(data);
+  appendSheetRow(SHEETS.EXTRACTED_DATA, {
+    'Case ID': caseId,
+    'JSON Data': data,
+    'Validation Status': data.validation.status,
+    'Missing Fields': data.validation.missing_fields,
+    'Conflicts': data.validation.conflicts,
+    'Warnings': data.validation.warnings,
+    'AI JSON File URL': '',
+    'Created At': nowIso()
+  });
+  logAudit(caseId, 'AUTO_OCR_REGISTRY_SAVED', {
+    field_path: fieldPath,
+    old_value: storedCurrent,
+    new_value: candidate,
+    consensus_count: consensus.count,
+    readings: consensus.readings
+  });
+  return {
+    ok: true,
+    field_path: fieldPath,
+    new_value: candidate,
+    consensus_count: consensus.count
+  };
+}
+
+function registryCropConsensus_(readings) {
+  const counts = {};
+  const normalizedReadings = [];
+  (readings || []).forEach(function(value) {
+    const normalized = normalizeRegistryCodeValue_(value);
+    if (!normalized || !isPlausibleRegistryCode_(normalized)) return;
+    normalizedReadings.push(normalized);
+    counts[normalized] = (counts[normalized] || 0) + 1;
+  });
+  const ranked = Object.keys(counts).sort(function(a, b) {
+    return counts[b] - counts[a] || a.localeCompare(b);
+  });
+  if (!ranked.length) return { value: '', count: 0, readings: normalizedReadings };
+  const top = ranked[0];
+  const runnerUpCount = ranked.length > 1 ? counts[ranked[1]] : 0;
+  if (counts[top] < 2 || counts[top] === runnerUpCount) {
+    return { value: '', count: counts[top], readings: normalizedReadings };
+  }
+  return { value: top, count: counts[top], readings: normalizedReadings };
 }
 
 function suggestIdentityIssueDateCropFromVisionAnnotation_(annotation) {

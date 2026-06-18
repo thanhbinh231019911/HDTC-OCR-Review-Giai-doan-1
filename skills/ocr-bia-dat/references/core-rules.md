@@ -137,6 +137,10 @@ Rules:
 - Do not use certificate serial numbers such as `CO402507` as registry numbers.
 - If the full value is handwritten over a dotted line and OCR reads only the tail, add a warning or use a dedicated crop/OCR pass for this registry region; do not infer the missing prefix.
 - The crop/OCR pass for registry number must remain field-specific: find the registry label region, crop around that line, OCR only that crop, and write only `assets[].real_estate.registry_number`.
+- A registry value that looks structurally valid is not automatically verified. Run focused registry OCR unless the field already records a focused-crop verification source.
+- Replace an existing valid-looking registry value only when at least two focused crop candidates independently return the same complete registry code and no competing code has the same vote count.
+- Persist focused registry OCR as automated extracted data with an `AUTO_OCR` source. Do not store it as a manual override.
+- Never hard-code a corrected registry code for one case or learn a direct character substitution such as `4 -> 1` from a single example.
 
 ## Usage Form
 

@@ -966,6 +966,26 @@ assert.strictEqual(dataMergeContext.canUseSharedAssetOcr_([
 ], {
   byFileName: { 'asset__A.pdf': scopedSourceA, 'asset__B.pdf': scopedSourceB }
 }), false);
+assert.deepStrictEqual(
+  JSON.parse(JSON.stringify(dataMergeContext.registryCropConsensus_([
+    'CS03417',
+    'CS03417',
+    'CS03447'
+  ]))),
+  {
+    value: 'CS03417',
+    count: 2,
+    readings: ['CS03417', 'CS03417', 'CS03447']
+  }
+);
+assert.strictEqual(
+  dataMergeContext.registryCropConsensus_(['CS03417', 'CS03447']).value,
+  ''
+);
+assert.strictEqual(
+  dataMergeContext.registryCropConsensus_(['CS03417']).value,
+  ''
+);
 
 const ocrServiceContext = {};
 vm.createContext(ocrServiceContext);

@@ -25,9 +25,6 @@ function reviewApi(body) {
   if (action === 'saveOverride') {
     return saveManualOverride(body.caseId, body.token, body.fieldPath, body.newValue, body.reason);
   }
-  if (action === 'clearOverrides') {
-    return clearManualOverrides(body.caseId, body.token, body.fieldPaths || [], body.newValue, body.reasonContains);
-  }
   if (action === 'confirmField') {
     return confirmSingleField(body.caseId, body.token, body.fieldPath);
   }
@@ -60,6 +57,16 @@ function reviewApi(body) {
   }
   if (action === 'saveAutoOcrFieldValue') {
     return saveAutoOcrFieldValue(body.caseId, body.token, body.fieldPath, body.newValue, body.source);
+  }
+  if (action === 'saveAutoOcrRegistryValue') {
+    return saveAutoOcrRegistryValue(
+      body.caseId,
+      body.token,
+      body.fieldPath,
+      body.newValue,
+      body.currentValue,
+      body.readings || []
+    );
   }
   if (action === 'listContractTemplates') {
     return listContractTemplatesForReview(body.caseId, body.token);

@@ -1364,7 +1364,7 @@
         const jobs = [];
         (reviewData.assets || []).forEach(function(asset, index) {
           const field = asset && asset.real_estate && asset.real_estate.registry_number;
-          if (!isMissingLandRegistryField_(field)) return;
+          if (!needsLandRegistryCropVerification_(field)) return;
           const files = getFilesForObject(asset, 'asset');
           const fallbackFiles = files.length ? files : getLandCertificateFilesFromOcr_();
           if (!fallbackFiles.length) return;
@@ -1377,20 +1377,21 @@
         for (const job of jobs) {
           if (autoOcrDonePaths[job.fieldPath]) continue;
           autoOcrDonePaths[job.fieldPath] = true;
-          const registry = await readLandRegistryFromAssetFiles_(job.files);
-          if (!registry) continue;
-          const saved = await api('saveAutoOcrFieldValue', {
+          const currentValue = cleanValue(job.field.final_value || job.field.ai_value);
+          const verification = await readLandRegistryFromAssetFiles_(job.files);
+          if (!verification.registry_number) continue;
+          const saved = await api('saveAutoOcrRegistryValue', {
             fieldPath: job.fieldPath,
-            newValue: registry,
-            source: 'AUTO_OCR_LAND_REGISTRY_CROP'
+            newValue: verification.registry_number,
+            currentValue: currentValue,
+            readings: verification.readings
           });
           if (saved && saved.ok) {
-            job.field.ai_value = registry;
-            job.field.final_value = registry;
-            job.field.source = 'AUTO_OCR_LAND_REGISTRY_CROP';
-            job.field.confidence = '0.82';
+            job.field.ai_value = verification.registry_number;
+            job.field.final_value = verification.registry_number;
+            job.field.source = 'AUTO_OCR_LAND_REGISTRY_CROP_CONSENSUS';
+            job.field.confidence = '0.92';
             render();
-            break;
           }
         }
       } catch (err) {
@@ -1400,14 +1401,9 @@
       }
     }
 
-    function isMissingLandRegistryField_(field) {
+    function needsLandRegistryCropVerification_(field) {
       if (!field || field.manual_value) return false;
-      const value = cleanValue(field.final_value || field.ai_value);
-      if (!value) return true;
-      const normalized = value.replace(/\s+/g, '');
-      if (/^\d+$/.test(normalized)) return true;
-      if (/^[A-Z][A-Z0O]\d{6}$/i.test(normalized)) return true;
-      return !/^(?:CS|CT|CN|CH|CL|HX|VP|DC|DL)[-.]?[0-9A-Z.\/-]{2,24}$/i.test(normalized);
+      return cleanValue(field.source).indexOf('AUTO_OCR_LAND_REGISTRY_CROP_CONSENSUS') !== 0;
     }
 
     async function autoRepairA4CertificateFieldsFromCrops() {
@@ -1652,6 +1648,7 @@
     }
 
     async function readLandRegistryFromAssetFiles_(files) {
+      const readings = [];
       for (const file of files || []) {
         if (!file.file_id) continue;
         const preview = imageCache[file.file_id] || await api('getCaseImagePreview', { fileId: file.file_id });
@@ -1663,10 +1660,22 @@
           const cropDataUrl = await cropDataUrlFromImage_(preview.data_url, crop, { scale: 3, enhance: true });
           if (!cropDataUrl) continue;
           const ocr = await api('ocrLandRegistryCrop', { dataUrl: cropDataUrl });
-          if (ocr && ocr.registry_number) return ocr.registry_number;
+          const registry = cleanValue(ocr && ocr.registry_number).replace(/\s+/g, '');
+          if (/^(?:CS|CT|CN|CH|CL|HX|VP|DC|DL)[-.]?[0-9A-Z.\/-]{2,24}$/i.test(registry)) {
+            readings.push(registry.toUpperCase());
+          }
         }
       }
-      return '';
+      const counts = {};
+      readings.forEach(value => { counts[value] = (counts[value] || 0) + 1; });
+      const ranked = Object.keys(counts).sort((a, b) => counts[b] - counts[a] || a.localeCompare(b));
+      if (!ranked.length) return { registry_number: '', readings: readings };
+      const top = ranked[0];
+      const runnerUpCount = ranked.length > 1 ? counts[ranked[1]] : 0;
+      if (counts[top] < 2 || counts[top] === runnerUpCount) {
+        return { registry_number: '', readings: readings };
+      }
+      return { registry_number: top, readings: readings };
     }
 
     function buildLandRegistryCropCandidates_(dataUrl, suggestedBox) {
