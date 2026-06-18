@@ -591,7 +591,7 @@ Số vào sổ cấp Giấy chứng nhận:.............C.N.5.4.2.9.............
 [/LAND_OCR_REGION]
 `;
 const actualA4Fields = dataMergeContext.extractRealEstateIndexedLandFields_(actualA4HouseCertificateText);
-assert.strictEqual(dataMergeContext.extractRealEstateCertificateNumber_(actualA4HouseCertificateText), 'AA 02378604');
+assert.strictEqual(dataMergeContext.extractRealEstateCertificateNumber_(actualA4HouseCertificateText), 'AA02378604');
 assert.strictEqual(dataMergeContext.extractRealEstateRegistryNumber_(actualA4HouseCertificateText), 'CN5429');
 assert.strictEqual(dataMergeContext.extractRealEstateIssueDate_(actualA4HouseCertificateText), '04/07/2025');
 assert.strictEqual(actualA4Fields.usage_purpose, 'Đất ở tại nông thôn: 400,0 m2; Đất trồng cây lâu năm: 1041,9 m2');
@@ -639,7 +639,7 @@ dataMergeContext.repairAssetOwnerIdentityInReviewJson(actualA4Review, actualA4Ho
 dataMergeContext.repairAssetUsagePurposeInReviewJson(actualA4Review, actualA4HouseCertificateText);
 dataMergeContext.repairAssetUsageTermInReviewJson(actualA4Review, actualA4HouseCertificateText);
 dataMergeContext.repairAssetPostIssueChangesInReviewJson(actualA4Review, actualA4HouseCertificateText);
-assert.strictEqual(actualA4Review.assets[0].real_estate.certificate_number.final_value, 'AA 02378604');
+assert.strictEqual(actualA4Review.assets[0].real_estate.certificate_number.final_value, 'AA02378604');
 assert.strictEqual(actualA4Review.assets[0].real_estate.registry_number.final_value, 'CN5429');
 assert.strictEqual(actualA4Review.assets[0].real_estate.issue_date.final_value, '04/07/2025');
 assert.strictEqual(actualA4Review.assets[0].owner_identity_summary.final_value, 'Ông: Nguyễn Viết Trọng, CCCD: 017065002419; Và vợ: Lê Thị Huế, CCCD: 001166034340');
@@ -667,6 +667,21 @@ assert.strictEqual(storedA4Fields.reason, 'OK');
 assert.strictEqual(storedA4Fields.issue_date, '04/07/2025');
 assert.strictEqual(storedA4Fields.usage_purpose, 'Đất ở tại nông thôn: 400,0 m2; Đất trồng cây lâu năm: 1041,9 m2');
 assert.strictEqual(storedA4Fields.usage_term, 'Đất ở tại nông thôn: Lâu dài; Đất trồng cây lâu năm: Đến tháng 10/2045');
+assert.strictEqual(dataMergeContext.cleanupIndexedCertificateValue_('Xóm Gừa , xã Liên Sơn , tỉnh Phú Thọ'), 'Xóm Gừa, xã Liên Sơn, tỉnh Phú Thọ');
+const addressSpacingReview = {
+  assets: [{
+    real_estate: {
+      land_address: {
+        ai_value: 'Xóm Gừa , xã Liên Sơn , tỉnh Phú Thọ',
+        manual_value: '',
+        final_value: 'Xóm Gừa , xã Liên Sơn , tỉnh Phú Thọ'
+      }
+    }
+  }],
+  ocr_results: []
+};
+dataMergeContext.repairAssetLandAddressInReviewJson(addressSpacingReview, '');
+assert.strictEqual(addressSpacingReview.assets[0].real_estate.land_address.final_value, 'Xóm Gừa, xã Liên Sơn, tỉnh Phú Thọ');
 assert.strictEqual(
   dataMergeContext.normalizeVietnameseAgencyNameClean_('Chi nh\u00e1nh v\u0103n ph\u00f2ng \u0111\u0103ng k\u00fd \u0111\u1ea5t \u0111ai l\u01b0\u01a1ng s\u01a1n'),
   'Chi nh\u00e1nh V\u0103n ph\u00f2ng \u0111\u0103ng k\u00fd \u0111\u1ea5t \u0111ai L\u01b0\u01a1ng S\u01a1n'

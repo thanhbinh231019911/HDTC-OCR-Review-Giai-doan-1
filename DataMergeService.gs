@@ -342,6 +342,7 @@ function repairAssetCertificateCodesInReviewJson(reviewJson, fullAssetOcrText) {
   (reviewJson.assets || []).forEach(function(asset) {
     const re = asset && asset.real_estate;
     if (!re) return;
+    normalizeAssetCertificateCodes_(asset);
     if (certificate && shouldReplaceCertificateNumber_(re.certificate_number)) {
       re.certificate_number.ai_value = certificate;
       re.certificate_number.final_value = certificate;
@@ -560,10 +561,11 @@ function repairAssetLandAddressInReviewJson(reviewJson, fullAssetOcrText) {
     .join('\n');
   const indexed = extractRealEstateIndexedLandFields_(assetText);
   const address = indexed.land_address || '';
-  if (!address) return reviewJson;
   (reviewJson.assets || []).forEach(function(asset) {
     const field = asset && asset.real_estate && asset.real_estate.land_address;
     if (!field || !field.hasOwnProperty('final_value') || field.manual_value) return;
+    normalizeLandAddressField_(field);
+    if (!address) return;
     const current = String(field.final_value || field.ai_value || '').trim();
     if (current && !isBetterLandAddress_(current, address)) return;
     field.ai_value = address;
@@ -1432,7 +1434,7 @@ function collectSemanticLandLabelStarts_(normalizedText) {
 }
 
 function cleanupSemanticLandFieldValue_(value) {
-  return String(value || '')
+  return normalizeCertificatePunctuationSpacing_(value)
     .replace(/\s+/g, ' ')
     .replace(/^[\s:;.,)\-]+/, '')
     .replace(/\s+(?:dia\s*chi|loai\s*dat|hinh\s*thuc\s*su\s*dung|muc\s*dich\s*su\s*dung|thoi\s*han\s*su\s*dung|nguon\s*goc\s*su\s*dung|thong\s*tin\s*tai\s*san\s*gan\s*lien\s*voi\s*dat)\s*[:.-]?.*$/i, '')
@@ -1501,7 +1503,7 @@ function normalizeCertificateIndexLine_(line) {
 }
 
 function cleanupIndexedCertificateValue_(value) {
-  return String(value || '')
+  return normalizeCertificatePunctuationSpacing_(value)
     .replace(/\r?\n+/g, ' ')
     .replace(/\s+/g, ' ')
     .replace(/\s+(?:s\u1ed1|so)\s+v\u00e0o\s+s\u1ed5\s+c\u1ea5p\s+gcn\s*:?.*$/i, '')
@@ -2187,15 +2189,36 @@ function normalizeAssetCertificateCodes_(asset) {
   }
 }
 
+function normalizeLandAddressField_(field) {
+  ['ai_value', 'form_value', 'manual_value', 'final_value'].forEach(function(key) {
+    if (field[key]) field[key] = normalizeCertificatePunctuationSpacing_(field[key]);
+  });
+}
+
 function normalizeCertificateSerialValue_(value) {
-  const raw = String(value || '').replace(/\s+/g, ' ').trim();
+  const raw = String(value || '').replace(/\s+/g, '').trim();
   const match = raw.match(/^([A-Z?]{1,3})(\s*)(\d{6,9})$/i);
   if (!match) return raw;
-  return match[1].toUpperCase() + (match[2] ? ' ' : '') + match[3];
+  return match[1].toUpperCase() + match[3];
 }
 
 function normalizeCertificateCodeValue_(value) {
   return String(value || '').replace(/\s+/g, '').trim();
+}
+
+function normalizeCertificatePunctuationSpacing_(value) {
+  return String(value || '')
+    .replace(/\r?\n+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .replace(/\s+([,.;:])/g, '$1')
+    .replace(/([,.;:])(?=\S)/g, function(match, mark, offset, source) {
+      const previous = offset > 0 ? source.charAt(offset - 1) : '';
+      const next = source.charAt(offset + 1) || '';
+      if ((mark === ',' || mark === '.') && /\d/.test(previous) && /\d/.test(next)) return mark;
+      if (mark === '.' && /[A-Z]/i.test(previous) && /[A-Z0-9]/i.test(next)) return mark;
+      return mark + ' ';
+    })
+    .trim();
 }
 
 function extractRealEstateRegistryNumber_(text) {
