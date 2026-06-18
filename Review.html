@@ -699,17 +699,17 @@
         lines.push('<div class="asset-doc-line"><strong>1. ' + t('Nguoi su dung dat, chu so huu tai san gan lien voi dat') + ':</strong></div>');
         ownerLines(asset, true).forEach(line => lines.push('<div class="asset-doc-line">' + escapeHtml(oneLineCertificateValue(line)) + '</div>'));
         lines.push('<div class="asset-doc-line"><strong>2. ' + t('Thong tin thua dat') + ':</strong></div>');
-        pushAssetLine(lines, 'a. ' + t('Thua dat so'), valueOf(re.land_plot_number) + (valueOf(re.map_sheet_number) ? '    ; ' + t('to ban do so') + ': ' + valueOf(re.map_sheet_number) : ''));
-        pushAssetLine(lines, 'b. ' + t('Dien tich'), formatAreaWithWords(valueOf(re.area), valueOf(re.area_in_words) || extractAreaWordsFromOcr(ocrText)));
-        pushAssetLine(lines, 'c. ' + t('Loai dat'), valueOf(re.usage_purpose));
-        pushAssetLine(lines, 'd. ' + t('Thoi han su dung'), valueOf(re.usage_term));
-        pushAssetLine(lines, '\u0111. ' + t('Hinh thuc su dung'), valueOf(re.usage_form));
-        pushAssetLine(lines, 'e. ' + t('Dia chi'), oneLineCertificateValue(valueOf(re.land_address)));
+        pushA4CertificateLine(lines, 'a. ' + t('Thua dat so'), valueOf(re.land_plot_number) + (valueOf(re.map_sheet_number) ? '    ; ' + t('to ban do so') + ': ' + valueOf(re.map_sheet_number) : ''));
+        pushA4CertificateLine(lines, 'b. ' + t('Dien tich'), formatAreaWithWords(valueOf(re.area), valueOf(re.area_in_words) || extractAreaWordsFromOcr(ocrText)));
+        pushA4CertificateLine(lines, 'c. ' + t('Loai dat'), valueOf(re.usage_purpose));
+        pushA4CertificateLine(lines, 'd. ' + t('Thoi han su dung'), valueOf(re.usage_term));
+        pushA4CertificateLine(lines, '\u0111. ' + t('Hinh thuc su dung'), valueOf(re.usage_form));
+        pushA4CertificateLine(lines, 'e. ' + t('Dia chi'), oneLineCertificateValue(valueOf(re.land_address)));
         lines.push('<div class="asset-doc-line"><strong>3. ' + t('Thong tin tai san gan lien voi dat') + ':</strong> ' + escapeHtml(valueOrDash(valueOf(re.attached_assets))) + '</div>');
         lines.push('<div class="asset-doc-line"><strong>4. ' + t('So do thua dat, tai san gan lien voi dat') + ':</strong></div>');
-        lines.push('<div class="asset-doc-line"><strong>5. ' + t('Ghi chu') + ':</strong> ' + escapeHtml(valueOrDash(valueOf(re.certificate_note) || certificateOptionalItemValue(ocrText, 5, '-/-'))) + '</div>');
+        lines.push('<div class="asset-doc-line"><strong>5. ' + t('Ghi chu') + ':</strong> ' + escapeHtml(a4CertificateNoteDisplayValue(valueOf(re.certificate_note), ocrText)) + '</div>');
         lines.push('<div class="asset-doc-line"><strong>6. ' + t('Nhung thay doi sau khi cap Giay chung nhan') + ':</strong></div>');
-        lines.push('<div class="asset-doc-line">' + escapeHtml(postIssueChangesDisplayValue(valueOf(re.post_issue_changes), ocrText)) + '</div>');
+        lines.push('<div class="asset-doc-line">' + escapeHtml(a4PostIssueChangesDisplayValue(valueOf(re.post_issue_changes), ocrText)) + '</div>');
       } else {
         lines.push('<div class="asset-doc-line"><strong>I. ' + t('Nguoi su dung dat, chu so huu nha o va tai san khac gan lien voi dat') + ':</strong></div>');
         ownerLines(asset, false).forEach(line => lines.push('<div class="asset-doc-line">' + escapeHtml(oneLineCertificateValue(line)) + '</div>'));
@@ -797,6 +797,27 @@
       value = cleanValue(value);
       if (!value || isAbsentCertificateText(value)) return;
       lines.push('<div class="asset-doc-line">' + escapeHtml(label) + ': ' + escapeHtml(value) + '</div>');
+    }
+
+    function pushA4CertificateLine(lines, label, value) {
+      lines.push('<div class="asset-doc-line">' + escapeHtml(label) + ': ' + escapeHtml(cleanValue(value)) + '</div>');
+    }
+
+    function a4CertificateNoteDisplayValue(value, ocrText) {
+      const direct = cleanValue(value);
+      if (direct && !isAbsentCertificateText(direct)) return direct;
+      const fromOcr = certificateOptionalItemValue(ocrText, 5, '');
+      return fromOcr && !isAbsentCertificateText(fromOcr) ? fromOcr : '-/-';
+    }
+
+    function a4PostIssueChangesDisplayValue(value, ocrText) {
+      const direct = cleanValue(value);
+      const normalized = removeVietnameseMarks(direct).toLowerCase().replace(/\s+/g, ' ').trim();
+      if (direct && normalized !== 'khong co' && !isAbsentCertificateText(direct)) return direct;
+      const inferred = inferPostIssueChangesFromOcr(ocrText);
+      const inferredNormalized = removeVietnameseMarks(inferred).toLowerCase().replace(/\s+/g, ' ').trim();
+      if (!inferred || inferredNormalized === 'khong co' || inferredNormalized.indexOf('co noi dung nhung bi mo') === 0) return '';
+      return inferred;
     }
 
     function oneLineCertificateValue(value) {
@@ -1104,10 +1125,19 @@
     function inferRegistryNumberFromText(text) {
       const raw = String(text || '');
       const normalized = removeVietnameseMarks(raw).replace(/\s+/g, ' ');
-      const direct = normalized.match(/(?:so vao so|vao so cap gcn|so cap gcn|registry)[^A-Z0-9]{0,20}([A-Z]{1,5}\s*[0-9][A-Z0-9.\\/-]{1,20})/i);
-      if (direct) return direct[1].replace(/\s+/g, ' ').trim();
+      const direct = normalized.match(/(?:so vao so|vao so cap gcn|so cap gcn|registry)[^A-Z0-9]{0,80}((?:C\s*\.\s*N\s*\.|CS|CT|CN|CH|CL|HX|VP|DC|DL)\s*[0-9][A-Z0-9.\\/-]{1,20})/i);
+      if (direct) return normalizeRegistryForReview(direct[1], /\.{4,}/.test(direct[0]));
       const candidates = normalized.match(/\b(?:CS|CT|CN|CH|CL|HX|VP|DC|DL)[0-9][A-Z0-9.\\/-]{1,20}\b/gi) || [];
-      return candidates.length ? candidates[0].trim() : '';
+      return candidates.length ? normalizeRegistryForReview(candidates[0]) : '';
+    }
+
+    function normalizeRegistryForReview(value, hasPrintedFillLine) {
+      let text = String(value || '')
+        .replace(/\.{4,}/g, ' ')
+        .replace(/\s+/g, '')
+        .trim();
+      if (hasPrintedFillLine) text = text.replace(/\./g, '');
+      return text.toUpperCase();
     }
 
     function titleCaseAgency(value) {
@@ -1536,6 +1566,14 @@
       return String(value || '').split(';').map(item => {
         const text = item.trim();
         if (!text) return null;
+        const exact = text.match(/^(.*?),\s*([^,:]+)\s*:\s*(\d{12}|\d{9})\s*$/);
+        if (exact) {
+          return {
+            name: exact[1].replace(/^(?:\u00d4ng|B\u00e0|V\u00e0\s+v\u1ee3|V\u1ee3|Ch\u1ed3ng)\s*:\s*/i, '').trim(),
+            docType: exact[2].trim(),
+            id: exact[3]
+          };
+        }
         const idMatch = text.match(/(\d{12}|\d{9})/);
         const id = idMatch ? idMatch[1] : '';
         let beforeId = id ? text.slice(0, text.indexOf(id)).trim() : text;

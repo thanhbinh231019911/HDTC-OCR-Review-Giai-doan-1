@@ -496,7 +496,7 @@ CHI NHANH VAN PHONG DANG KY DAT DAI LUONG SON
 6. Nhung thay doi sau khi cap Giay chung nhan:
 Noi dung thay doi va co so phap ly
 Xac nhan cua co quan co tham quyen
-So vao so cap Giay chung nhan: CN.5.42.9
+So vao so cap Giay chung nhan: ............CN.5.42.9............
 [/LAND_OCR_REGION]
 `;
 const a4PdfFields = dataMergeContext.extractRealEstateIndexedLandFields_(newA4PdfText);
@@ -520,10 +520,104 @@ assert.strictEqual(
   '12 Duong Mau, phuong Mau'
 );
 assert.strictEqual(dataMergeContext.extractRealEstateRegistryNumber_(newA4PdfText), 'CN5429');
+assert.strictEqual(
+  dataMergeContext.extractRealEstateRegistryNumber_('So vao so cap Giay chung nhan: CN.5429'),
+  'CN.5429'
+);
+assert.strictEqual(
+  dataMergeContext.extractRealEstateRegistryNumber_('So vao so cap GCN: C.N.5.4.2.9'),
+  'C.N.5.4.2.9'
+);
 assert.strictEqual(dataMergeContext.extractRealEstateIssueDate_(newA4PdfText), '04/07/2025');
 assert.strictEqual(dataMergeContext.extractOwnerAddressFromCertificateText_(newA4PdfText), '');
 assert.strictEqual(dataMergeContext.extractCertificateNoteFromCertificateText_(newA4PdfText), '-/-');
 assert.strictEqual(dataMergeContext.extractPostIssueChangesFromCertificateText_(newA4PdfText).status, 'absent');
+
+const actualA4HouseCertificateText = `
+[LAND_OCR_REGION layout=gcn_qsdd_qsh_tsglvd_page_1 score=12 region=full]
+GIẤY CHỨNG NHẬN
+QUYỀN SỬ DỤNG ĐẤT, QUYỀN SỞ HỮU TÀI SẢN GẮN LIỀN VỚI ĐẤT
+1. Người sử dụng đất, chủ sở hữu tài sản gắn liền với đất:
+Ông: Nguyễn Viết Trọng, CCCD: 017065002419
+Và vợ: Lê Thị Huế, CCCD: 001166034340
+2. Thông tin thửa đất:
+a. Thửa đất số: 100 ; tờ bản đồ số: 40
+b. Diện tích: 1441,9 m2
+c. Loại đất: Đất ở tại nông thôn: 400,0 m2; Đất trồng cây lâu năm: 1041,9 m2
+d. Thời hạn sử dụng: Đất ở tại nông thôn: Lâu dài; Đất trồng cây lâu năm: Đến tháng 10/2045
+đ. Hình thức sử dụng: Sử dụng chung của vợ và chồng
+e. Địa chỉ: Xóm Giữa, xã Liên Sơn, tỉnh Phú Thọ
+3. Thông tin tài sản gắn liền với đất: -/-
+Phú Thọ, ngày ...04... tháng ...7... năm 2025
+CHI NHÁNH VĂN PHÒNG ĐĂNG KÝ ĐẤT ĐAI LƯƠNG SƠN
+AA 02378604
+[/LAND_OCR_REGION]
+[LAND_OCR_REGION layout=gcn_qsdd_qsh_tsglvd_page_2 score=8 region=full]
+4. Sơ đồ thửa đất, tài sản gắn liền với đất:
+5. Ghi chú: -/-
+6. Những thay đổi sau khi cấp Giấy chứng nhận:
+Nội dung thay đổi và cơ sở pháp lý
+Xác nhận của cơ quan có thẩm quyền
+Số vào sổ cấp Giấy chứng nhận:.............C.N.5.4.2.9.............
+[/LAND_OCR_REGION]
+`;
+const actualA4Fields = dataMergeContext.extractRealEstateIndexedLandFields_(actualA4HouseCertificateText);
+assert.strictEqual(dataMergeContext.extractRealEstateCertificateNumber_(actualA4HouseCertificateText), 'AA 02378604');
+assert.strictEqual(dataMergeContext.extractRealEstateRegistryNumber_(actualA4HouseCertificateText), 'CN5429');
+assert.strictEqual(dataMergeContext.extractRealEstateIssueDate_(actualA4HouseCertificateText), '04/07/2025');
+assert.strictEqual(actualA4Fields.usage_purpose, 'Đất ở tại nông thôn: 400,0 m2; Đất trồng cây lâu năm: 1041,9 m2');
+assert.strictEqual(actualA4Fields.usage_term, 'Đất ở tại nông thôn: Lâu dài; Đất trồng cây lâu năm: Đến tháng 10/2045');
+const actualOwnerPairs = dataMergeContext.extractOwnerIdentityPairs_(actualA4HouseCertificateText);
+assert.deepStrictEqual(JSON.parse(JSON.stringify(actualOwnerPairs)), [
+  {
+    name: 'Nguyễn Viết Trọng',
+    document_type: 'CCCD',
+    id_number: '017065002419',
+    raw_text: 'Ông: Nguyễn Viết Trọng, CCCD: 017065002419'
+  },
+  {
+    name: 'Lê Thị Huế',
+    document_type: 'CCCD',
+    id_number: '001166034340',
+    raw_text: 'Và vợ: Lê Thị Huế, CCCD: 001166034340'
+  }
+]);
+assert.strictEqual(
+  dataMergeContext.extractOwnerIdentityPairs_('1. Người sử dụng đất:\\nÔng: Nguyễn Văn A, CC: 012345678901\\n2. Thông tin thửa đất:')[0].document_type,
+  'CC'
+);
+
+const actualA4Review = {
+  validation: { warnings: [] },
+  assets: [{
+    owner_name: { ai_value: 'Nguyen Viet Trong; Le Thi Hue', manual_value: '', final_value: 'Nguyen Viet Trong; Le Thi Hue' },
+    owner_identity_summary: { ai_value: 'Nguyen Viet Trong - Can cuoc cong dan so 017065002419', manual_value: '', final_value: 'Nguyen Viet Trong - Can cuoc cong dan so 017065002419' },
+    owner_id_document_type: { ai_value: 'Can cuoc cong dan', manual_value: '', final_value: 'Can cuoc cong dan' },
+    owner_id_number: { ai_value: '017065002419; 001166034340', manual_value: '', final_value: '017065002419; 001166034340' },
+    real_estate: {
+      certificate_number: { ai_value: 'CN.542.9', manual_value: '', final_value: 'CN.542.9' },
+      registry_number: { ai_value: 'CN.542.9', manual_value: '', final_value: 'CN.542.9' },
+      issue_date: { ai_value: 'Phú Thọ, ngày ... tháng .... năm 2025 CHI NHÁNH VĂN PHÒNG ĐĂNG KÝ ĐẤT ĐAI LƯƠNG SƠN', manual_value: '', final_value: 'Phú Thọ, ngày ... tháng .... năm 2025 CHI NHÁNH VĂN PHÒNG ĐĂNG KÝ ĐẤT ĐAI LƯƠNG SƠN' },
+      usage_purpose: { ai_value: '', manual_value: '', final_value: '' },
+      usage_term: { ai_value: '', manual_value: '', final_value: '' },
+      post_issue_changes: { ai_value: 'Không có', manual_value: '', final_value: 'Không có' }
+    }
+  }]
+};
+dataMergeContext.repairAssetCertificateCodesInReviewJson(actualA4Review, actualA4HouseCertificateText);
+dataMergeContext.repairAssetIssueDateInReviewJson(actualA4Review, actualA4HouseCertificateText);
+dataMergeContext.repairAssetOwnerIdentityInReviewJson(actualA4Review, actualA4HouseCertificateText);
+dataMergeContext.repairAssetUsagePurposeInReviewJson(actualA4Review, actualA4HouseCertificateText);
+dataMergeContext.repairAssetUsageTermInReviewJson(actualA4Review, actualA4HouseCertificateText);
+dataMergeContext.repairAssetPostIssueChangesInReviewJson(actualA4Review, actualA4HouseCertificateText);
+assert.strictEqual(actualA4Review.assets[0].real_estate.certificate_number.final_value, 'AA 02378604');
+assert.strictEqual(actualA4Review.assets[0].real_estate.registry_number.final_value, 'CN5429');
+assert.strictEqual(actualA4Review.assets[0].real_estate.issue_date.final_value, '04/07/2025');
+assert.strictEqual(actualA4Review.assets[0].owner_identity_summary.final_value, 'Ông: Nguyễn Viết Trọng, CCCD: 017065002419; Và vợ: Lê Thị Huế, CCCD: 001166034340');
+assert.strictEqual(actualA4Review.assets[0].owner_id_document_type.final_value, 'CCCD; CCCD');
+assert.strictEqual(actualA4Review.assets[0].real_estate.usage_purpose.final_value, 'Đất ở tại nông thôn: 400,0 m2; Đất trồng cây lâu năm: 1041,9 m2');
+assert.strictEqual(actualA4Review.assets[0].real_estate.usage_term.final_value, 'Đất ở tại nông thôn: Lâu dài; Đất trồng cây lâu năm: Đến tháng 10/2045');
+assert.strictEqual(actualA4Review.assets[0].real_estate.post_issue_changes.final_value, '');
 assert.strictEqual(
   dataMergeContext.normalizeVietnameseAgencyNameClean_('Chi nh\u00e1nh v\u0103n ph\u00f2ng \u0111\u0103ng k\u00fd \u0111\u1ea5t \u0111ai l\u01b0\u01a1ng s\u01a1n'),
   'Chi nh\u00e1nh V\u0103n ph\u00f2ng \u0111\u0103ng k\u00fd \u0111\u1ea5t \u0111ai L\u01b0\u01a1ng S\u01a1n'

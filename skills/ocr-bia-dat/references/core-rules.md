@@ -76,6 +76,9 @@ Review display policy:
 - Do not render the old `I/II/1/a-g/2-6/IV` layout for `gcn_qsdd_qsh_tsglvd`.
 - Do not create an owner/user address when the printed `1. Nguoi su dung...` section has only name and ID number. The `e. Dia chi` item under `2. Thong tin thua dat` is land address only.
 - For new A4 certificates, display `c. Loai dat` as `Loai dat`; do not rename it to `Muc dich su dung` in the certificate-layout review.
+- Keep every printed A4 item `a/b/c/d/d/e` visible in review even when OCR did not read its value. A missing OCR value must appear as a blank printed field, not disappear with its heading.
+- Preserve owner/user lines as printed, including prefixes such as `Ong:`, `Ba:`, `Va vo:` and the exact identity-document label. If the certificate prints `CCCD`, keep `CCCD`; if it prints `CC`, keep `CC`. Do not expand an abbreviation or infer a document type from the number length.
+- A blank new-A4 changes table remains blank in review. Do not invent `Khong co`.
 
 ## Field Extraction
 
@@ -122,6 +125,8 @@ Rules:
 - Treat `So vao so cap GCN` as including OCR variants of Vietnamese diacritics, including cases where `so` is read for `so/so`.
 - Take the short text region on the same line or immediately after the registry label.
 - Remove the printed dotted fill line only when OCR reads it as a run of dots, for example `........`.
+- Ignore dots only when the OCR line after the registry label contains a long consecutive printed fill line such as `........`. When that fill line crosses/interleaves a handwritten value like `C.N.5.4.2.9`, store `CN5429`.
+- If the value has only one or a few isolated dots and there is no long printed fill line, preserve those dots because they may be real registry-code punctuation. Examples: `CN.5429` stays `CN.5429`; `C.N.5.4.2.9` stays unchanged when no dotted fill line is present.
 - Preserve a single punctuation mark such as `.`, `/`, or `-` when OCR reads it inside the candidate value; it may be handwritten.
 - Remove internal spaces only. Do not invent punctuation. Examples: `CS 03027` -> `CS03027`; `CL 2017` -> `CL2017`; `CL.2017` -> `CL.2017`.
 - Reject partial numeric-only values such as `027`; leave blank or warn for manual review.
