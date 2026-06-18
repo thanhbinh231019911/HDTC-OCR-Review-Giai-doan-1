@@ -37,6 +37,31 @@ function saveManualOverride(caseId, token, fieldPath, newValue, reason) {
   return { ok: true, field_path: fieldPath, new_value: newValue };
 }
 
+function clearManualOverrides(caseId, token, fieldPaths, newValue, reasonContains) {
+  assertValidToken_(caseId, token);
+  const paths = (fieldPaths || []).map(String);
+  if (!paths.length) throw new Error('No override field paths supplied');
+  const sheet = getSheet(SHEETS.REVIEW_OVERRIDES);
+  const headers = getHeaders_(sheet);
+  if (sheet.getLastRow() < 2) return { ok: true, deleted: 0 };
+  const data = sheet.getRange(2, 1, sheet.getLastRow() - 1, headers.length).getValues();
+  const caseCol = headers.indexOf('Case ID');
+  const pathCol = headers.indexOf('Field Path');
+  const valueCol = headers.indexOf('New Value');
+  const reasonCol = headers.indexOf('Reason');
+  let deleted = 0;
+  for (let i = data.length - 1; i >= 0; i--) {
+    if (String(data[i][caseCol]) !== String(caseId)) continue;
+    if (paths.indexOf(String(data[i][pathCol])) < 0) continue;
+    if (newValue != null && String(data[i][valueCol]) !== String(newValue)) continue;
+    if (reasonContains && String(data[i][reasonCol]).indexOf(String(reasonContains)) < 0) continue;
+    sheet.deleteRow(i + 2);
+    deleted++;
+  }
+  logAudit(caseId, 'MANUAL_OVERRIDES_CLEARED', { field_paths: paths, deleted: deleted });
+  return { ok: true, deleted: deleted };
+}
+
 function normalizeManualOverrideValueForStorage_(value) {
   if (Object.prototype.toString.call(value) === '[object Date]') return formatDateVi_(value);
   return value == null ? '' : String(value);
