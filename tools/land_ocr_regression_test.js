@@ -446,6 +446,30 @@ assert.strictEqual(newA4Fields.usage_purpose, 'Dat o tai nong thon: 400,0 m2; Da
 assert.strictEqual(newA4Fields.usage_term, 'Dat o tai nong thon: Lau dai; Dat trong cay lau nam: Den thang 10/2045');
 assert.strictEqual(newA4Fields.usage_form, 'Su dung chung cua vo va chong');
 assert.strictEqual(newA4Fields.land_address, 'Xom Giua, xa Lien Son, tinh Phu Tho');
+const newA4FullAndLeftRegions = `
+[LAND_OCR_REGION layout=gcn_qsdd_qsh_tsglvd_page_1 score=12 region=full]
+2. Thong tin thua dat:
+a. Thua dat so: 100 ; to ban do so: 40
+b. Dien tich: 1441,9 m2
+c. Loai dat: Dat o tai nong thon: 400,0 m2; Dat trong cay lau nam: 1041,9 m2
+d. Thoi han su dung: Dat o tai nong thon: Lau dai; Dat trong cay lau nam: Den thang 10/2045
+d. Hinh thuc su dung: Su dung chung cua vo va chong
+e. Dia chi: Xom Giua, xa Lien Son, tinh Phu Tho
+3. Thong tin tai san gan lien voi dat: -/-
+[/LAND_OCR_REGION]
+[LAND_OCR_REGION layout=gcn_qsdd_qsh_tsglvd_page_1 score=12 region=left]
+2. Thong tin thua dat:
+a. Thua dat so: 100 ; to ban do so: 40
+b. Dien tich: 1441,9 m2
+c. Loai dat:
+d. Thoi han su dung:
+d. Hinh thuc su dung: Su dung chung cua vo va chong
+e. Dia chi: Xom Giua, xa Lien Son, tinh Phu Tho
+[/LAND_OCR_REGION]
+`;
+const newA4FullRegionFields = extractRealEstateIndexedLandFields_(newA4FullAndLeftRegions);
+assert.strictEqual(newA4FullRegionFields.usage_purpose, 'Dat o tai nong thon: 400,0 m2; Dat trong cay lau nam: 1041,9 m2');
+assert.strictEqual(newA4FullRegionFields.usage_term, 'Dat o tai nong thon: Lau dai; Dat trong cay lau nam: Den thang 10/2045');
 assert.strictEqual(classifyLandCertificatePageText_('4. So do thua dat, tai san gan lien voi dat\\n5. Ghi chu: -/-\\n6. Nhung thay doi sau khi cap Giay chung nhan').layout, 'gcn_qsdd_qsh_tsglvd_page_2');
 assert.strictEqual(classifyLandCertificatePageText_('IV. Nhung thay doi sau khi cap Giay chung nhan\\nNoi dung thay doi va co so phap ly').layout, 'gcn_qsdd_qsh_nha_o_va_tsk_change');
 assert.strictEqual(
@@ -471,6 +495,11 @@ assert.strictEqual(fileMeta.fileName, 'asset__bia 1-1.jpg');
 const dataMergeContext = { console };
 vm.createContext(dataMergeContext);
 vm.runInContext(fs.readFileSync('DataMergeService.gs', 'utf8'), dataMergeContext);
+vm.runInContext(fs.readFileSync('ReviewService.gs', 'utf8'), dataMergeContext);
+const productionA4FullRegionFields = dataMergeContext.extractRealEstateIndexedLandFields_(newA4FullAndLeftRegions);
+assert.strictEqual(productionA4FullRegionFields._quality.reason, 'vision_region_full');
+assert.strictEqual(productionA4FullRegionFields.usage_purpose, 'Dat o tai nong thon: 400,0 m2; Dat trong cay lau nam: 1041,9 m2');
+assert.strictEqual(productionA4FullRegionFields.usage_term, 'Dat o tai nong thon: Lâu dài; Dat trong cay lau nam: Den thang 10/2045');
 
 const newA4PdfText = `
 [LAND_OCR_REGION layout=gcn_qsdd_qsh_tsglvd_page_1 score=11 region=full]
@@ -618,6 +647,17 @@ assert.strictEqual(actualA4Review.assets[0].owner_id_document_type.final_value, 
 assert.strictEqual(actualA4Review.assets[0].real_estate.usage_purpose.final_value, 'Đất ở tại nông thôn: 400,0 m2; Đất trồng cây lâu năm: 1041,9 m2');
 assert.strictEqual(actualA4Review.assets[0].real_estate.usage_term.final_value, 'Đất ở tại nông thôn: Lâu dài; Đất trồng cây lâu năm: Đến tháng 10/2045');
 assert.strictEqual(actualA4Review.assets[0].real_estate.post_issue_changes.final_value, '');
+assert.deepStrictEqual(
+  JSON.parse(JSON.stringify(dataMergeContext.extractA4LandFieldsFromFocusedCrop_(
+    'c. Loại đất: Đất ở tại nông thôn: 400,0 m2; Đất trồng cây lâu năm: 1041,9 m2\n' +
+    'd. Thời hạn sử dụng: Đất ở tại nông thôn: Lâu dài; Đất trồng cây lâu năm: Đến tháng 10/2045\n' +
+    'đ. Hình thức sử dụng: Sử dụng chung của vợ và chồng'
+  ))),
+  {
+    usage_purpose: 'Đất ở tại nông thôn: 400,0 m2; Đất trồng cây lâu năm: 1041,9 m2',
+    usage_term: 'Đất ở tại nông thôn: Lâu dài; Đất trồng cây lâu năm: Đến tháng 10/2045'
+  }
+);
 assert.strictEqual(
   dataMergeContext.normalizeVietnameseAgencyNameClean_('Chi nh\u00e1nh v\u0103n ph\u00f2ng \u0111\u0103ng k\u00fd \u0111\u1ea5t \u0111ai l\u01b0\u01a1ng s\u01a1n'),
   'Chi nh\u00e1nh V\u0103n ph\u00f2ng \u0111\u0103ng k\u00fd \u0111\u1ea5t \u0111ai L\u01b0\u01a1ng S\u01a1n'

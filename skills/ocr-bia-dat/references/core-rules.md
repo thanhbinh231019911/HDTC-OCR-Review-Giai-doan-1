@@ -65,9 +65,11 @@ Crop/OCR policy:
 - Extract `gcn_qsdd` land fields only from `gcn_qsdd_land`.
 - Extract `gcn_qsdd_qsh_nha_o_va_tsk` land fields only from `gcn_qsdd_qsh_nha_o_va_tsk_land`.
 - Extract `gcn_qsdd_qsh_tsglvd` land fields only from `gcn_qsdd_qsh_tsglvd_page_1`.
+- For a single-page A4 `gcn_qsdd_qsh_tsglvd_page_1`, prefer its full-page OCR region over left/right partial regions. Labels such as `c. Loai dat` and `d. Thoi han su dung` may begin on the left while their values continue across the page.
 - Extract post-issue changes only from `gcn_qsdd_change`, `gcn_qsdd_qsh_nha_o_va_tsk_change`, or `gcn_qsdd_qsh_tsglvd_page_2`.
 - Extract registry number only from the region around `So vao so cap GCN/Giay chung nhan`; never infer it from the printed certificate serial.
 - If no trusted page/region is available, leave the affected field blank and add a manual-review warning instead of falling back to whole-image OCR.
+- When the printed issue-date line is clear but handwritten day/month digits are missed by full-page OCR, run a field-specific enlarged crop around that line and write only the certificate `issue_date` field.
 
 Review display policy:
 

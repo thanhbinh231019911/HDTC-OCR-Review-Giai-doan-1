@@ -1179,7 +1179,10 @@ function selectBestLandPlotText_(text) {
   best.score = scoreLandPlotTextCandidate_(best.text);
   candidates.forEach(function(candidate) {
     const score = scoreLandPlotTextCandidate_(candidate.text);
-    if (score > best.score) {
+    const preferNewA4FullRegion = score === best.score &&
+      candidate.layout === 'gcn_qsdd_qsh_tsglvd_page_1' &&
+      candidate.reason === 'vision_region_full';
+    if (score > best.score || preferNewA4FullRegion) {
       best = {
         text: candidate.text,
         score: score,
@@ -1247,6 +1250,7 @@ function buildLandPlotTextCandidates_(text) {
 function extractLandOcrRegionMarkedTexts_(text) {
   const candidates = [];
   const nonFullCandidates = [];
+  const newA4FullCandidates = [];
   const marker = /\[LAND_OCR_REGION\s+([^\]]*)\]([\s\S]*?)\[\/LAND_OCR_REGION\]/g;
   let match;
   while ((match = marker.exec(String(text || ''))) !== null) {
@@ -1260,10 +1264,14 @@ function extractLandOcrRegionMarkedTexts_(text) {
       reason: 'vision_region_' + (attrs.region || ''),
       layout: layout
     });
+    if (layout === 'gcn_qsdd_qsh_tsglvd_page_1' && attrs.region === 'full') {
+      newA4FullCandidates.push(candidates[candidates.length - 1]);
+    }
     if (attrs.region && attrs.region !== 'full') {
       nonFullCandidates.push(candidates[candidates.length - 1]);
     }
   }
+  if (newA4FullCandidates.length) return newA4FullCandidates;
   return nonFullCandidates.length ? nonFullCandidates : candidates;
 }
 

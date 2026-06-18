@@ -126,6 +126,7 @@ function suggestLandRegistryCrop(caseId, token, fileId) {
   const apiKey = PropertiesService.getScriptProperties().getProperty(CONFIG.CLOUD_VISION_API_KEY_PROPERTY);
   if (!apiKey) return { ok: false, reason: 'MISSING_CLOUD_VISION_API_KEY' };
   const file = DriveApp.getFileById(fileId);
+  if (isPdfMime_(file.getMimeType())) return { ok: false, reason: 'PDF_PREVIEW_FALLBACK' };
   const blob = file.getBlob();
   const contentType = blob.getContentType() || 'image/jpeg';
   if (contentType.indexOf('image/') !== 0) return { ok: false, reason: 'NOT_IMAGE' };
@@ -176,6 +177,56 @@ function ocrLandRegistryCrop(caseId, token, dataUrl) {
   const text = annotation && annotation.text || '';
   const registry = extractLandRegistryNumberFromCropText_(text);
   return { registry_number: registry, raw_text: text, reason: registry ? 'OK' : 'NO_FULL_REGISTRY_NUMBER' };
+}
+
+function ocrA4LandCertificateCrop(caseId, token, dataUrl, cropType) {
+  assertValidToken_(caseId, token);
+  const apiKey = PropertiesService.getScriptProperties().getProperty(CONFIG.CLOUD_VISION_API_KEY_PROPERTY);
+  if (!apiKey) return { issue_date: '', usage_purpose: '', usage_term: '', raw_text: '', reason: 'MISSING_CLOUD_VISION_API_KEY' };
+  const match = String(dataUrl || '').match(/^data:image\/[a-zA-Z0-9.+-]+;base64,(.+)$/);
+  if (!match) return { issue_date: '', usage_purpose: '', usage_term: '', raw_text: '', reason: 'INVALID_IMAGE_DATA' };
+  const response = withRetry('Vision OCR A4 certificate crop ' + String(cropType || ''), function() {
+    const res = UrlFetchApp.fetch('https://vision.googleapis.com/v1/images:annotate?key=' + encodeURIComponent(apiKey), {
+      method: 'post',
+      contentType: 'application/json',
+      payload: JSON.stringify({
+        requests: [{
+          image: { content: match[1] },
+          features: [{ type: 'DOCUMENT_TEXT_DETECTION' }],
+          imageContext: { languageHints: ['vi', 'en'] }
+        }]
+      }),
+      muteHttpExceptions: true
+    });
+    if (res.getResponseCode() >= 300) throw new Error(res.getContentText());
+    return JSON.parse(res.getContentText());
+  }, 2);
+  const annotation = response.responses && response.responses[0] && response.responses[0].fullTextAnnotation;
+  const text = annotation && annotation.text || '';
+  const result = {
+    issue_date: '',
+    usage_purpose: '',
+    usage_term: '',
+    raw_text: text,
+    reason: text ? 'OK' : 'NO_TEXT'
+  };
+  if (cropType === 'issue_date' || !cropType) {
+    result.issue_date = extractRealEstateIssueDateFromPlainText_(text);
+  }
+  if (cropType === 'land_fields' || !cropType) {
+    const fields = extractA4LandFieldsFromFocusedCrop_(text);
+    result.usage_purpose = fields.usage_purpose || '';
+    result.usage_term = fields.usage_term || '';
+  }
+  return result;
+}
+
+function extractA4LandFieldsFromFocusedCrop_(text) {
+  const source = String(text || '');
+  return {
+    usage_purpose: cleanupIndexedCertificateValue_(findSemanticLandFieldValue_(source, ['loai dat'])),
+    usage_term: normalizeRealEstateUsageTerm_(cleanupIndexedCertificateValue_(findSemanticLandFieldValue_(source, ['thoi han su dung'])))
+  };
 }
 
 function saveAutoOcrFieldValue(caseId, token, fieldPath, newValue, source) {
@@ -576,6 +627,20 @@ function getCaseImagePreview(caseId, token, fileId) {
   if (!allowed) throw new Error('File is not part of this case');
   const file = DriveApp.getFileById(fileId);
   const mimeType = file.getMimeType();
+  if (isPdfMime_(mimeType)) {
+    const pdfPreview = getDrivePdfFirstPagePreviewBlob_(fileId, file.getName());
+    if (pdfPreview) {
+      const previewBlob = resizeImageBlobForReview_(pdfPreview);
+      return {
+        file_id: fileId,
+        file_name: file.getName(),
+        mime_type: previewBlob.getContentType() || 'image/jpeg',
+        is_image: true,
+        is_pdf_preview: true,
+        data_url: 'data:' + (previewBlob.getContentType() || 'image/jpeg') + ';base64,' + Utilities.base64Encode(previewBlob.getBytes())
+      };
+    }
+  }
   if (mimeType.indexOf('image/') !== 0) {
     return {
       file_id: fileId,
@@ -593,6 +658,31 @@ function getCaseImagePreview(caseId, token, fileId) {
     is_image: true,
     data_url: 'data:' + (blob.getContentType() || mimeType) + ';base64,' + Utilities.base64Encode(blob.getBytes())
   };
+}
+
+function getDrivePdfFirstPagePreviewBlob_(fileId, fileName) {
+  try {
+    const metadata = Drive.Files.get(fileId);
+    let thumbnailUrl = metadata && metadata.thumbnailLink || '';
+    if (!thumbnailUrl) {
+      thumbnailUrl = 'https://drive.google.com/thumbnail?id=' + encodeURIComponent(fileId) + '&sz=w2400';
+    } else {
+      thumbnailUrl = thumbnailUrl
+        .replace(/=s\d+(?:-c)?$/i, '=s2400')
+        .replace(/([?&])sz=[^&]+/i, '$1sz=w2400');
+    }
+    const response = UrlFetchApp.fetch(thumbnailUrl, {
+      headers: { Authorization: 'Bearer ' + ScriptApp.getOAuthToken() },
+      muteHttpExceptions: true
+    });
+    if (response.getResponseCode() >= 300) return null;
+    const blob = response.getBlob();
+    if (String(blob.getContentType() || '').indexOf('image/') !== 0) return null;
+    return blob.setName((fileName || 'certificate') + '_page_1_preview.jpg');
+  } catch (err) {
+    console.warn('Cannot create PDF first-page preview for ' + fileId + ': ' + err);
+    return null;
+  }
 }
 
 function getCaseOcrText(caseId, token, fileId, fileName) {
