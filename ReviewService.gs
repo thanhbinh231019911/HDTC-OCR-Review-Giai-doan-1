@@ -285,6 +285,7 @@ function saveAutoOcrFieldValue(caseId, token, fieldPath, newValue, source) {
   let data = getLatestFinalData(caseId) || getLatestExtractedData(caseId);
   if (!data) throw new Error('No review data for case ' + caseId);
   data = applyOverridesToReviewJson(data, getOverrides(caseId));
+  repairReviewDataFromFullOcr_(data, caseId);
   const field = getByPath(data, fieldPath);
   if (!field || typeof field !== 'object' || !field.hasOwnProperty('final_value')) {
     throw new Error('Field path is not editable: ' + fieldPath);
