@@ -1,30 +1,30 @@
-function buildReviewJson(caseId, formData, aiData, ocrResults) {
+﻿function buildReviewJson(caseId, formData, aiData, ocrResults) {
   const normalized = normalizeAiData_(aiData || {}, ocrResults || []);
   const reviewJson = {
     schema_version: '1.0.0',
     case_id: caseId,
     contract_info: {
-      review_email: makeField('Email nhận Review', '', formData.reviewEmail, '', 'FORM', ''),
-      asset_type: makeField('Loại tài sản', '', formData.assetType, '', 'FORM', ''),
-      contract_type: makeField('Loại hợp đồng', '', formData.contractType, '', 'FORM', ''),
-      asset_count: makeField('Số lượng tài sản bảo đảm', '', formData.assetCount, '', 'FORM', ''),
-      bank_signer: makeField('Người ký hợp đồng tại ngân hàng', '', formData.bankSigner, '', 'FORM', ''),
-      dispute_court: makeField('Tòa án xử lý tranh chấp', '', formData.disputeCourt, '', 'FORM', ''),
-      valuation_amount: makeField('Giá trị định giá', '', formData.valuationAmount, '', 'FORM', ''),
-      valuation_land_amount: makeField('Giá trị đất', '', '', '', 'CONTRACT_DRAFT', ''),
-      valuation_house_amount: makeField('Giá trị nhà', '', '', '', 'CONTRACT_DRAFT', ''),
-      valuation_total_amount: makeField('Tổng giá trị tài sản', '', '', '', 'CONTRACT_DRAFT', ''),
-      contract_draft_saved: makeField('Đã lưu thông tin soạn thảo hợp đồng', '', '', '', 'CONTRACT_DRAFT', ''),
-      cif_customer: makeField('CIF khách hàng', '', '', '', 'CONTRACT_DRAFT', ''),
-      contract_date: makeField('Ngày hợp đồng', '', '', '', 'CONTRACT_DRAFT', ''),
-      contract_sequence: makeField('Số thứ tự hợp đồng', '', '', '', 'CONTRACT_DRAFT', ''),
-      actual_asset_differs_from_certificate: makeField('Tài sản thực tế có khác thông tin trên bìa đất không', '', '', '', 'CONTRACT_DRAFT', ''),
-      actual_asset_difference_description: makeField('Mô tả phần sai khác giữa tài sản thực tế và bìa đất', '', '', '', 'CONTRACT_DRAFT', ''),
-      actual_house_asset: makeField('Tài sản là nhà thực tế nếu sai khác với bìa đất', '', '', '', 'CONTRACT_DRAFT', ''),
-      requires_template_5: makeField('Cần lập thêm mẫu 5', '', '', '', 'TEMPLATE_DECISION', ''),
-      reason_requires_template_5: makeField('Lý do cần lập thêm mẫu 5', '', '', '', 'TEMPLATE_DECISION', ''),
-      template_4_code: makeField('Mã mẫu 4 dự kiến', '', '', '', 'TEMPLATE_DECISION', ''),
-      template_5_code: makeField('Mã mẫu 5 dự kiến', '', '', '', 'TEMPLATE_DECISION', '')
+      review_email: makeField('Email nháº­n Review', '', formData.reviewEmail, '', 'FORM', ''),
+      asset_type: makeField('Loáº¡i tÃ i sáº£n', '', formData.assetType, '', 'FORM', ''),
+      contract_type: makeField('Loáº¡i há»£p Ä‘á»“ng', '', formData.contractType, '', 'FORM', ''),
+      asset_count: makeField('Sá»‘ lÆ°á»£ng tÃ i sáº£n báº£o Ä‘áº£m', '', formData.assetCount, '', 'FORM', ''),
+      bank_signer: makeField('NgÆ°á»i kÃ½ há»£p Ä‘á»“ng táº¡i ngÃ¢n hÃ ng', '', formData.bankSigner, '', 'FORM', ''),
+      dispute_court: makeField('TÃ²a Ã¡n xá»­ lÃ½ tranh cháº¥p', '', formData.disputeCourt, '', 'FORM', ''),
+      valuation_amount: makeField('GiÃ¡ trá»‹ Ä‘á»‹nh giÃ¡', '', formData.valuationAmount, '', 'FORM', ''),
+      valuation_land_amount: makeField('GiÃ¡ trá»‹ Ä‘áº¥t', '', '', '', 'CONTRACT_DRAFT', ''),
+      valuation_house_amount: makeField('GiÃ¡ trá»‹ nhÃ ', '', '', '', 'CONTRACT_DRAFT', ''),
+      valuation_total_amount: makeField('Tá»•ng giÃ¡ trá»‹ tÃ i sáº£n', '', '', '', 'CONTRACT_DRAFT', ''),
+      contract_draft_saved: makeField('ÄÃ£ lÆ°u thÃ´ng tin soáº¡n tháº£o há»£p Ä‘á»“ng', '', '', '', 'CONTRACT_DRAFT', ''),
+      cif_customer: makeField('CIF khÃ¡ch hÃ ng', '', '', '', 'CONTRACT_DRAFT', ''),
+      contract_date: makeField('NgÃ y há»£p Ä‘á»“ng', '', '', '', 'CONTRACT_DRAFT', ''),
+      contract_sequence: makeField('Sá»‘ thá»© tá»± há»£p Ä‘á»“ng', '', '', '', 'CONTRACT_DRAFT', ''),
+      actual_asset_differs_from_certificate: makeField('TÃ i sáº£n thá»±c táº¿ cÃ³ khÃ¡c thÃ´ng tin trÃªn bÃ¬a Ä‘áº¥t khÃ´ng', '', '', '', 'CONTRACT_DRAFT', ''),
+      actual_asset_difference_description: makeField('MÃ´ táº£ pháº§n sai khÃ¡c giá»¯a tÃ i sáº£n thá»±c táº¿ vÃ  bÃ¬a Ä‘áº¥t', '', '', '', 'CONTRACT_DRAFT', ''),
+      actual_house_asset: makeField('TÃ i sáº£n lÃ  nhÃ  thá»±c táº¿ náº¿u sai khÃ¡c vá»›i bÃ¬a Ä‘áº¥t', '', '', '', 'CONTRACT_DRAFT', ''),
+      requires_template_5: makeField('Cáº§n láº­p thÃªm máº«u 5', '', '', '', 'TEMPLATE_DECISION', ''),
+      reason_requires_template_5: makeField('LÃ½ do cáº§n láº­p thÃªm máº«u 5', '', '', '', 'TEMPLATE_DECISION', ''),
+      template_4_code: makeField('MÃ£ máº«u 4 dá»± kiáº¿n', '', '', '', 'TEMPLATE_DECISION', ''),
+      template_5_code: makeField('MÃ£ máº«u 5 dá»± kiáº¿n', '', '', '', 'TEMPLATE_DECISION', '')
     },
     secured_parties: normalized.secured_parties,
     obligors: normalized.obligors,
@@ -150,7 +150,7 @@ function clearInvalidIdentityIssueDateValue_(field) {
   if (!/^\d{1,2}[\/.\-]\d{1,2}[\/.\-]\d{2,4}$/.test(value)) return;
   if (normalizeDateValue_(value)) return;
   field.ai_value = '';
-  field.final_value = 'Không rõ, đề nghị sửa thủ công';
+  field.final_value = 'KhÃ´ng rÃµ, Ä‘á» nghá»‹ sá»­a thá»§ cÃ´ng';
   field.source = field.source || 'OCR_DATE_INVALID';
   field.confidence = '';
 }
@@ -227,13 +227,13 @@ function repairAssetCertificateCodesInReviewJson(reviewJson, fullAssetOcrText) {
       re.registry_number.final_value = '';
       re.registry_number.source = re.registry_number.source || 'OCR_ASSET_TEXT_REGISTRY_REJECTED_CERTIFICATE_CODE';
       re.registry_number.confidence = '';
-      addReviewWarningOnce_(reviewJson, 'assets[].real_estate.registry_number', 'Số vào sổ đang bị nhận nhầm thành số GCN; cần kiểm tra OCR dòng "Số vào sổ cấp GCN".');
+      addReviewWarningOnce_(reviewJson, 'assets[].real_estate.registry_number', 'Sá»‘ vÃ o sá»• Ä‘ang bá»‹ nháº­n nháº§m thÃ nh sá»‘ GCN; cáº§n kiá»ƒm tra OCR dÃ²ng "Sá»‘ vÃ o sá»• cáº¥p GCN".');
     } else if (isInvalidRegistryNumber_(currentRegistry)) {
       re.registry_number.ai_value = '';
       re.registry_number.final_value = '';
       re.registry_number.source = re.registry_number.source || 'OCR_ASSET_TEXT_REGISTRY_REJECTED_PARTIAL_CODE';
       re.registry_number.confidence = '';
-      addReviewWarningOnce_(reviewJson, 'assets[].real_estate.registry_number', 'Số vào sổ OCR chỉ đọc được một phần; cần kiểm tra dòng "Số vào sổ cấp GCN/Giấy chứng nhận" trên ảnh gốc.');
+      addReviewWarningOnce_(reviewJson, 'assets[].real_estate.registry_number', 'Sá»‘ vÃ o sá»• OCR chá»‰ Ä‘á»c Ä‘Æ°á»£c má»™t pháº§n; cáº§n kiá»ƒm tra dÃ²ng "Sá»‘ vÃ o sá»• cáº¥p GCN/Giáº¥y chá»©ng nháº­n" trÃªn áº£nh gá»‘c.');
     }
   });
   return reviewJson;
@@ -282,7 +282,7 @@ function repairAssetPostIssueChangesInReviewJson(reviewJson, fullAssetOcrText) {
       field.confidence = postIssue.status === 'partial_or_unclear' ? 0.55 : 0.82;
     }
     if (postIssue.status === 'partial_or_unclear') {
-      addReviewWarningOnce_(reviewJson, 'assets[].real_estate.post_issue_changes', 'Mục IV. Những thay đổi sau khi cấp Giấy chứng nhận có chữ viết tay/mờ; OCR chỉ đọc được một phần, đề nghị kiểm tra kỹ trên ảnh gốc.');
+      addReviewWarningOnce_(reviewJson, 'assets[].real_estate.post_issue_changes', 'Má»¥c IV. Nhá»¯ng thay Ä‘á»•i sau khi cáº¥p Giáº¥y chá»©ng nháº­n cÃ³ chá»¯ viáº¿t tay/má»; OCR chá»‰ Ä‘á»c Ä‘Æ°á»£c má»™t pháº§n, Ä‘á» nghá»‹ kiá»ƒm tra ká»¹ trÃªn áº£nh gá»‘c.');
     }
   });
   return reviewJson;
@@ -330,7 +330,7 @@ function clearUntrustedLandIndexedField_(reviewJson, field, fieldPath) {
   field.final_value = '';
   field.source = 'OCR_REJECTED_NO_TRUSTED_LAND_BLOCK';
   field.confidence = '';
-  addReviewWarningOnce_(reviewJson, fieldPath, 'Không tìm được block II. Thửa đất đủ tin cậy; trường này được để trống để tránh lấy nhầm dữ liệu từ trang khác.');
+  addReviewWarningOnce_(reviewJson, fieldPath, 'KhÃ´ng tÃ¬m Ä‘Æ°á»£c block II. Thá»­a Ä‘áº¥t Ä‘á»§ tin cáº­y; trÆ°á»ng nÃ y Ä‘Æ°á»£c Ä‘á»ƒ trá»‘ng Ä‘á»ƒ trÃ¡nh láº¥y nháº§m dá»¯ liá»‡u tá»« trang khÃ¡c.');
 }
 
 function replaceFromTrustedLandBlock_(field, replacement) {
@@ -358,7 +358,7 @@ function clearUnsafeLandField_(reviewJson, field, fieldPath, predicate, replacem
   field.final_value = '';
   field.source = 'OCR_REJECTED_UNTRUSTED_LAND_CONTEXT';
   field.confidence = '';
-  addReviewWarningOnce_(reviewJson, fieldPath, 'Trường bìa đất có dấu hiệu lấy nhầm từ trang/chữ khác; cần kiểm tra lại ảnh gốc hoặc khoanh vùng OCR thủ công.');
+  addReviewWarningOnce_(reviewJson, fieldPath, 'TrÆ°á»ng bÃ¬a Ä‘áº¥t cÃ³ dáº¥u hiá»‡u láº¥y nháº§m tá»« trang/chá»¯ khÃ¡c; cáº§n kiá»ƒm tra láº¡i áº£nh gá»‘c hoáº·c khoanh vÃ¹ng OCR thá»§ cÃ´ng.');
 }
 
 function isUnsafeLandAddressValue_(value) {
@@ -560,7 +560,7 @@ function hasOtherLandFieldLabel_(normalizedText) {
     text.indexOf('muc dich su dung') >= 0 ||
     text.indexOf('thoi han su dung') >= 0 ||
     text.indexOf('nguon goc su dung') >= 0 ||
-    /\b[0-9]+(?:[,.][0-9]+)?\s*m(?:2|²)?\b/i.test(text);
+    /\b[0-9]+(?:[,.][0-9]+)?\s*m(?:2|Â²)?\b/i.test(text);
 }
 
 function normalizeRealEstateUsageTerm_(value) {
@@ -586,21 +586,21 @@ function extractAreaWordsFromCertificateText_(text) {
   text = String(text || '');
   if (!text) return '';
   const patterns = [
-    /\(?\s*B[ăa]ng\s+ch[ữu]\s*:\s*([^\)\r\n]+)\)?/i,
-    /\(?\s*Bằng\s+chữ\s*:\s*([^\)\r\n]+)\)?/i,
+    /\(?\s*B[Äƒa]ng\s+ch[á»¯u]\s*:\s*([^\)\r\n]+)\)?/i,
+    /\(?\s*Báº±ng\s+chá»¯\s*:\s*([^\)\r\n]+)\)?/i,
     /\(?\s*Bang\s+chu\s*:\s*([^\)\r\n]+)\)?/i
   ];
   for (let i = 0; i < patterns.length; i++) {
     const match = text.match(patterns[i]);
-    if (match && match[1]) return '(Bằng chữ: ' + String(match[1]).replace(/\s+/g, ' ').trim() + ')';
+    if (match && match[1]) return '(Báº±ng chá»¯: ' + String(match[1]).replace(/\s+/g, ' ').trim() + ')';
   }
   const lines = text.split(/\r?\n/);
   for (let j = 0; j < lines.length; j++) {
     const current = removeVietnameseAccents_(lines[j]).toLowerCase();
     if (current.indexOf('dien tich') < 0) continue;
     const joined = [lines[j], lines[j + 1] || '', lines[j + 2] || ''].join(' ');
-    const inline = joined.match(/\(?\s*(?:B[ăa]ng\s+ch[ữu]|Bằng\s+chữ|Bang\s+chu)\s*:\s*([^\)]+)\)?/i);
-    if (inline && inline[1]) return '(Bằng chữ: ' + String(inline[1]).replace(/\s+/g, ' ').trim() + ')';
+    const inline = joined.match(/\(?\s*(?:B[Äƒa]ng\s+ch[á»¯u]|Báº±ng\s+chá»¯|Bang\s+chu)\s*:\s*([^\)]+)\)?/i);
+    if (inline && inline[1]) return '(Báº±ng chá»¯: ' + String(inline[1]).replace(/\s+/g, ' ').trim() + ')';
   }
   return '';
 }
@@ -649,42 +649,42 @@ function normalizePerson_(person, idHintsByFile, ocrTextByFile) {
   person = person || {};
   const normalized = {
     roles: person.role_hints || [],
-    full_name: fieldFromAi_('Họ và tên', person.full_name),
-    date_of_birth: fieldFromAi_('Ngày sinh', person.date_of_birth),
-    gender: fieldFromAi_('Giới tính', person.gender),
-    nationality: fieldFromAi_('Quốc tịch', person.nationality),
-    id_document_type: fieldFromAi_('Loại giấy tờ tùy thân', person.id_document_type),
-    id_number: fieldFromAi_('Số CCCD', person.id_number),
-    id_issue_date: fieldFromAi_('Ngày cấp CCCD', person.id_issue_date),
-    id_issue_place: fieldFromAi_('Nơi cấp CCCD', person.id_issue_place),
-    id_expiry_date: fieldFromAi_('Ngày hết hạn CCCD', person.id_expiry_date),
-    permanent_address: fieldFromAi_('Địa chỉ thường trú', person.permanent_address),
-    origin_place: fieldFromAi_('Quê quán', person.origin_place),
-    vneid_current_address: fieldFromAi_('Địa chỉ cư trú mới từ VNeID', person.vneid_current_address),
-    current_address_final: makeField('Địa chỉ sử dụng cuối cùng', '', '', '', '', ''),
-    marital_status: fieldFromAi_('Tình trạng hôn nhân', person.marital_status),
+    full_name: fieldFromAi_('Há» vÃ  tÃªn', person.full_name),
+    date_of_birth: fieldFromAi_('NgÃ y sinh', person.date_of_birth),
+    gender: fieldFromAi_('Giá»›i tÃ­nh', person.gender),
+    nationality: fieldFromAi_('Quá»‘c tá»‹ch', person.nationality),
+    id_document_type: fieldFromAi_('Loáº¡i giáº¥y tá» tÃ¹y thÃ¢n', person.id_document_type),
+    id_number: fieldFromAi_('Sá»‘ CCCD', person.id_number),
+    id_issue_date: fieldFromAi_('NgÃ y cáº¥p CCCD', person.id_issue_date),
+    id_issue_place: fieldFromAi_('NÆ¡i cáº¥p CCCD', person.id_issue_place),
+    id_expiry_date: fieldFromAi_('NgÃ y háº¿t háº¡n CCCD', person.id_expiry_date),
+    permanent_address: fieldFromAi_('Äá»‹a chá»‰ thÆ°á»ng trÃº', person.permanent_address),
+    origin_place: fieldFromAi_('QuÃª quÃ¡n', person.origin_place),
+    vneid_current_address: fieldFromAi_('Äá»‹a chá»‰ cÆ° trÃº má»›i tá»« VNeID', person.vneid_current_address),
+    current_address_final: makeField('Äá»‹a chá»‰ sá»­ dá»¥ng cuá»‘i cÃ¹ng', '', '', '', '', ''),
+    marital_status: fieldFromAi_('TÃ¬nh tráº¡ng hÃ´n nhÃ¢n', person.marital_status),
     spouse: {
-      full_name: fieldFromAi_('Họ tên vợ/chồng', person.spouse && person.spouse.full_name),
-      id_number: fieldFromAi_('CCCD vợ/chồng', person.spouse && person.spouse.id_number)
+      full_name: fieldFromAi_('Há» tÃªn vá»£/chá»“ng', person.spouse && person.spouse.full_name),
+      id_number: fieldFromAi_('CCCD vá»£/chá»“ng', person.spouse && person.spouse.id_number)
     },
     marriage_registration: normalizeNestedFields_(person.marriage_registration || {}, {
-      wife_name: 'Họ tên vợ',
-      husband_name: 'Họ tên chồng',
-      wife_id_number: 'CCCD vợ',
-      husband_id_number: 'CCCD chồng',
-      registration_date: 'Ngày đăng ký kết hôn',
-      registration_place: 'Nơi đăng ký kết hôn'
+      wife_name: 'Há» tÃªn vá»£',
+      husband_name: 'Há» tÃªn chá»“ng',
+      wife_id_number: 'CCCD vá»£',
+      husband_id_number: 'CCCD chá»“ng',
+      registration_date: 'NgÃ y Ä‘Äƒng kÃ½ káº¿t hÃ´n',
+      registration_place: 'NÆ¡i Ä‘Äƒng kÃ½ káº¿t hÃ´n'
     }),
     marital_status_certificate: normalizeNestedFields_(person.marital_status_certificate || {}, {
-      full_name: 'Họ tên trên GXN hôn nhân',
-      id_number: 'CCCD trên GXN hôn nhân',
-      marital_status: 'Tình trạng hôn nhân theo GXN',
-      issuing_authority: 'Cơ quan xác nhận',
-      confirmation_date: 'Ngày xác nhận'
+      full_name: 'Há» tÃªn trÃªn GXN hÃ´n nhÃ¢n',
+      id_number: 'CCCD trÃªn GXN hÃ´n nhÃ¢n',
+      marital_status: 'TÃ¬nh tráº¡ng hÃ´n nhÃ¢n theo GXN',
+      issuing_authority: 'CÆ¡ quan xÃ¡c nháº­n',
+      confirmation_date: 'NgÃ y xÃ¡c nháº­n'
     })
   };
   normalized.relationship = makeField(
-    'Mối quan hệ',
+    'Má»‘i quan há»‡',
     normalized.marital_status.final_value || '',
     '',
     '',
@@ -709,7 +709,7 @@ function normalizeAsset_(asset, assetOcrText) {
   const ownerDocType = asset.owner_id_document_type || realEstateRaw.owner_id_document_type;
   const ownerAddress = asset.owner_address || realEstateRaw.owner_address;
   const normalized = {
-    asset_type: fieldFromAi_('Loại tài sản', asset.asset_type),
+    asset_type: fieldFromAi_('Loáº¡i tÃ i sáº£n', asset.asset_type),
     certificate_title: fieldFromAi_('T?n Gi?y ch?ng nh?n', asset.certificate_title || realEstateRaw.certificate_title),
     owner_name: fieldFromAi_('Ch? s? h?u/ch? s? d?ng', ownerValue),
     owner_identity_summary: makeField('Ch? s? h?u/ch? s? d?ng v? gi?y t? t?y th?n', '', '', '', '', ''),
@@ -779,7 +779,7 @@ function enrichAssetFromOcr_(asset, text) {
     asset.real_estate.certificate_number.confidence = asset.real_estate.certificate_number.confidence || 0.78;
   } else if (isRegistryNumberLike_(asset.real_estate.certificate_number.final_value || asset.real_estate.certificate_number.ai_value)) {
     asset.real_estate.certificate_number.ai_value = '';
-    asset.real_estate.certificate_number.final_value = 'Không rõ, đề nghị sửa thủ công';
+    asset.real_estate.certificate_number.final_value = 'KhÃ´ng rÃµ, Ä‘á» nghá»‹ sá»­a thá»§ cÃ´ng';
     asset.real_estate.certificate_number.source = asset.real_estate.certificate_number.source || 'OCR_ASSET_TEXT';
     asset.real_estate.certificate_number.confidence = '';
   }
@@ -934,7 +934,7 @@ function extractRealEstateIndexedLandFields_(text) {
   const block = selected.text;
   const items = extractIndexedCertificateItems_(block || text);
   const source = block || text;
-  if (selected.layout === 'new_a4_page_1') {
+  if (selected.layout === 'gcn_qsdd_qsh_tsglvd_page_1' && normalizeCertificateIndexLine_(source).indexOf('2 thong tin thua dat') >= 0) {
     return extractNewA4RealEstateLandFields_(source, selected);
   }
   const semantic = {
@@ -987,7 +987,7 @@ function extractNewA4RealEstateLandFields_(source, selected) {
 
 function selectBestLandPlotText_(text) {
   const candidates = buildLandPlotTextCandidates_(text);
-  let best = { text: extractLandPlotIndexedBlock_(text), score: 0, trusted: false, reason: 'legacy_block', layout: 'old_4_page_land' };
+  let best = { text: extractLandPlotIndexedBlock_(text), score: 0, trusted: false, reason: 'legacy_block', layout: 'gcn_qsdd_qsh_nha_o_va_tsk_land' };
   best.score = scoreLandPlotTextCandidate_(best.text);
   candidates.forEach(function(candidate) {
     const score = scoreLandPlotTextCandidate_(candidate.text);
@@ -1037,7 +1037,7 @@ function buildLandPlotTextCandidates_(text) {
     candidates.push({
       text: out.join('\n'),
       reason: 'line_anchor_' + i,
-      layout: isNewA4Anchor ? 'new_a4_page_1' : 'old_4_page_land'
+      layout: isNewA4Anchor ? 'gcn_qsdd_qsh_tsglvd_page_1' : classifyOldStyleLandLayout_(out.join('\n'))
     });
   }
   const compact = source.replace(/\r?\n+/g, ' ').replace(/\s+/g, ' ').trim();
@@ -1048,7 +1048,7 @@ function buildLandPlotTextCandidates_(text) {
     candidates.push({
       text: compact,
       reason: 'compact_anchor_' + anchor,
-      layout: anchor === '2 thong tin thua dat' ? 'new_a4_page_1' : 'old_4_page_land'
+      layout: anchor === '2 thong tin thua dat' ? 'gcn_qsdd_qsh_tsglvd_page_1' : classifyOldStyleLandLayout_(compact)
     });
   });
   return candidates;
@@ -1058,26 +1058,54 @@ function classifyLandCertificatePageText_(value) {
   const normalized = removeVietnameseAccents_(String(value || '')).toLowerCase().replace(/[.:)\-]+/g, ' ').replace(/\s+/g, ' ').trim();
   let best = { layout: 'unknown', score: 0 };
   const scores = {
-    old_4_page_cover: 0,
-    old_4_page_land: 0,
-    old_4_page_change: 0,
-    new_a4_page_1: 0,
-    new_a4_page_2: 0
+    gcn_qsdd_cover: 0,
+    gcn_qsdd_land: 0,
+    gcn_qsdd_change: 0,
+    gcn_qsdd_qsh_nha_o_va_tsk_cover: 0,
+    gcn_qsdd_qsh_nha_o_va_tsk_land: 0,
+    gcn_qsdd_qsh_nha_o_va_tsk_change: 0,
+    gcn_qsdd_qsh_tsglvd_page_1: 0,
+    gcn_qsdd_qsh_tsglvd_page_2: 0
   };
-  if (normalized.indexOf('giay chung nhan') >= 0) scores.old_4_page_cover += 2;
-  if (/\b(?:co|dh|aa)\s*\d{5,}\b/i.test(normalized)) scores.old_4_page_cover += 1;
-  if (normalized.indexOf('ii thua dat') >= 0 || normalized.indexOf('1 thua dat') >= 0) scores.old_4_page_land += 3;
-  if (normalized.indexOf('nguon goc su dung') >= 0) scores.old_4_page_land += 1;
-  if (normalized.indexOf('iii so do') >= 0 || normalized.indexOf('iv nhung thay doi') >= 0) scores.old_4_page_change += 3;
-  if (normalized.indexOf('2 thong tin thua dat') >= 0) scores.new_a4_page_1 += 4;
-  if (normalized.indexOf('loai dat') >= 0) scores.new_a4_page_1 += 2;
-  if (normalized.indexOf('3 thong tin tai san gan lien voi dat') >= 0) scores.new_a4_page_1 += 1;
-  if (normalized.indexOf('4 so do thua dat') >= 0) scores.new_a4_page_2 += 3;
-  if (normalized.indexOf('5 ghi chu') >= 0 || normalized.indexOf('6 nhung thay doi') >= 0) scores.new_a4_page_2 += 2;
+  const hasCertificateTitle = normalized.indexOf('giay chung nhan') >= 0;
+  const hasHouseOtherAssetsTitle = normalized.indexOf('quyen so huu nha o') >= 0 || normalized.indexOf('tai san khac gan lien voi dat') >= 0;
+  const hasAttachedAssetsTitle = normalized.indexOf('quyen so huu tai san gan lien voi dat') >= 0 && !hasHouseOtherAssetsTitle;
+  if (hasCertificateTitle && !hasHouseOtherAssetsTitle && !hasAttachedAssetsTitle) scores.gcn_qsdd_cover += 4;
+  if (hasCertificateTitle && hasHouseOtherAssetsTitle) scores.gcn_qsdd_qsh_nha_o_va_tsk_cover += 4;
+  if (hasCertificateTitle && hasAttachedAssetsTitle) scores.gcn_qsdd_qsh_tsglvd_page_1 += 2;
+  if (/\b(?:co|dh|aa)\s*\d{5,}\b/i.test(normalized)) {
+    scores.gcn_qsdd_cover += 1;
+    scores.gcn_qsdd_qsh_nha_o_va_tsk_cover += 1;
+  }
+  if (normalized.indexOf('ii thua dat') >= 0 || normalized.indexOf('1 thua dat') >= 0) scores[classifyOldStyleLandLayout_(normalized)] += 3;
+  if (normalized.indexOf('nguon goc su dung') >= 0) scores[classifyOldStyleLandLayout_(normalized)] += 1;
+  if (normalized.indexOf('iii so do') >= 0 || normalized.indexOf('iv nhung thay doi') >= 0 || normalized.indexOf('noi dung thay doi') >= 0) scores[classifyOldStyleChangeLayout_(normalized)] += 6;
+  if (normalized.indexOf('2 thong tin thua dat') >= 0) scores.gcn_qsdd_qsh_tsglvd_page_1 += 4;
+  if (normalized.indexOf('loai dat') >= 0) scores.gcn_qsdd_qsh_tsglvd_page_1 += 2;
+  if (normalized.indexOf('3 thong tin tai san gan lien voi dat') >= 0) scores.gcn_qsdd_qsh_tsglvd_page_1 += 1;
+  if (normalized.indexOf('4 so do thua dat') >= 0) scores.gcn_qsdd_qsh_tsglvd_page_2 += 3;
+  if (normalized.indexOf('5 ghi chu') >= 0 || normalized.indexOf('6 nhung thay doi') >= 0) scores.gcn_qsdd_qsh_tsglvd_page_2 += 2;
   Object.keys(scores).forEach(function(layout) {
     if (scores[layout] > best.score) best = { layout: layout, score: scores[layout] };
   });
   return best;
+}
+
+function classifyOldStyleLandLayout_(value) {
+  const normalized = removeVietnameseAccents_(String(value || '')).toLowerCase().replace(/[.:)\-]+/g, ' ').replace(/\s+/g, ' ').trim();
+  if (normalized.indexOf('quyen so huu nha o') >= 0 || normalized.indexOf('tai san khac gan lien voi dat') >= 0 || normalized.indexOf('nha o va tai san khac') >= 0) {
+    return 'gcn_qsdd_qsh_nha_o_va_tsk_land';
+  }
+  if (normalized.indexOf('giay chung nhan quyen su dung dat') >= 0 && normalized.indexOf('quyen so huu') < 0) {
+    return 'gcn_qsdd_land';
+  }
+  return 'gcn_qsdd_qsh_nha_o_va_tsk_land';
+}
+
+function classifyOldStyleChangeLayout_(value) {
+  const normalized = removeVietnameseAccents_(String(value || '')).toLowerCase().replace(/[.:)\-]+/g, ' ').replace(/\s+/g, ' ').trim();
+  if (normalized.indexOf('giay chung nhan quyen su dung dat') >= 0 && normalized.indexOf('quyen so huu') < 0) return 'gcn_qsdd_change';
+  return 'gcn_qsdd_qsh_nha_o_va_tsk_change';
 }
 
 function scoreLandPlotTextCandidate_(value) {
@@ -1085,7 +1113,7 @@ function scoreLandPlotTextCandidate_(value) {
   if (!normalized) return 0;
   const classified = classifyLandCertificatePageText_(value);
   let score = 0;
-  if (classified.layout === 'new_a4_page_1') score += classified.score;
+  if (classified.layout === 'gcn_qsdd_qsh_tsglvd_page_1') score += classified.score;
   if (normalized.indexOf('ii thua dat') >= 0) score += 2;
   if (normalized.indexOf('2 thong tin thua dat') >= 0) score += 3;
   if (normalized.indexOf('1 thua dat') >= 0) score += 2;
@@ -1188,7 +1216,7 @@ function extractLandPlotIndexedBlock_(text) {
 function extractIndexedCertificateItems_(text) {
   const items = {};
   const order = [];
-  const regex = /(^|\n|\s)([a-g]|đ|d)\s*[\).:]\s*/gi;
+  const regex = /(^|\n|\s)([a-g]|Ä‘|d)\s*[\).:]\s*/gi;
   const matches = [];
   let match;
   while ((match = regex.exec(String(text || ''))) !== null) {
@@ -1213,7 +1241,7 @@ function extractIndexedCertificateItems_(text) {
 function normalizeCertificateItemKey_(key) {
   const normalized = removeVietnameseAccents_(String(key || '').toLowerCase());
   const raw = String(key || '').toLowerCase();
-  return normalized === 'd' && raw === 'đ' ? 'dd' : normalized;
+  return normalized === 'd' && raw === 'Ä‘' ? 'dd' : normalized;
 }
 
 function normalizeCertificateIndexLine_(line) {
@@ -1237,8 +1265,8 @@ function cleanupIndexedCertificateValue_(value) {
 
 function cleanupUsageOriginCertificateValue_(value) {
   return accentUsageOriginCertificateValue_(cleanupIndexedCertificateValue_(value)
-    .replace(/\s+(?:2|3|4|5|6)\s*[\).:]\s*(?:nh[aà]\s*[oở]|nha\s*o|c[oô]ng\s*tr[ìi]nh|cong\s*trinh|r[ưừ]ng|rung|c[aâ]y|cay|ghi\s*ch[uú]|ghi\s*chu)\b.*$/i, '')
-    .replace(/\s+iv\s*[\).:]?\s*nh[uữ]ng\s+thay\s+[dđ][oổ]i.*$/i, '')
+    .replace(/\s+(?:2|3|4|5|6)\s*[\).:]\s*(?:nh[aÃ ]\s*[oá»Ÿ]|nha\s*o|c[oÃ´]ng\s*tr[Ã¬i]nh|cong\s*trinh|r[Æ°á»«]ng|rung|c[aÃ¢]y|cay|ghi\s*ch[uÃº]|ghi\s*chu)\b.*$/i, '')
+    .replace(/\s+iv\s*[\).:]?\s*nh[uá»¯]ng\s+thay\s+[dÄ‘][oá»•]i.*$/i, '')
     .replace(/\s+iv\s*[\).:]?\s*nhung\s+thay\s+doi.*$/i, '')
     .replace(/[;,.:\-\s]+$/g, '')
     .trim());
@@ -1266,7 +1294,7 @@ function fixVietnameseUsageWord_(value) {
 
 function extractLandPlotNumberFromIndexedValue_(value) {
   const text = cleanupIndexedCertificateValue_(value);
-  const match = text.match(/(?:thửa\s*đất\s*số|thua\s*dat\s*so)?\s*:?\s*([0-9A-Z.\/-]+)/i);
+  const match = text.match(/(?:thá»­a\s*Ä‘áº¥t\s*sá»‘|thua\s*dat\s*so)?\s*:?\s*([0-9A-Z.\/-]+)/i);
   return match ? match[1].trim() : '';
 }
 
@@ -1284,14 +1312,14 @@ function extractRealEstateArea_(text) {
   const cValue = cleanupIndexedCertificateValue_(indexed.c || '');
   const fromC = normalizeRealEstateAreaValue_(cValue);
   if (fromC) return fromC;
-  const direct = source.match(/(?:Diện\s*tích|Dien\s*tich)\s*:?\s*([0-9]+(?:[,.][0-9]+)?\s*m(?:2|²)?)/i);
+  const direct = source.match(/(?:Diá»‡n\s*tÃ­ch|Dien\s*tich)\s*:?\s*([0-9]+(?:[,.][0-9]+)?\s*m(?:2|Â²)?)/i);
   return direct ? normalizeRealEstateAreaValue_(direct[1]) : '';
 }
 
 function normalizeRealEstateAreaValue_(value) {
   const text = String(value || '').replace(/\s+/g, ' ').trim();
-  const match = text.match(/([0-9]+(?:[,.][0-9]+)?)\s*m(?:2|²)?/i);
-  return match ? match[1] + ' m²' : '';
+  const match = text.match(/([0-9]+(?:[,.][0-9]+)?)\s*m(?:2|Â²)?/i);
+  return match ? match[1] + ' mÂ²' : '';
 }
 
 function shouldReplaceAreaValue_(field, candidate) {
@@ -1349,7 +1377,7 @@ function extractPostIssueChangesFromCertificateText_(text) {
       break;
     }
   }
-  if (start < 0) return { value: 'Không có', status: 'absent' };
+  if (start < 0) return { value: 'KhÃ´ng cÃ³', status: 'absent' };
   const content = [];
   for (let j = start + 1; j < lines.length; j++) {
     const line = lines[j];
@@ -1365,7 +1393,7 @@ function extractPostIssueChangesFromCertificateText_(text) {
     content.push(line);
   }
   const cleaned = cleanPostIssueChangesCandidate_(content.join('\n'));
-  if (!cleaned) return { value: 'Không đọc rõ, đề nghị kiểm tra kỹ', status: 'partial_or_unclear' };
+  if (!cleaned) return { value: 'KhÃ´ng Ä‘á»c rÃµ, Ä‘á» nghá»‹ kiá»ƒm tra ká»¹', status: 'partial_or_unclear' };
   return {
     value: cleaned,
     status: isPostIssueChangesUnclear_(cleaned) ? 'partial_or_unclear' : 'readable'
@@ -1455,7 +1483,7 @@ function isLikelyLandAddressLine_(line) {
     normalized.indexOf('huyen') >= 0 ||
     normalized.indexOf('thanh pho') >= 0 ||
     normalized.indexOf('tinh') >= 0 ||
-    /\s[-–—]\s/.test(line);
+    /\s[-â€“â€”]\s/.test(line);
 }
 
 function scoreLandAddressLine_(line) {
@@ -1464,7 +1492,7 @@ function scoreLandAddressLine_(line) {
   ['phuong', 'xa ', 'thi tran', 'quan', 'huyen', 'thanh pho', 'tinh'].forEach(function(token) {
     if (normalized.indexOf(token) >= 0) score++;
   });
-  if (/\s[-–—]\s/.test(line)) score++;
+  if (/\s[-â€“â€”]\s/.test(line)) score++;
   return score;
 }
 
@@ -1497,13 +1525,13 @@ function extractOwnerAddressFromCertificateText_(text) {
   const lines = String(block || text || '').split(/\n+/);
   for (let i = 0; i < lines.length; i++) {
     const line = String(lines[i] || '').replace(/\s+/g, ' ').trim();
-    const match = line.match(/(?:Äá»‹a\s*chá»‰|Địa\s*chỉ|Dia\s*chi|Address)\s*[:.-]\s*(.+)$/i);
+    const match = line.match(/(?:Ã„ÂÃ¡Â»â€¹a\s*chÃ¡Â»â€°|Äá»‹a\s*chá»‰|Dia\s*chi|Address)\s*[:.-]\s*(.+)$/i);
     if (match && match[1]) return cleanupOwnerAddress_(match[1]);
   }
   const compact = lines.map(function(line) {
     return String(line || '').replace(/\s+/g, ' ').trim();
   }).filter(Boolean).join(' ');
-  const inline = compact.match(/(?:Äá»‹a\s*chá»‰|Địa\s*chỉ|Dia\s*chi|Address)\s*[:.-]\s*(.+?)(?=\s+(?:II\.|2\.|Thá»­a|Thua|NhÃ |Nha)\b|$)/i);
+  const inline = compact.match(/(?:Ã„ÂÃ¡Â»â€¹a\s*chÃ¡Â»â€°|Äá»‹a\s*chá»‰|Dia\s*chi|Address)\s*[:.-]\s*(.+?)(?=\s+(?:II\.|2\.|ThÃ¡Â»Â­a|Thua|NhÃƒÂ |Nha)\b|$)/i);
   return inline && inline[1] ? cleanupOwnerAddress_(inline[1]) : '';
 }
 
@@ -1719,7 +1747,7 @@ function shouldReplaceCertificateNumber_(field) {
   if (!current) return true;
   const normalizedCurrent = removeVietnameseAccents_(current).toLowerCase().replace(/\s+/g, ' ').trim();
   if (normalizedCurrent === 'khong' || normalizedCurrent === 'khong co' || normalizedCurrent.indexOf('khong ro') >= 0 || normalizedCurrent.indexOf('chua doc') >= 0) return true;
-  if (current === 'Không rõ, đề nghị sửa thủ công') return true;
+  if (current === 'KhÃ´ng rÃµ, Ä‘á» nghá»‹ sá»­a thá»§ cÃ´ng') return true;
   return isRegistryNumberLike_(current);
 }
 
@@ -1848,7 +1876,7 @@ function normalizeRegistryCodeValue_(value) {
 function extractRealEstateIssuingAuthority_(text) {
   const raw = String(text || '').replace(/\s+/g, ' ').trim();
   if (!raw) return '';
-  const direct = raw.match(/\b(?:do|duoc|được)\s+(.{5,160}?)\s+c.{0,3}p\s+ng.{0,3}y/i);
+  const direct = raw.match(/\b(?:do|duoc|Ä‘Æ°á»£c)\s+(.{5,160}?)\s+c.{0,3}p\s+ng.{0,3}y/i);
   if (direct) {
     const directCleaned = cleanRealEstateIssuingAuthority_(direct[1]);
     if (directCleaned) return directCleaned;
@@ -1887,7 +1915,7 @@ function extractTextBetweenNormalizedAnchors_(raw, normalized, startAnchor, endA
 
 function cleanRealEstateIssuingAuthority_(value) {
   let raw = String(value || '')
-    .replace(/^(?:do|duoc|được)\s+/i, '')
+    .replace(/^(?:do|duoc|Ä‘Æ°á»£c)\s+/i, '')
     .replace(/\s+/g, ' ')
     .replace(/[;,.:\-\s]+$/g, '')
     .trim();
@@ -1909,7 +1937,7 @@ function applyFormPriorityRules_(reviewJson) {
     const permanent = person.permanent_address.final_value;
     const selected = vneid || permanent || '';
     person.current_address_final = makeField(
-      'Địa chỉ sử dụng cuối cùng',
+      'Äá»‹a chá»‰ sá»­ dá»¥ng cuá»‘i cÃ¹ng',
       vneid || permanent,
       '',
       '',
@@ -1920,7 +1948,7 @@ function applyFormPriorityRules_(reviewJson) {
     if (vneid && permanent && vneid !== permanent) {
       reviewJson.validation.warnings.push({
         field_path: 'person.current_address_final',
-        message: 'Địa chỉ VNeID khác địa chỉ thường trú CCCD. Hệ thống ưu tiên VNeID, cần người dùng xác nhận.',
+        message: 'Äá»‹a chá»‰ VNeID khÃ¡c Ä‘á»‹a chá»‰ thÆ°á»ng trÃº CCCD. Há»‡ thá»‘ng Æ°u tiÃªn VNeID, cáº§n ngÆ°á»i dÃ¹ng xÃ¡c nháº­n.',
         source_file: person.vneid_current_address.source || person.permanent_address.source || ''
       });
     }
@@ -1979,7 +2007,7 @@ function mergeEmptyFields_(target, source) {
 function shouldReplaceField_(targetField, sourceField) {
   if (!sourceField || !sourceField.final_value) return false;
   if (!targetField || !targetField.final_value) return true;
-  if (targetField.final_value === 'Không rõ, đề nghị sửa thủ công') return true;
+  if (targetField.final_value === 'KhÃ´ng rÃµ, Ä‘á» nghá»‹ sá»­a thá»§ cÃ´ng') return true;
   const targetConf = Number(targetField.confidence || 0);
   const sourceConf = Number(sourceField.confidence || 0);
   return sourceConf > targetConf && String(sourceField.final_value).length >= String(targetField.final_value).length;
@@ -1987,7 +2015,7 @@ function shouldReplaceField_(targetField, sourceField) {
 
 function normalizePersonName_(value) {
   value = String(value || '').trim();
-  if (!value || value.length < 5 || value === 'Không rõ, đề nghị sửa thủ công') return '';
+  if (!value || value.length < 5 || value === 'KhÃ´ng rÃµ, Ä‘á» nghá»‹ sá»­a thá»§ cÃ´ng') return '';
   return value
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
@@ -2133,8 +2161,8 @@ function normalizeIdIssuePlace_(person, ocrTextByFile) {
   }
   const documentType = normalizeDocumentTypeValueClean_(person.id_document_type && person.id_document_type.final_value);
   if (documentType) {
-    field.ai_value = 'Bộ Công an';
-    field.final_value = 'Bộ Công an';
+    field.ai_value = 'Bá»™ CÃ´ng an';
+    field.final_value = 'Bá»™ CÃ´ng an';
     field.source = field.source || 'ISSUER_DEFAULT_FOR_ID_CARD';
     field.confidence = field.confidence || 0.6;
   }
@@ -2193,7 +2221,7 @@ function deriveGenderFromVietnamIdentityNumber_(id) {
   if (id.length !== 12) return '';
   const digit = Number(id.charAt(3));
   if (isNaN(digit)) return '';
-  return digit % 2 === 0 ? 'Nam' : 'Nữ';
+  return digit % 2 === 0 ? 'Nam' : 'Ná»¯';
 }
 
 function normalizeGenderValue_(value) {
@@ -2202,7 +2230,7 @@ function normalizeGenderValue_(value) {
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '');
   if (text.indexOf('nam') >= 0 || text.indexOf('male') >= 0) return 'Nam';
-  if (text.indexOf('nu') >= 0 || text.indexOf('female') >= 0) return 'Nữ';
+  if (text.indexOf('nu') >= 0 || text.indexOf('female') >= 0) return 'Ná»¯';
   return '';
 }
 
@@ -2229,8 +2257,8 @@ function inferDocumentType_(idNumber, text) {
   const fromText = normalizeDocumentTypeValue_(text);
   if (fromText) return fromText;
   const digits = normalizeId_(idNumber);
-  if (digits.length === 9) return 'Chứng minh nhân dân';
-  if (digits.length === 12) return 'Căn cước công dân';
+  if (digits.length === 9) return 'Chá»©ng minh nhÃ¢n dÃ¢n';
+  if (digits.length === 12) return 'CÄƒn cÆ°á»›c cÃ´ng dÃ¢n';
   return '';
 }
 
@@ -2240,9 +2268,9 @@ function normalizeDocumentTypeValue_(value) {
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
     .replace(/\u0111/g, 'd');
-  if (text.indexOf('chung minh nhan dan') >= 0 || /\bcmnd\b/.test(text)) return 'Chứng minh nhân dân';
-  if (text.indexOf('can cuoc cong dan') >= 0 || /\bcccd\b/.test(text)) return 'Căn cước công dân';
-  if (text.indexOf('can cuoc') >= 0) return 'Căn cước';
+  if (text.indexOf('chung minh nhan dan') >= 0 || /\bcmnd\b/.test(text)) return 'Chá»©ng minh nhÃ¢n dÃ¢n';
+  if (text.indexOf('can cuoc cong dan') >= 0 || /\bcccd\b/.test(text)) return 'CÄƒn cÆ°á»›c cÃ´ng dÃ¢n';
+  if (text.indexOf('can cuoc') >= 0) return 'CÄƒn cÆ°á»›c';
   return '';
 }
 
@@ -2255,12 +2283,12 @@ function normalizeIssuePlaceValue_(value) {
     .replace(/\u0111/g, 'd');
   if (normalized.indexOf('cuc canh sat quan ly hanh chinh') >= 0 ||
       normalized.indexOf('canh sat quan ly hanh chinh') >= 0) {
-    return 'Cục Cảnh sát quản lý hành chính về trật tự xã hội';
+    return 'Cá»¥c Cáº£nh sÃ¡t quáº£n lÃ½ hÃ nh chÃ­nh vá» tráº­t tá»± xÃ£ há»™i';
   }
   if (normalized.indexOf('bo cong an') >= 0 ||
       normalized.indexOf('ministry of public security') >= 0 ||
       normalized.indexOf('public security') >= 0) {
-    return 'Bộ Công an';
+    return 'Bá»™ CÃ´ng an';
   }
   return '';
 }
@@ -2430,8 +2458,8 @@ function extractIssueDateFromIdentityOcr_(text, documentType) {
     /(?:ng\u00e0y\s*,?\s*th\u00e1ng\s*,?\s*n\u0103m|date\s*,?\s*month\s*,?\s*year)\D{0,40}(\d{1,2}[\/.\-]\d{1,2}[\/.\-]\d{2,4})/i,
     /(?:age\s*\/?\s*date\s*month\s*year)\D{0,40}(\d{1,2}[\/.\-]\d{1,2}[\/.\-]\d{2,4})/i,
     /(?:ng\u00e0y\s*c\u1ea5p|c\u1ea5p\s*ng\u00e0y)\D{0,30}(\d{1,2}[\/.\-]\d{1,2}[\/.\-]\d{2,4})/i,
-    /(?:ngày\s*cấp|ngay\s*cap|date\s*of\s*issue)\D{0,30}(\d{1,2}[\/.\-]\d{1,2}[\/.\-]\d{2,4})/i,
-    /(?:cấp\s*ngày|cap\s*ngay)\D{0,30}(\d{1,2}[\/.\-]\d{1,2}[\/.\-]\d{2,4})/i
+    /(?:ngÃ y\s*cáº¥p|ngay\s*cap|date\s*of\s*issue)\D{0,30}(\d{1,2}[\/.\-]\d{1,2}[\/.\-]\d{2,4})/i,
+    /(?:cáº¥p\s*ngÃ y|cap\s*ngay)\D{0,30}(\d{1,2}[\/.\-]\d{1,2}[\/.\-]\d{2,4})/i
   ];
   for (let i = 0; i < patterns.length; i++) {
     const match = text.match(patterns[i]);
@@ -2573,7 +2601,7 @@ function normalizeDateValue_(value) {
   if (match) return normalizeDateParts_(match[3], match[2], match[1]);
   match = value.match(/^(\d{1,2})[-\/.](\d{1,2})[-\/.](\d{2,4})$/);
   if (match) return normalizeDateParts_(match[1], match[2], normalizeYear_(match[3]));
-  match = value.match(/(?:ngày|ngay|day)?\s*(\d{1,2})\D+(?:tháng|thang|month)?\s*(\d{1,2})\D+(?:năm|nam|year)?\s*(\d{4})/i);
+  match = value.match(/(?:ngÃ y|ngay|day)?\s*(\d{1,2})\D+(?:thÃ¡ng|thang|month)?\s*(\d{1,2})\D+(?:nÄƒm|nam|year)?\s*(\d{4})/i);
   if (match) return normalizeDateParts_(match[1], match[2], match[3]);
   return value;
 }
@@ -2602,7 +2630,7 @@ function normalizeYear_(value) {
 function markUnclearIfLowConfidence_(field) {
   const conf = Number(field.confidence);
   if (field.ai_value && !field.form_value && !field.manual_value && conf && conf < 0.7) {
-    field.final_value = 'Không rõ, đề nghị sửa thủ công';
+    field.final_value = 'KhÃ´ng rÃµ, Ä‘á» nghá»‹ sá»­a thá»§ cÃ´ng';
   }
 }
 
@@ -2745,8 +2773,8 @@ function normalizeVietnameseAgencyName_(value) {
   if (!value || value === '\u004b\u0068\u00f4\u006e\u0067 \u0072\u00f5\u002c \u0111\u1ec1 \u006e\u0067\u0068\u1ecb \u0073\u1eeda \u0074\u0068\u1ee7 \u0063\u00f4\u006e\u0067') return '';
   let text = value.toLocaleLowerCase('vi-VN');
   text = text.charAt(0).toLocaleUpperCase('vi-VN') + text.slice(1);
-  ['huyện', 'quận', 'thành phố', 'thị xã', 'tỉnh', 'xã', 'phường', 'thị trấn'].forEach(function(prefix) {
-    const re = new RegExp('(' + prefix + '\\s+)([a-zà-ỹ]+)(\\s+([a-zà-ỹ]+))?', 'gi');
+  ['huyá»‡n', 'quáº­n', 'thÃ nh phá»‘', 'thá»‹ xÃ£', 'tá»‰nh', 'xÃ£', 'phÆ°á»ng', 'thá»‹ tráº¥n'].forEach(function(prefix) {
+    const re = new RegExp('(' + prefix + '\\s+)([a-zÃ -á»¹]+)(\\s+([a-zÃ -á»¹]+))?', 'gi');
     text = text.replace(re, function(match, p1, w1, p3, w2) {
       return p1 + capitalizeVietnameseWord_(w1) + (p3 ? ' ' + capitalizeVietnameseWord_(w2) : '');
     });
@@ -2774,7 +2802,7 @@ function normalizeVietnameseAgencyNameClean_(value) {
         String(rest || '').split(/\s+/).map(capitalizeVietnameseWord_).join(' ');
     });
   });
-  text = text.replace(/^u\u1ef7 ban/i, '\u1ee6y ban').replace(/^ủy ban/i, '\u1ee6y ban');
+  text = text.replace(/^u\u1ef7 ban/i, '\u1ee6y ban').replace(/^á»§y ban/i, '\u1ee6y ban');
   return text;
 }
 
@@ -2804,3 +2832,4 @@ function flattenFieldObject_(obj) {
   Object.keys(obj).forEach(function(key) { out[key] = flattenFieldObject_(obj[key]); });
   return out;
 }
+

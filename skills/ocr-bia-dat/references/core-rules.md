@@ -44,21 +44,26 @@ Land-certificate uploads may contain one physical page per image, two facing pag
 
 Use the OCR-read certificate title as a classification signal. Different certificate generations have different titles and section structures; do not assume all land certificates use the old 4-page `II. Thua dat` layout.
 
-Recognize these page/layout classes:
+Recognize these three certificate title/template generations. Name templates by certificate title, not by filename:
 
-- `old_4_page_cover`: title page with `Giay chung nhan`, certificate title text, owner block, and a printed certificate serial such as `CO...`, `DH...`, or similar.
-- `old_4_page_land`: old-style land-detail page with `II. Thua dat`, `1. Thua dat`, and indexed fields `a)`, `b)`, `c)`, `d)`, `d/đ)`, `e)`, `g)`.
-- `old_4_page_change`: map/change page with `III. So do`, `IV. Nhung thay doi sau khi cap Giay chung nhan`, `Noi dung thay doi`, or `Xac nhan cua co quan co tham quyen`.
-- `new_a4_page_1`: new A4 page with `1. Nguoi su dung`, `2. Thong tin thua dat`, and often `3. Thong tin tai san gan lien voi dat`.
-- `new_a4_page_2`: new A4 page with `4. So do thua dat`, `5. Ghi chu`, `6. Nhung thay doi sau khi cap Giay chung nhan`, and `So vao so cap Giay chung nhan`.
+- `gcn_qsdd`: `Giay chung nhan quyen su dung dat`. This is the oldest red-cover certificate, like the user sample `bia mua`. Land information and change/map information may be on old handwritten/table pages.
+- `gcn_qsdd_qsh_nha_o_va_tsk`: `Giay chung nhan quyen su dung dat, quyen so huu nha o va tai san khac gan lien voi dat`. This is the later 4-page certificate, like the user samples `mau 2 (1)` and `mau 2 (2)`. Land fields are still old-style `II. Thua dat` / `a-g`.
+- `gcn_qsdd_qsh_tsglvd`: `Giay chung nhan quyen su dung dat, quyen so huu tai san gan lien voi dat`. This is the newest A4 certificate, like the user sample `mau 3`. Page 1 contains `1. Nguoi su dung`, `2. Thong tin thua dat`, `3. Thong tin tai san gan lien voi dat`; page 2 contains `4. So do`, `5. Ghi chu`, `6. Nhung thay doi`.
+
+Classify page/layout classes within those generations:
+
+- `gcn_qsdd_cover`, `gcn_qsdd_land`, `gcn_qsdd_change`
+- `gcn_qsdd_qsh_nha_o_va_tsk_cover`, `gcn_qsdd_qsh_nha_o_va_tsk_land`, `gcn_qsdd_qsh_nha_o_va_tsk_change`
+- `gcn_qsdd_qsh_tsglvd_page_1`, `gcn_qsdd_qsh_tsglvd_page_2`
 
 For images that show two pages at once, create left/right page candidates after orientation normalization. For single-page images, keep the full page candidate. Classify by OCR markers, not by filename or upload order.
 
 Crop/OCR policy:
 
-- Extract old-style `a-g` land fields only from an `old_4_page_land` region.
-- Extract new A4 land fields only from a `new_a4_page_1` region.
-- Extract post-issue changes only from `old_4_page_change` or `new_a4_page_2`.
+- Extract `gcn_qsdd` land fields only from `gcn_qsdd_land`.
+- Extract `gcn_qsdd_qsh_nha_o_va_tsk` land fields only from `gcn_qsdd_qsh_nha_o_va_tsk_land`.
+- Extract `gcn_qsdd_qsh_tsglvd` land fields only from `gcn_qsdd_qsh_tsglvd_page_1`.
+- Extract post-issue changes only from `gcn_qsdd_change`, `gcn_qsdd_qsh_nha_o_va_tsk_change`, or `gcn_qsdd_qsh_tsglvd_page_2`.
 - Extract registry number only from the region around `So vao so cap GCN/Giay chung nhan`; never infer it from the printed certificate serial.
 - If no trusted page/region is available, leave the affected field blank and add a manual-review warning instead of falling back to whole-image OCR.
 

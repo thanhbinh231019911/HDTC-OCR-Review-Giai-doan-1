@@ -1,4 +1,4 @@
-const assert = require('assert');
+﻿const assert = require('assert');
 
 function removeVietnameseAccents_(value) {
   return String(value || '')
@@ -81,14 +81,14 @@ function oneLineCertificateValue(value) {
 
 function truncateCertificateNoteValue(value) {
   return String(value || '')
-    .replace(/\s+(?:số|so)\s+v(?:ào|ao)\s+s(?:ổ|ố|o)\s+c(?:ấp|ap)\s+(?:gcn|gi(?:ấy|ay)\s+ch(?:ứng|ung)\s+nh(?:ận|an))\b.*$/i, '')
-    .replace(/\s+iv\s*[\).:]?\s*nh(?:ững|ung)\s+thay\s+(?:đổi|doi)\b.*$/i, '')
+    .replace(/\s+(?:sá»‘|so)\s+v(?:Ã o|ao)\s+s(?:á»•|á»‘|o)\s+c(?:áº¥p|ap)\s+(?:gcn|gi(?:áº¥y|ay)\s+ch(?:á»©ng|ung)\s+nh(?:áº­n|an))\b.*$/i, '')
+    .replace(/\s+iv\s*[\).:]?\s*nh(?:á»¯ng|ung)\s+thay\s+(?:Ä‘á»•i|doi)\b.*$/i, '')
     .trim();
 }
 
 function normalizeNumberedCertificateItemValue(value, number) {
-  let text = oneLineCertificateValue(value).replace(/[.。]+$/g, '').trim();
-  if (number === 6) text = text.replace(/^(?:ghi\s*chú|ghi\s*chu)\s*[:;.-]?\s*/i, '').trim();
+  let text = oneLineCertificateValue(value).replace(/[.ã€‚]+$/g, '').trim();
+  if (number === 6) text = text.replace(/^(?:ghi\s*chÃº|ghi\s*chu)\s*[:;.-]?\s*/i, '').trim();
   if (number === 6) text = truncateCertificateNoteValue(text);
   return text.replace(/^[;:.,\-\s]+|[;:.,\-\s]+$/g, '').trim();
 }
@@ -148,7 +148,8 @@ function selectBestLandPlotText_(text) {
       text: candidate,
       score,
       trusted: score >= 6,
-      layout: isNewA4Anchor ? 'new_a4_page_1' : 'old_4_page_land'
+      layout: isNewA4Anchor ? 'gcn_qsdd_qsh_tsglvd_page_1' : classifyOldStyleLandLayout_(candidate),
+      reason: isNewA4Anchor ? 'line_anchor_2 thong tin thua dat' : 'line_anchor_old_style'
     };
   }
   return best;
@@ -157,30 +158,58 @@ function selectBestLandPlotText_(text) {
 function classifyLandCertificatePageText_(value) {
   const normalized = removeVietnameseAccents_(String(value || '')).toLowerCase().replace(/[.:)\-]+/g, ' ').replace(/\s+/g, ' ').trim();
   const scores = {
-    old_4_page_cover: 0,
-    old_4_page_land: 0,
-    old_4_page_change: 0,
-    new_a4_page_1: 0,
-    new_a4_page_2: 0
+    gcn_qsdd_cover: 0,
+    gcn_qsdd_land: 0,
+    gcn_qsdd_change: 0,
+    gcn_qsdd_qsh_nha_o_va_tsk_cover: 0,
+    gcn_qsdd_qsh_nha_o_va_tsk_land: 0,
+    gcn_qsdd_qsh_nha_o_va_tsk_change: 0,
+    gcn_qsdd_qsh_tsglvd_page_1: 0,
+    gcn_qsdd_qsh_tsglvd_page_2: 0
   };
-  if (normalized.indexOf('giay chung nhan') >= 0) scores.old_4_page_cover += 2;
-  if (/\b(?:co|dh|aa)\s*\d{5,}\b/i.test(normalized)) scores.old_4_page_cover += 1;
-  if (normalized.indexOf('ii thua dat') >= 0 || normalized.indexOf('1 thua dat') >= 0) scores.old_4_page_land += 3;
-  if (normalized.indexOf('nguon goc su dung') >= 0) scores.old_4_page_land += 1;
-  if (normalized.indexOf('iii so do') >= 0 || normalized.indexOf('iv nhung thay doi') >= 0) scores.old_4_page_change += 3;
-  if (normalized.indexOf('2 thong tin thua dat') >= 0) scores.new_a4_page_1 += 4;
-  if (normalized.indexOf('loai dat') >= 0) scores.new_a4_page_1 += 2;
-  if (normalized.indexOf('3 thong tin tai san gan lien voi dat') >= 0) scores.new_a4_page_1 += 1;
-  if (normalized.indexOf('4 so do thua dat') >= 0) scores.new_a4_page_2 += 3;
-  if (normalized.indexOf('5 ghi chu') >= 0 || normalized.indexOf('6 nhung thay doi') >= 0) scores.new_a4_page_2 += 2;
+  const hasCertificateTitle = normalized.indexOf('giay chung nhan') >= 0;
+  const hasHouseOtherAssetsTitle = normalized.indexOf('quyen so huu nha o') >= 0 || normalized.indexOf('tai san khac gan lien voi dat') >= 0;
+  const hasAttachedAssetsTitle = normalized.indexOf('quyen so huu tai san gan lien voi dat') >= 0 && !hasHouseOtherAssetsTitle;
+  if (hasCertificateTitle && !hasHouseOtherAssetsTitle && !hasAttachedAssetsTitle) scores.gcn_qsdd_cover += 4;
+  if (hasCertificateTitle && hasHouseOtherAssetsTitle) scores.gcn_qsdd_qsh_nha_o_va_tsk_cover += 4;
+  if (hasCertificateTitle && hasAttachedAssetsTitle) scores.gcn_qsdd_qsh_tsglvd_page_1 += 2;
+  if (/\b(?:co|dh|aa)\s*\d{5,}\b/i.test(normalized)) {
+    scores.gcn_qsdd_cover += 1;
+    scores.gcn_qsdd_qsh_nha_o_va_tsk_cover += 1;
+  }
+  if (normalized.indexOf('ii thua dat') >= 0 || normalized.indexOf('1 thua dat') >= 0) scores[classifyOldStyleLandLayout_(normalized)] += 3;
+  if (normalized.indexOf('nguon goc su dung') >= 0) scores[classifyOldStyleLandLayout_(normalized)] += 1;
+  if (normalized.indexOf('iii so do') >= 0 || normalized.indexOf('iv nhung thay doi') >= 0 || normalized.indexOf('noi dung thay doi') >= 0) scores[classifyOldStyleChangeLayout_(normalized)] += 6;
+  if (normalized.indexOf('2 thong tin thua dat') >= 0) scores.gcn_qsdd_qsh_tsglvd_page_1 += 4;
+  if (normalized.indexOf('loai dat') >= 0) scores.gcn_qsdd_qsh_tsglvd_page_1 += 2;
+  if (normalized.indexOf('3 thong tin tai san gan lien voi dat') >= 0) scores.gcn_qsdd_qsh_tsglvd_page_1 += 1;
+  if (normalized.indexOf('4 so do thua dat') >= 0) scores.gcn_qsdd_qsh_tsglvd_page_2 += 3;
+  if (normalized.indexOf('5 ghi chu') >= 0 || normalized.indexOf('6 nhung thay doi') >= 0) scores.gcn_qsdd_qsh_tsglvd_page_2 += 2;
   return Object.keys(scores).reduce((best, layout) => scores[layout] > best.score ? { layout, score: scores[layout] } : best, { layout: 'unknown', score: 0 });
+}
+
+function classifyOldStyleLandLayout_(value) {
+  const normalized = removeVietnameseAccents_(String(value || '')).toLowerCase().replace(/[.:)\-]+/g, ' ').replace(/\s+/g, ' ').trim();
+  if (normalized.indexOf('quyen so huu nha o') >= 0 || normalized.indexOf('tai san khac gan lien voi dat') >= 0 || normalized.indexOf('nha o va tai san khac') >= 0) {
+    return 'gcn_qsdd_qsh_nha_o_va_tsk_land';
+  }
+  if (normalized.indexOf('giay chung nhan quyen su dung dat') >= 0 && normalized.indexOf('quyen so huu') < 0) {
+    return 'gcn_qsdd_land';
+  }
+  return 'gcn_qsdd_qsh_nha_o_va_tsk_land';
+}
+
+function classifyOldStyleChangeLayout_(value) {
+  const normalized = removeVietnameseAccents_(String(value || '')).toLowerCase().replace(/[.:)\-]+/g, ' ').replace(/\s+/g, ' ').trim();
+  if (normalized.indexOf('giay chung nhan quyen su dung dat') >= 0 && normalized.indexOf('quyen so huu') < 0) return 'gcn_qsdd_change';
+  return 'gcn_qsdd_qsh_nha_o_va_tsk_change';
 }
 
 function scoreLandPlotTextCandidate_(value) {
   const normalized = removeVietnameseAccents_(String(value || '')).toLowerCase().replace(/\s+/g, ' ').trim();
   const classified = classifyLandCertificatePageText_(value);
   let score = 0;
-  if (classified.layout === 'new_a4_page_1') score += classified.score;
+  if (classified.layout === 'gcn_qsdd_qsh_tsglvd_page_1') score += classified.score;
   if (normalized.indexOf('ii thua dat') >= 0) score += 2;
   if (normalized.indexOf('2 thong tin thua dat') >= 0) score += 3;
   if (normalized.indexOf('1 thua dat') >= 0) score += 2;
@@ -195,8 +224,8 @@ function scoreLandPlotTextCandidate_(value) {
 
 function normalizeRealEstateAreaValue_(value) {
   const text = String(value || '').replace(/\s+/g, ' ').trim();
-  const match = text.match(/([0-9]+(?:[,.][0-9]+)?)\s*m(?:2|²)?/i);
-  return match ? match[1] + ' m²' : '';
+  const match = text.match(/([0-9]+(?:[,.][0-9]+)?)\s*m(?:2|Â²)?/i);
+  return match ? match[1] + ' mÂ²' : '';
 }
 
 function normalizeRealEstateUsageForm_(value) {
@@ -244,7 +273,7 @@ function hasOtherLandFieldLabel_(normalizedText) {
     text.indexOf('muc dich su dung') >= 0 ||
     text.indexOf('thoi han su dung') >= 0 ||
     text.indexOf('nguon goc su dung') >= 0 ||
-    /\b[0-9]+(?:[,.][0-9]+)?\s*m(?:2|²)?\b/i.test(text);
+    /\b[0-9]+(?:[,.][0-9]+)?\s*m(?:2|Â²)?\b/i.test(text);
 }
 
 function shouldReplaceUsageForm_(field, candidate) {
@@ -301,7 +330,7 @@ function containsLaterLandCertificateContext_(normalized) {
 function extractRealEstateIndexedLandFields_(text) {
   const selected = selectBestLandPlotText_(text);
   const source = selected.text || text;
-  if (selected.layout === 'new_a4_page_1') {
+  if (selected.layout === 'gcn_qsdd_qsh_tsglvd_page_1' && normalizeCertificateIndexLine_(source).indexOf('2 thong tin thua dat') >= 0) {
     return {
       area: normalizeRealEstateAreaValue_(findSemanticLandFieldValue_(source, ['dien tich'])),
       usage_form: normalizeRealEstateUsageForm_(findSemanticLandFieldValue_(source, ['hinh thuc su dung'])),
@@ -323,37 +352,38 @@ function extractRealEstateIndexedLandFields_(text) {
 }
 
 const landOcrText = `
-GIẤY CHỨNG NHẬN
-QUYỀN SỬ DỤNG ĐẤT
-II. Thửa đất, nhà ở và tài sản khác gắn liền với đất
-1. Thửa đất:
-a) Thửa đất số: 1622 tờ bản đồ số: 10
-b) Địa chỉ: xã Sủ Ngòi, thành phố Hòa Bình, tỉnh Hòa Bình
-c) Diện tích: 108,0m² (Bằng chữ: một trăm linh tám phẩy không mét vuông)
-d) Hình thức sử dụng: Sử dụng riêng ) Mục đích sử dụng: Đất ở tại nông thôn
-e) Thời hạn sử dụng: Lâu dài
-g) Nguồn gốc sử dụng: Nhận chuyển nhượng đất được Nhà nước giao đất có thu tiền sử dụng đất
+GIAY CHUNG NHAN
+QUYEN SU DUNG DAT
+II. Thua dat, nha o va tai san khac gan lien voi dat
+1. Thua dat:
+a) Thua dat so: 1622 to ban do so: 10
+b) Dia chi: xa Su Ngoi, thanh pho Hoa Binh, tinh Hoa Binh
+c) Dien tich: 108,0m2 (Bang chu: mot tram linh tam phay khong met vuong)
+d) Hinh thuc su dung: Su dung rieng
+đ) Muc dich su dung: Dat o tai nong thon
+e) Thoi han su dung: Lau dai
+g) Nguon goc su dung: Nhan chuyen nhuong dat duoc Nha nuoc giao dat co thu tien su dung dat
 `;
 
 const fields = extractRealEstateIndexedLandFields_(landOcrText);
-assert.strictEqual(fields.usage_form, 'Sử dụng riêng');
-assert.strictEqual(fields.usage_purpose, 'Đất ở tại nông thôn');
-assert.strictEqual(fields.usage_term, 'Lâu dài');
+assert.strictEqual(fields.usage_form, 'Su dung rieng');
+assert.strictEqual(fields.usage_purpose, 'Dat o tai nong thon');
+assert.strictEqual(fields.usage_term, 'Lau dai');
 assert.strictEqual(
   fields.usage_origin,
   'Nh\u1eadn chuy\u1ec3n nh\u01b0\u1ee3ng \u0111\u1ea5t \u0111\u01b0\u1ee3c Nh\u00e0 n\u01b0\u1edbc giao \u0111\u1ea5t c\u00f3 thu ti\u1ec1n s\u1eed d\u1ee5ng \u0111\u1ea5t'
 );
-assert.strictEqual(fields.area, '108,0 m²');
-assert.strictEqual(shouldReplaceUsageForm_({ final_value: 'Sử dụng riêng ) Mục đích sử dụng: Đất ở tại nông thôn' }, fields.usage_form), true);
-assert.strictEqual(shouldReplaceUsageTerm_({ final_value: 'Diện tích: 108,0m² (Bằng chữ: một trăm linh tám phẩy không mét vuông)' }, fields.usage_term), true);
-assert.strictEqual(cleanupSemanticLandFieldValue_('Sử dụng riêng đ'), 'Sử dụng riêng');
+assert.strictEqual(fields.area, '108,0 mÂ²');
+assert.strictEqual(shouldReplaceUsageForm_({ final_value: 'Su dung rieng ) Muc dich su dung: Dat o tai nong thon' }, fields.usage_form), true);
+assert.strictEqual(shouldReplaceUsageTerm_({ final_value: 'Dien tich: 108,0m2 (Bang chu: mot tram linh tam phay khong met vuong)' }, fields.usage_term), true);
+assert.strictEqual(cleanupSemanticLandFieldValue_('Su dung rieng d'), 'Su dung rieng');
 assert.strictEqual(
-  normalizeNumberedCertificateItemValue('Ghi chú: Không Số vào sổ cấp GCN: 027 coquan có 15.00 m', 6),
-  'Không'
+  normalizeNumberedCertificateItemValue('Ghi chu: Khong So vao so cap GCN: 027 coquan co 15.00 m', 6),
+  'Khong'
 );
 assert.strictEqual(
-  normalizeNumberedCertificateItemValue('Ghi chú: Không Số vào số cấp GCN: 027 coquan có 15.00 m', 6),
-  'Không'
+  normalizeNumberedCertificateItemValue('Ghi chu: Khong So vao so cap GCN: 027 coquan co 15.00 m', 6),
+  'Khong'
 );
 assert.strictEqual(
   cleanupUsageOriginCertificateValue_('Nhan chuyen nhuong dat duoc Nha nuoc giao dat co thu tien su dung dat'),
@@ -369,52 +399,64 @@ assert.strictEqual(
 );
 assert.strictEqual(fixVietnameseUsageWord_('Ngu\u1ed3n g\u1ed1c s\u1eed dung'), 'Ngu\u1ed3n g\u1ed1c s\u1eed d\u1ee5ng');
 const noisyTwoPageText = `
-I. Người sử dụng đất, chủ sở hữu nhà ở và tài sản khác gắn liền với đất
-Bà: Đặng Thị Quỳnh
-Địa chỉ thường trú: Tỉnh Nhuệ, Thanh Sơn, tỉnh Phú Thọ
-II. Thửa đất, nhà ở và tài sản khác gắn liền với đất
-1. Thửa đất:
-a) Thửa đất số: 1623 tờ bản đồ số: 10
-b) Địa chỉ: xã Sủ Ngòi, thành phố Hòa Bình, tỉnh Hòa Bình
-c) Diện tích: 150,0m²
-d) Hình thức sử dụng: Sử dụng riêng
-đ) Mục đích sử dụng: Đất ở tại nông thôn
-e) Thời hạn sử dụng: Lâu dài
-g) Nguồn gốc sử dụng: Nhận chuyển nhượng đất được Nhà nước giao đất có thu tiền sử dụng đất
-2. Nhà ở: -/-
-IV. Những thay đổi sau khi cấp Giấy chứng nhận
+I. Nguoi su dung dat, chu so huu nha o va tai san khac gan lien voi dat
+Ba: Dang Thi Quynh
+Dia chi thuong tru: Tinh Nhue, Thanh Son, tinh Phu Tho
+II. Thua dat, nha o va tai san khac gan lien voi dat
+1. Thua dat:
+a) Thua dat so: 1623 to ban do so: 10
+b) Dia chi: xa Su Ngoi, thanh pho Hoa Binh, tinh Hoa Binh
+c) Dien tich: 150,0m2
+d) Hinh thuc su dung: Su dung rieng
+đ) Muc dich su dung: Dat o tai nong thon
+e) Thoi han su dung: Lau dai
+g) Nguon goc su dung: Nhan chuyen nhuong dat duoc Nha nuoc giao dat co thu tien su dung dat
+2. Nha o: -/-
+IV. Nhung thay doi sau khi cap Giay chung nhan
 `;
 const noisyFields = extractRealEstateIndexedLandFields_(noisyTwoPageText);
 assert.strictEqual(noisyFields._quality.trusted, true);
-assert.strictEqual(noisyFields.usage_purpose, 'Đất ở tại nông thôn');
-assert.strictEqual(isUnsafeLandAddressValue_('Địa chỉ thường trú: Tỉnh Nhuệ, Thanh Sơn, tỉnh Phú Thọ. CO 402508'), true);
-assert.strictEqual(isUnsafeIndexedLandFieldValue_('Đất ở tại nông thôn Thời hạn sử dụng: Lâu dài Nguồn gốc sử dụng: Nhận chuyển nhượng đất'), true);
+assert.strictEqual(noisyFields.usage_purpose, 'Dat o tai nong thon');
+assert.strictEqual(isUnsafeLandAddressValue_('Dia chi thuong tru: Tinh Nhue, Thanh Son, tinh Phu Tho. CO 402508'), true);
+assert.strictEqual(isUnsafeIndexedLandFieldValue_('Dat o tai nong thon Thoi han su dung: Lau dai Nguon goc su dung: Nhan chuyen nhuong dat'), true);
 const newA4Page1Text = `
-GIẤY CHỨNG NHẬN
-QUYỀN SỬ DỤNG ĐẤT, QUYỀN SỞ HỮU TÀI SẢN GẮN LIỀN VỚI ĐẤT
-1. Người sử dụng đất, chủ sở hữu tài sản gắn liền với đất:
-Ông: Nguyễn Viết Trọng, CCCD: 017065002419
-Và vợ: Lê Thị Huế, CCCD: 001166034340
-2. Thông tin thửa đất:
-a. Thửa đất số: 100 ; tờ bản đồ số: 40
-b. Diện tích: 1441,9 m²
-c. Loại đất: Đất ở tại nông thôn: 400,0 m²; Đất trồng cây lâu năm: 1041,9 m²
-d. Thời hạn sử dụng: Đất ở tại nông thôn: Lâu dài; Đất trồng cây lâu năm: Đến tháng 10/2045
-đ. Hình thức sử dụng: Sử dụng chung của vợ và chồng
-e. Địa chỉ: Xóm Giữa, xã Liên Sơn, tỉnh Phú Thọ
-3. Thông tin tài sản gắn liền với đất: -/-
+GIAY CHUNG NHAN
+QUYEN SU DUNG DAT, QUYEN SO HUU TAI SAN GAN LIEN VOI DAT
+1. Nguoi su dung dat, chu so huu tai san gan lien voi dat:
+Ong: Nguyen Viet Trong, CCCD: 017065002419
+Va vo: Le Thi Hue, CCCD: 001166034340
+2. Thong tin thua dat:
+a. Thua dat so: 100 ; to ban do so: 40
+b. Dien tich: 1441,9 m2
+c. Loai dat: Dat o tai nong thon: 400,0 m2; Dat trong cay lau nam: 1041,9 m2
+d. Thoi han su dung: Dat o tai nong thon: Lau dai; Dat trong cay lau nam: Den thang 10/2045
+đ. Hinh thuc su dung: Su dung chung cua vo va chong
+e. Dia chi: Xom Giua, xa Lien Son, tinh Phu Tho
+3. Thong tin tai san gan lien voi dat: -/-
 `;
 const newA4Fields = extractRealEstateIndexedLandFields_(newA4Page1Text);
-assert.strictEqual(classifyLandCertificatePageText_(newA4Page1Text).layout, 'new_a4_page_1');
-assert.strictEqual(newA4Fields._quality.layout, 'new_a4_page_1');
+assert.strictEqual(classifyLandCertificatePageText_(newA4Page1Text).layout, 'gcn_qsdd_qsh_tsglvd_page_1');
+assert.strictEqual(newA4Fields._quality.layout, 'gcn_qsdd_qsh_tsglvd_page_1');
 assert.strictEqual(newA4Fields._quality.trusted, true);
-assert.strictEqual(newA4Fields.area, '1441,9 m²');
-assert.strictEqual(newA4Fields.usage_purpose, 'Đất ở tại nông thôn: 400,0 m²; Đất trồng cây lâu năm: 1041,9 m²');
-assert.strictEqual(newA4Fields.usage_term, 'Đất ở tại nông thôn: Lâu dài; Đất trồng cây lâu năm: Đến tháng 10/2045');
-assert.strictEqual(newA4Fields.usage_form, 'Sử dụng chung của vợ và chồng');
-assert.strictEqual(newA4Fields.land_address, 'Xóm Giữa, xã Liên Sơn, tỉnh Phú Thọ');
-assert.strictEqual(classifyLandCertificatePageText_('4. Sơ đồ thửa đất, tài sản gắn liền với đất\\n5. Ghi chú: -/-\\n6. Những thay đổi sau khi cấp Giấy chứng nhận').layout, 'new_a4_page_2');
-assert.strictEqual(classifyLandCertificatePageText_('IV. Những thay đổi sau khi cấp Giấy chứng nhận\\nNội dung thay đổi và cơ sở pháp lý').layout, 'old_4_page_change');
+assert.strictEqual(newA4Fields.area, '1441,9 mÂ²');
+assert.strictEqual(newA4Fields.usage_purpose, 'Dat o tai nong thon: 400,0 m2; Dat trong cay lau nam: 1041,9 m2');
+assert.strictEqual(newA4Fields.usage_term, 'Dat o tai nong thon: Lau dai; Dat trong cay lau nam: Den thang 10/2045');
+assert.strictEqual(newA4Fields.usage_form, 'Su dung chung cua vo va chong');
+assert.strictEqual(newA4Fields.land_address, 'Xom Giua, xa Lien Son, tinh Phu Tho');
+assert.strictEqual(classifyLandCertificatePageText_('4. So do thua dat, tai san gan lien voi dat\\n5. Ghi chu: -/-\\n6. Nhung thay doi sau khi cap Giay chung nhan').layout, 'gcn_qsdd_qsh_tsglvd_page_2');
+assert.strictEqual(classifyLandCertificatePageText_('IV. Nhung thay doi sau khi cap Giay chung nhan\\nNoi dung thay doi va co so phap ly').layout, 'gcn_qsdd_qsh_nha_o_va_tsk_change');
+assert.strictEqual(
+  classifyLandCertificatePageText_('GIAY CHUNG NHAN QUYEN SU DUNG DAT DH666866').layout,
+  'gcn_qsdd_cover'
+);
+assert.strictEqual(
+  classifyLandCertificatePageText_('GIAY CHUNG NHAN QUYEN SU DUNG DAT QUYEN SO HUU NHA O VA TAI SAN KHAC GAN LIEN VOI DAT CO402508').layout,
+  'gcn_qsdd_qsh_nha_o_va_tsk_cover'
+);
+assert.strictEqual(
+  classifyLandCertificatePageText_('GIAY CHUNG NHAN QUYEN SU DUNG DAT, QUYEN SO HUU TAI SAN GAN LIEN VOI DAT 2. THONG TIN THUA DAT c. LOAI DAT').layout,
+  'gcn_qsdd_qsh_tsglvd_page_1'
+);
 
 const fileMeta = reclassifyOcrFileMetaByContent_({
   group: 'secured_party',
@@ -424,3 +466,4 @@ assert.strictEqual(fileMeta.group, 'asset');
 assert.strictEqual(fileMeta.fileName, 'asset__bia 1-1.jpg');
 
 console.log('OK land OCR regression');
+
