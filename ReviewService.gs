@@ -50,13 +50,14 @@ function repairReviewDataFromFullOcr_(data, caseId) {
   repairAssetIssueDateInReviewJson(data, fullOcr.assetText);
   repairAssetIssuingAuthorityInReviewJson(data, fullOcr.assetText);
   repairAssetPlotAndMapSheetInReviewJson(data, fullOcr.assetText);
-  repairAssetLandAddressInReviewJson(data, fullOcr.assetText);
+  repairAssetLandAddressInReviewJson(data, fullOcr.assetText, fullOcr.assetTextByFileName);
   repairAssetAreaInReviewJson(data, fullOcr.assetText);
   repairAssetUsageFormInReviewJson(data, fullOcr.assetText);
   repairAssetUsagePurposeInReviewJson(data, fullOcr.assetText);
   repairAssetUsageTermInReviewJson(data, fullOcr.assetText);
+  repairAssetUsageOriginInReviewJson(data, fullOcr.assetText, fullOcr.assetTextByFileName);
   repairAssetAreaWordsInReviewJson(data, fullOcr.assetText);
-  repairAssetPostIssueChangesInReviewJson(data, fullOcr.assetText);
+  repairAssetPostIssueChangesInReviewJson(data, fullOcr.assetText, fullOcr.assetTextByFileName);
   repairAssetCertificateNoteInReviewJson(data, fullOcr.assetText);
   repairUnsafeLandCertificateFieldsInReviewJson(data, fullOcr.assetText);
   repairAssetOwnerIdentityInReviewJson(data, fullOcr.assetText);
@@ -476,31 +477,41 @@ function isValidIdentityDate_(date) {
 
 function getFullOcrTextMapsForCase_(caseId, reviewJson) {
   const byFileName = {};
-  const assetTexts = [];
-  function addText(fileName, text, group) {
+  const assetTextByFileName = {};
+  const anonymousAssetTexts = [];
+  function addText(fileName, text, group, preferFullText) {
     fileName = String(fileName || '');
     text = String(text || '');
     if (!text) return;
-    if (fileName) byFileName[fileName] = byFileName[fileName] ? byFileName[fileName] + '\n\n' + text : text;
+    if (fileName && (preferFullText || !byFileName[fileName])) byFileName[fileName] = text;
     const normalizedGroup = String(group || '').toLowerCase();
-    if (normalizedGroup === 'asset' || /^asset/i.test(fileName) || isLandCertificateOcrText_(text)) assetTexts.push(text);
+    if (normalizedGroup === 'asset' || /^asset/i.test(fileName) || isLandCertificateOcrText_(text)) {
+      if (fileName) {
+        if (preferFullText || !assetTextByFileName[fileName]) assetTextByFileName[fileName] = text;
+      } else {
+        anonymousAssetTexts.push(text);
+      }
+    }
   }
   (reviewJson && reviewJson.ocr_results || []).forEach(function(item) {
-    addText(item.file_name, item.text || item.text_preview || '', item.group);
+    addText(item.file_name, item.text || item.text_preview || '', item.group, false);
   });
   try {
     const rows = getRowsByCaseId_(SHEETS.OCR_RESULTS, caseId);
     rows.forEach(function(row) {
       const fileName = row['File Name'] || '';
       const text = (row['OCR Text'] || '') || readOcrTextFileFromUrl_(row['OCR Text File URL'] || '');
-      addText(fileName, text, inferOcrGroupFromFileName_(fileName));
+      addText(fileName, text, inferOcrGroupFromFileName_(fileName), true);
     });
   } catch (err) {
     // Review must still load from the stored JSON if the OCR sheet cannot be read.
   }
   return {
     byFileName: byFileName,
-    assetText: assetTexts.join('\n\n')
+    assetTextByFileName: assetTextByFileName,
+    assetText: Object.keys(assetTextByFileName).map(function(fileName) {
+      return assetTextByFileName[fileName];
+    }).concat(anonymousAssetTexts).join('\n\n')
   };
 }
 

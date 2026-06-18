@@ -703,6 +703,270 @@ dataMergeContext.repairAssetOwnerAddressInReviewJson(reviewJson, newA4PdfText);
 assert.strictEqual(reviewJson.assets[0].owner_address.final_value, '');
 assert.strictEqual(reviewJson.assets[0].real_estate.owner_address.final_value, '');
 
+const oldCertificateSplitPageText = `
+II. Thửa đất, nhà ở và tài sản khác gắn liền với đất
+1. Thửa đất:
+a) Thửa đất số: 255
+tờ bản đồ số: F-48-116(146-a-I)
+b) Địa chỉ: Tiểu khu 9, thị trấn Lương Sơn, huyện Lương Sơn, tỉnh Hòa Bình 102,3m2, (bằng chữ: một trăm linh hai phẩy ba mét vuông)
+c) Diện tích: 102,3m2
+d) Hình thức sử dụng: Sử dụng riêng
+đ) Mục đích sử dụng: Đất ở tại đô thị
+e) Thời hạn sử dụng: Lâu dài
+g) Nguồn gốc sử dụng: Nhận chuyển nhượng đất được Nhà nước giao
+dụng đất
+2. Nhà ở: -/-
+3. Công trình xây dựng khác: -/-
+4. Rừng sản xuất là rừng trồng: -/-
+5. Cây lâu năm: -/-
+6. Ghi chú: Không
+đất có thu tiền sử
+IV. Những thay đổi sau khi cấp Giấy chứng nhận
+Nội dung thay đổi và cơ sở pháp lý
+Chuyển nhượng cho ông thức Khánh Trung, số lư
+chieri C1994238 cung ba for This Theey Lind, CMIND 082114 972
+che chi tai khu SA, the tras
+`;
+const oldCertificateFields = dataMergeContext.extractRealEstateIndexedLandFields_(oldCertificateSplitPageText);
+assert.strictEqual(oldCertificateFields.land_address, 'Tiểu khu 9, thị trấn Lương Sơn, huyện Lương Sơn, tỉnh Hòa Bình');
+assert.strictEqual(
+  oldCertificateFields.usage_origin,
+  'Nhận chuyển nhượng đất được Nhà nước giao đất có thu tiền sử dụng đất'
+);
+const oldCertificateReview = {
+  assets: [{
+    real_estate: {
+      usage_origin: {
+        ai_value: 'Nhận chuyển nhượng đất được Nhà nước giao',
+        manual_value: '',
+        final_value: 'Nhận chuyển nhượng đất được Nhà nước giao'
+      },
+      post_issue_changes: {
+        ai_value: 'IV. Những thay đổi sau khi cấp Giấy chứng nhận:\nChuyển nhượng cho ông thức Khánh Trung, số lư chieri C1994238 cung ba for This Theey Lind, CMIND 082114 972',
+        manual_value: '',
+        final_value: 'IV. Những thay đổi sau khi cấp Giấy chứng nhận:\nChuyển nhượng cho ông thức Khánh Trung, số lư chieri C1994238 cung ba for This Theey Lind, CMIND 082114 972'
+      }
+    }
+  }]
+};
+dataMergeContext.repairAssetUsageOriginInReviewJson(oldCertificateReview, oldCertificateSplitPageText);
+dataMergeContext.repairAssetPostIssueChangesInReviewJson(oldCertificateReview, oldCertificateSplitPageText);
+assert.strictEqual(
+  oldCertificateReview.assets[0].real_estate.usage_origin.final_value,
+  'Nhận chuyển nhượng đất được Nhà nước giao đất có thu tiền sử dụng đất'
+);
+assert.strictEqual(
+  oldCertificateReview.assets[0].real_estate.post_issue_changes.final_value,
+  'Không rõ, đề nghị kiểm tra'
+);
+assert.strictEqual(
+  dataMergeContext.cleanPostIssueChangesCandidate_(
+    'IV. Những thay đổi sau khi cấp Giấy chứng nhận\nNội dung thay đổi và cơ sở pháp lý\nChuyển nhượng cho Nguyễn Văn A'
+  ),
+  'Chuyển nhượng cho Nguyễn Văn A'
+);
+assert.strictEqual(
+  dataMergeContext.postIssueChangesValueForReview_({
+    status: 'ok',
+    value: 'IV. Những thay đổi sau khi cấp Giấy chứng nhận\nNội dung thay đổi và cơ sở pháp lý\nChuyển nhượng cho Nguyễn Văn A'
+  }),
+  'Chuyển nhượng cho Nguyễn Văn A'
+);
+assert.strictEqual(
+  dataMergeContext.cleanPostIssueChangesCandidate_(
+    'Nội dung thay đổi và cơ sở pháp lý Chuyển nhượng cho Nguyễn Văn A'
+  ),
+  'Chuyển nhượng cho Nguyễn Văn A'
+);
+assert.strictEqual(
+  dataMergeContext.extractPostIssueChangesFromCertificateText_(
+    'IV. Những thay đổi sau khi cấp Giấy chứng nhận Chuyển nhượng cho Nguyễn Văn A'
+  ).value,
+  'Chuyển nhượng cho Nguyễn Văn A'
+);
+assert.strictEqual(
+  dataMergeContext.cleanupLandAddressCertificateValue_(
+    'Tiểu khu 9, tỉnh Hòa Bình c. Diện tích: 102,3m2'
+  ),
+  'Tiểu khu 9, tỉnh Hòa Bình'
+);
+assert.strictEqual(
+  dataMergeContext.completeUsageOriginFromContext_(
+    'Nhận chuyển nhượng đất được Nhà nước giao',
+    'GIẤY CHỨNG NHẬN QUYỀN SỬ DỤNG ĐẤT\nđất có thu tiền sử'
+  ),
+  'Nhận chuyển nhượng đất được Nhà nước giao'
+);
+const scopedSourceA = `
+II. Thửa đất, nhà ở và tài sản khác gắn liền với đất
+1. Thửa đất:
+a) Thửa đất số: 1
+b) Địa chỉ: Xã A, tỉnh A
+g) Nguồn gốc sử dụng: Nhận chuyển nhượng đất được Nhà nước giao
+6. Ghi chú: Không
+`;
+const scopedSourceB = `
+II. Thửa đất, nhà ở và tài sản khác gắn liền với đất
+1. Thửa đất:
+a) Thửa đất số: 2
+b) Địa chỉ: Xã B, tỉnh B
+g) Nguồn gốc sử dụng: Nhận chuyển nhượng đất được Nhà nước giao
+dụng đất
+6. Ghi chú: Không
+đất có thu tiền sử
+`;
+const scopedReview = {
+  assets: [
+    {
+      certificate_title: { source: 'asset__A.pdf' },
+      real_estate: {
+        usage_origin: {
+          ai_value: 'Nhận chuyển nhượng đất được Nhà nước giao',
+          manual_value: '',
+          final_value: 'Nhận chuyển nhượng đất được Nhà nước giao'
+        }
+      }
+    },
+    {
+      certificate_title: { source: 'asset__B.pdf' },
+      real_estate: {
+        usage_origin: {
+          ai_value: 'Nhận chuyển nhượng đất được Nhà nước giao',
+          manual_value: '',
+          final_value: 'Nhận chuyển nhượng đất được Nhà nước giao'
+        }
+      }
+    }
+  ]
+};
+dataMergeContext.repairAssetUsageOriginInReviewJson(
+  scopedReview,
+  scopedSourceA + '\n' + scopedSourceB,
+  {
+    'asset__A.pdf': scopedSourceA,
+    'asset__B.pdf': scopedSourceB
+  }
+);
+assert.strictEqual(
+  scopedReview.assets[0].real_estate.usage_origin.final_value,
+  'Nhận chuyển nhượng đất được Nhà nước giao'
+);
+assert.strictEqual(
+  scopedReview.assets[1].real_estate.usage_origin.final_value,
+  'Nhận chuyển nhượng đất được Nhà nước giao đất có thu tiền sử dụng đất'
+);
+const scopedOcrContext = dataMergeContext.buildAssetOcrContext_([
+  { group: 'asset', file_name: 'asset__A.pdf', text: scopedSourceA },
+  { group: 'asset', file_name: 'asset__B.pdf', text: scopedSourceB }
+]);
+assert.strictEqual(
+  dataMergeContext.selectAssetOcrTextForAiAsset_(
+    { certificate_title: { source_file: 'asset__A.pdf' } },
+    scopedOcrContext,
+    2
+  ),
+  scopedSourceA
+);
+dataMergeContext.makeField = function(label, aiValue, formValue, manualValue, source, confidence) {
+  return {
+    label,
+    ai_value: aiValue || '',
+    form_value: formValue || '',
+    manual_value: manualValue || '',
+    final_value: manualValue || formValue || aiValue || '',
+    source: source || '',
+    confidence: confidence || '',
+    confirmed: false
+  };
+};
+dataMergeContext.shouldReclassifyOcrAsLandAsset_ = function() { return true; };
+const normalizedScopedAssets = dataMergeContext.normalizeAiData_({
+  assets: [
+    {
+      asset_type: { value: 'Bất động sản', source_file: 'asset__A.pdf' },
+      certificate_title: { value: 'Giấy chứng nhận quyền sử dụng đất', source_file: 'asset__A.pdf' },
+      real_estate: {
+        land_address: { value: '', source_file: 'asset__A.pdf' }
+      }
+    },
+    {
+      asset_type: { value: 'Bất động sản', source_file: 'asset__B.pdf' },
+      certificate_title: { value: 'Giấy chứng nhận quyền sử dụng đất', source_file: 'asset__B.pdf' },
+      real_estate: {
+        land_address: { value: '', source_file: 'asset__B.pdf' }
+      }
+    }
+  ]
+}, [
+  { group: 'asset', file_name: 'asset__A.pdf', text: scopedSourceA },
+  { group: 'asset', file_name: 'asset__B.pdf', text: scopedSourceB }
+]);
+assert.strictEqual(normalizedScopedAssets.assets[0].real_estate.land_address.final_value, 'Xã A, tỉnh A');
+assert.strictEqual(normalizedScopedAssets.assets[1].real_estate.land_address.final_value, 'Xã B, tỉnh B');
+assert.strictEqual(
+  dataMergeContext.selectAssetOcrTextForAiAsset_(
+    { certificate_title: { source_file: 'cover.jpg' } },
+    {
+      byFileName: { 'cover.jpg': 'COVER', 'detail.jpg': 'DETAIL' },
+      allText: 'COVER\n\nDETAIL'
+    },
+    1
+  ),
+  'COVER\n\nDETAIL'
+);
+assert.strictEqual(
+  dataMergeContext.cleanPostIssueChangesCandidate_(
+    'Đính chính nội dung tại mục IV. Những thay đổi sau khi cấp Giấy chứng nhận'
+  ),
+  'Đính chính nội dung tại mục IV. Những thay đổi sau khi cấp Giấy chứng nhận'
+);
+assert.strictEqual(
+  dataMergeContext.isPostIssueChangesUnclear_('Chuyển nhượng cho John Williams'),
+  false
+);
+assert.strictEqual(
+  dataMergeContext.isPostIssueChangesUnclear_('Chuyển nhượng cho The Bank of New York Mellon'),
+  false
+);
+assert.strictEqual(
+  dataMergeContext.isPostIssueChangesUnclear_(
+    'Chuyển nhượng cho ông thức Khánh Trung, số lư chieri C1994238 cung ba for This Theey Lind, CMIND 082114972'
+  ),
+  true
+);
+dataMergeContext.SHEETS = { OCR_RESULTS: 'OCR_RESULTS' };
+dataMergeContext.getRowsByCaseId_ = function() {
+  return [{
+    'File Name': 'asset__preview.pdf',
+    'OCR Text': 'FULL OCR CONTENT'
+  }];
+};
+const fullOcrMap = dataMergeContext.getFullOcrTextMapsForCase_('CASE', {
+  ocr_results: [{
+    file_name: 'asset__preview.pdf',
+    group: 'asset',
+    text_preview: 'TRUNCATED PREVIEW IV. Những thay đổi sau khi cấp Giấy chứng nhận'
+  }]
+});
+assert.strictEqual(fullOcrMap.assetTextByFileName['asset__preview.pdf'], 'FULL OCR CONTENT');
+assert.strictEqual(fullOcrMap.assetText, 'FULL OCR CONTENT');
+assert.strictEqual(dataMergeContext.canUseSharedAssetOcr_([
+  {
+    real_estate: {
+      certificate_number: { final_value: 'Không rõ, đề nghị sửa thủ công' },
+      registry_number: { final_value: '' }
+    }
+  },
+  {
+    real_estate: {
+      certificate_number: { final_value: 'Không rõ, đề nghị sửa thủ công' },
+      registry_number: { final_value: '' }
+    }
+  }
+], {
+  byFileName: { 'asset__A.pdf': scopedSourceA, 'asset__B.pdf': scopedSourceB }
+}), false);
+
 const ocrServiceContext = {};
 vm.createContext(ocrServiceContext);
 vm.runInContext(fs.readFileSync('OCRService.gs', 'utf8'), ocrServiceContext);

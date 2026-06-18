@@ -1,5 +1,7 @@
 ﻿function buildReviewJson(caseId, formData, aiData, ocrResults) {
   const normalized = normalizeAiData_(aiData || {}, ocrResults || []);
+  const initialAssetOcr = buildAssetOcrContext_(ocrResults || []);
+  const sharedAssetOcrText = canUseSharedAssetOcr_(normalized.assets, initialAssetOcr) ? initialAssetOcr.allText : '';
   const reviewJson = {
     schema_version: '1.0.0',
     case_id: caseId,
@@ -63,30 +65,14 @@
     final_confirmed_data: {}
   };
   applyFormPriorityRules_(reviewJson);
-  repairUnsafeLandCertificateFieldsInReviewJson(reviewJson, (ocrResults || [])
-    .filter(function(item) { return item.group === 'asset'; })
-    .map(function(item) { return item.text || item.text_preview || ''; })
-    .join('\n'));
-  repairAssetIssueDateInReviewJson(reviewJson, (ocrResults || [])
-    .filter(function(item) { return item.group === 'asset'; })
-    .map(function(item) { return item.text || item.text_preview || ''; })
-    .join('\n'));
-  repairAssetOwnerIdentityInReviewJson(reviewJson, (ocrResults || [])
-    .filter(function(item) { return item.group === 'asset'; })
-    .map(function(item) { return item.text || item.text_preview || ''; })
-    .join('\n'));
-  repairAssetUsagePurposeInReviewJson(reviewJson, (ocrResults || [])
-    .filter(function(item) { return item.group === 'asset'; })
-    .map(function(item) { return item.text || item.text_preview || ''; })
-    .join('\n'));
-  repairAssetOwnerAddressInReviewJson(reviewJson, (ocrResults || [])
-    .filter(function(item) { return item.group === 'asset'; })
-    .map(function(item) { return item.text || item.text_preview || ''; })
-    .join('\n'));
-  repairAssetCertificateNoteInReviewJson(reviewJson, (ocrResults || [])
-    .filter(function(item) { return item.group === 'asset'; })
-    .map(function(item) { return item.text || item.text_preview || ''; })
-    .join('\n'));
+  if (sharedAssetOcrText) {
+    repairUnsafeLandCertificateFieldsInReviewJson(reviewJson, sharedAssetOcrText);
+    repairAssetIssueDateInReviewJson(reviewJson, sharedAssetOcrText);
+    repairAssetOwnerIdentityInReviewJson(reviewJson, sharedAssetOcrText);
+    repairAssetUsagePurposeInReviewJson(reviewJson, sharedAssetOcrText);
+    repairAssetOwnerAddressInReviewJson(reviewJson, sharedAssetOcrText);
+    repairAssetCertificateNoteInReviewJson(reviewJson, sharedAssetOcrText);
+  }
   applyTemplateDecisionToReviewJson(reviewJson);
   reviewJson.final_confirmed_data = buildFinalConfirmedData(reviewJson);
   return reviewJson;
@@ -398,26 +384,30 @@ function repairAssetAreaInReviewJson(reviewJson, fullAssetOcrText) {
   return reviewJson;
 }
 
-function repairAssetPostIssueChangesInReviewJson(reviewJson, fullAssetOcrText) {
+function repairAssetPostIssueChangesInReviewJson(reviewJson, fullAssetOcrText, assetTextByFileName) {
   if (!reviewJson) return reviewJson;
   const assetText = fullAssetOcrText || (reviewJson.ocr_results || [])
     .filter(function(item) { return item.group === 'asset'; })
     .map(function(item) { return item.text || item.text_preview || ''; })
     .join('\n');
-  const postIssue = extractPostIssueChangesFromCertificateText_(assetText);
+  const allowAllAssetTexts = canUseSharedAssetOcr_(reviewJson.assets, { byFileName: assetTextByFileName || {} });
   (reviewJson.assets || []).forEach(function(asset) {
+    const scopedAssetText = assetOcrTextForRepair_(asset, assetText, assetTextByFileName, allowAllAssetTexts);
+    if (!scopedAssetText) return;
+    const postIssue = extractPostIssueChangesFromCertificateText_(scopedAssetText);
     const field = asset && asset.real_estate && asset.real_estate.post_issue_changes;
     if (!field || !field.hasOwnProperty('final_value') || field.manual_value) return;
-    if (isNewA4LandCertificateText_(assetText) && postIssue.status === 'absent') {
+    if (isNewA4LandCertificateText_(scopedAssetText) && postIssue.status === 'absent') {
       field.ai_value = '';
       field.final_value = '';
       field.source = 'OCR_NEW_A4_BLANK_CHANGES_TABLE';
       field.confidence = Math.max(Number(field.confidence || 0), 0.86);
       return;
     }
-    if (postIssue.value && shouldReplacePostIssueChanges_(field, postIssue.value)) {
-      field.ai_value = postIssue.value;
-      field.final_value = postIssue.value;
+    const postIssueValue = postIssueChangesValueForReview_(postIssue);
+    if (postIssueValue && shouldReplacePostIssueChanges_(field, postIssueValue)) {
+      field.ai_value = postIssueValue;
+      field.final_value = postIssueValue;
       field.source = field.source || 'OCR_POST_ISSUE_CHANGES';
       field.confidence = postIssue.status === 'partial_or_unclear' ? 0.55 : 0.82;
     }
@@ -553,18 +543,21 @@ function isShortCertificateTitleForReviewRepair_(current, extracted) {
     extractedText.length > currentText.length + 8;
 }
 
-function repairAssetLandAddressInReviewJson(reviewJson, fullAssetOcrText) {
+function repairAssetLandAddressInReviewJson(reviewJson, fullAssetOcrText, assetTextByFileName) {
   if (!reviewJson) return reviewJson;
   const assetText = fullAssetOcrText || (reviewJson.ocr_results || [])
     .filter(function(item) { return item.group === 'asset'; })
     .map(function(item) { return item.text || item.text_preview || ''; })
     .join('\n');
-  const indexed = extractRealEstateIndexedLandFields_(assetText);
-  const address = indexed.land_address || '';
+  const allowAllAssetTexts = canUseSharedAssetOcr_(reviewJson.assets, { byFileName: assetTextByFileName || {} });
   (reviewJson.assets || []).forEach(function(asset) {
     const field = asset && asset.real_estate && asset.real_estate.land_address;
     if (!field || !field.hasOwnProperty('final_value') || field.manual_value) return;
     normalizeLandAddressField_(field);
+    const scopedAssetText = assetOcrTextForRepair_(asset, assetText, assetTextByFileName, allowAllAssetTexts);
+    if (!scopedAssetText) return;
+    const indexed = extractRealEstateIndexedLandFields_(scopedAssetText);
+    const address = cleanupLandAddressCertificateValue_(indexed.land_address || '');
     if (!address) return;
     const current = String(field.final_value || field.ai_value || '').trim();
     if (current && !isBetterLandAddress_(current, address)) return;
@@ -665,6 +658,58 @@ function repairAssetUsagePurposeInReviewJson(reviewJson, fullAssetOcrText) {
     field.confidence = Math.max(Number(field.confidence || 0), 0.86);
   });
   return reviewJson;
+}
+
+function repairAssetUsageOriginInReviewJson(reviewJson, fullAssetOcrText, assetTextByFileName) {
+  if (!reviewJson) return reviewJson;
+  const assetText = fullAssetOcrText || (reviewJson.ocr_results || [])
+    .filter(function(item) { return item.group === 'asset'; })
+    .map(function(item) { return item.text || item.text_preview || ''; })
+    .join('\n');
+  const allowAllAssetTexts = canUseSharedAssetOcr_(reviewJson.assets, { byFileName: assetTextByFileName || {} });
+  (reviewJson.assets || []).forEach(function(asset) {
+    const field = asset && asset.real_estate && asset.real_estate.usage_origin;
+    if (!field || !field.hasOwnProperty('final_value') || field.manual_value) return;
+    const scopedAssetText = assetOcrTextForRepair_(asset, assetText, assetTextByFileName, allowAllAssetTexts);
+    if (!scopedAssetText) return;
+    const indexed = extractRealEstateIndexedLandFields_(scopedAssetText);
+    const usageOrigin = indexed.usage_origin || '';
+    if (!usageOrigin) return;
+    if (!shouldReplaceUsageOrigin_(field, usageOrigin)) return;
+    field.ai_value = usageOrigin;
+    field.final_value = usageOrigin;
+    field.source = 'OCR_INDEXED_ASSET_TEXT';
+    field.confidence = Math.max(Number(field.confidence || 0), 0.86);
+  });
+  return reviewJson;
+}
+
+function assetOcrTextForRepair_(asset, fullAssetOcrText, assetTextByFileName, allowAllFiles) {
+  const byFileName = assetTextByFileName || {};
+  const fileNames = Object.keys(byFileName);
+  if (allowAllFiles && fileNames.length) {
+    return fileNames.map(function(fileName) { return byFileName[fileName]; }).join('\n\n');
+  }
+  const sourceCandidates = [];
+  function addSource(field) {
+    const source = field && String(field.source || '').trim();
+    if (source && sourceCandidates.indexOf(source) < 0) sourceCandidates.push(source);
+  }
+  addSource(asset && asset.certificate_title);
+  addSource(asset && asset.asset_type);
+  addSource(asset && asset.real_estate && asset.real_estate.certificate_number);
+  addSource(asset && asset.real_estate && asset.real_estate.registry_number);
+  addSource(asset && asset.real_estate && asset.real_estate.land_plot_number);
+  addSource(asset && asset.owner_name);
+  const matchedTexts = [];
+  for (let i = 0; i < sourceCandidates.length; i++) {
+    const matched = byFileName[sourceCandidates[i]];
+    if (matched && matchedTexts.indexOf(matched) < 0) matchedTexts.push(matched);
+  }
+  if (matchedTexts.length) return matchedTexts.join('\n\n');
+  if (fileNames.length === 1) return byFileName[fileNames[0]];
+  if (fileNames.length > 1) return '';
+  return String(fullAssetOcrText || '');
 }
 
 function isBetterLandAddress_(current, candidate) {
@@ -788,10 +833,8 @@ function buildFinalConfirmedData(reviewJson) {
 function normalizeAiData_(aiData, ocrResults) {
   const idHintsByFile = buildIdHintsByFile_(ocrResults || []);
   const ocrTextByFile = buildOcrTextByFile_(ocrResults || []);
-  const assetOcrText = (ocrResults || [])
-    .filter(function(item) { return item.group === 'asset'; })
-    .map(function(item) { return item.text || ''; })
-    .join('\n\n');
+  const assetOcrContext = buildAssetOcrContext_(ocrResults || []);
+  const aiAssets = aiData.assets || [];
   return {
     secured_parties: dedupePeople_((aiData.secured_parties || []).map(function(person) {
       return normalizePerson_(person, idHintsByFile, ocrTextByFile);
@@ -799,12 +842,67 @@ function normalizeAiData_(aiData, ocrResults) {
     obligors: dedupePeople_((aiData.obligors || []).map(function(person) {
       return normalizePerson_(person, idHintsByFile, ocrTextByFile);
     })),
-    assets: (aiData.assets || []).map(function(asset) {
-      return normalizeAsset_(asset, assetOcrText);
+    assets: aiAssets.map(function(asset) {
+      return normalizeAsset_(asset, selectAssetOcrTextForAiAsset_(asset, assetOcrContext, aiAssets.length));
     }),
     conflicts: aiData.conflicts || [],
     warnings: aiData.warnings || []
   };
+}
+
+function buildAssetOcrContext_(ocrResults) {
+  const byFileName = {};
+  (ocrResults || []).forEach(function(item) {
+    if (String(item.group || '').toLowerCase() !== 'asset') return;
+    const fileName = String(item.file_name || '').trim();
+    const text = String(item.text || item.text_preview || '');
+    if (fileName && text) byFileName[fileName] = text;
+  });
+  return {
+    byFileName: byFileName,
+    allText: Object.keys(byFileName).map(function(fileName) { return byFileName[fileName]; }).join('\n\n')
+  };
+}
+
+function selectAssetOcrTextForAiAsset_(asset, assetOcrContext, assetCount) {
+  const byFileName = assetOcrContext && assetOcrContext.byFileName || {};
+  const fileNames = Object.keys(byFileName);
+  if (Number(assetCount || 0) <= 1) return String(assetOcrContext && assetOcrContext.allText || '');
+  const sourceFiles = [];
+  collectAiSourceFiles_(asset, sourceFiles);
+  const matched = [];
+  sourceFiles.forEach(function(fileName) {
+    if (byFileName[fileName] && matched.indexOf(byFileName[fileName]) < 0) matched.push(byFileName[fileName]);
+  });
+  if (matched.length) return matched.join('\n\n');
+  if (fileNames.length <= 1) return String(assetOcrContext && assetOcrContext.allText || '');
+  return '';
+}
+
+function collectAiSourceFiles_(value, out) {
+  if (!value || typeof value !== 'object') return;
+  if (value.source_file) {
+    const source = String(value.source_file).trim();
+    if (source && out.indexOf(source) < 0) out.push(source);
+  }
+  Object.keys(value).forEach(function(key) {
+    if (key !== 'source_file') collectAiSourceFiles_(value[key], out);
+  });
+}
+
+function canUseSharedAssetOcr_(assets, assetOcrContext) {
+  const fileCount = Object.keys(assetOcrContext && assetOcrContext.byFileName || {}).length;
+  if (fileCount <= 1 || (assets || []).length <= 1) return true;
+  const keys = (assets || []).map(assetCertificateKey_).filter(Boolean);
+  return keys.length === (assets || []).length && keys.every(function(key) { return key === keys[0]; });
+}
+
+function assetCertificateKey_(asset) {
+  const re = asset && asset.real_estate || {};
+  const certificateRaw = re.certificate_number && (re.certificate_number.final_value || re.certificate_number.ai_value);
+  const certificate = isCertificateNumberLike_(certificateRaw) ? normalizeCertificateCodeValue_(certificateRaw) : '';
+  const registry = normalizeRegistryCodeValue_(re.registry_number && (re.registry_number.final_value || re.registry_number.ai_value));
+  return certificate || registry || '';
 }
 
 function normalizePerson_(person, idHintsByFile, ocrTextByFile) {
@@ -1007,7 +1105,7 @@ function enrichAssetFromOcr_(asset, text) {
     asset.real_estate.usage_purpose.source = 'OCR_INDEXED_ASSET_TEXT';
     asset.real_estate.usage_purpose.confidence = Math.max(Number(asset.real_estate.usage_purpose.confidence || 0), 0.86);
   }
-  if (indexedLandFields.usage_origin && shouldReplaceSimpleOcrField_(asset.real_estate.usage_origin, indexedLandFields.usage_origin)) {
+  if (indexedLandFields.usage_origin && shouldReplaceUsageOrigin_(asset.real_estate.usage_origin, indexedLandFields.usage_origin)) {
     asset.real_estate.usage_origin.ai_value = indexedLandFields.usage_origin;
     asset.real_estate.usage_origin.final_value = indexedLandFields.usage_origin;
     asset.real_estate.usage_origin.source = 'OCR_INDEXED_ASSET_TEXT';
@@ -1027,9 +1125,10 @@ function enrichAssetFromOcr_(asset, text) {
     asset.real_estate.certificate_note.confidence = Math.max(Number(asset.real_estate.certificate_note.confidence || 0), 0.86);
   }
   const postIssueChanges = extractPostIssueChangesFromCertificateText_(text);
-  if (postIssueChanges.value && shouldReplacePostIssueChanges_(asset.real_estate.post_issue_changes, postIssueChanges.value)) {
-    asset.real_estate.post_issue_changes.ai_value = postIssueChanges.value;
-    asset.real_estate.post_issue_changes.final_value = postIssueChanges.value;
+  const postIssueChangesValue = postIssueChangesValueForReview_(postIssueChanges);
+  if (postIssueChangesValue && shouldReplacePostIssueChanges_(asset.real_estate.post_issue_changes, postIssueChangesValue)) {
+    asset.real_estate.post_issue_changes.ai_value = postIssueChangesValue;
+    asset.real_estate.post_issue_changes.final_value = postIssueChangesValue;
     asset.real_estate.post_issue_changes.source = 'OCR_POST_ISSUE_CHANGES';
     asset.real_estate.post_issue_changes.confidence = postIssueChanges.status === 'partial_or_unclear' ? 0.55 : 0.82;
   }
@@ -1127,12 +1226,12 @@ function extractRealEstateIndexedLandFields_(text) {
   return {
     land_plot_number: extractLandPlotNumberFromIndexedValue_(semantic.land_plot_number || items.a || ''),
     map_sheet_number: extractMapSheetNumberFromIndexedValue_(semantic.map_sheet_number || items.a || ''),
-    land_address: cleanupIndexedCertificateValue_(semantic.land_address || items.b || '') || extractDislocatedLandAddressFromBlock_(source),
+    land_address: cleanupLandAddressCertificateValue_(semantic.land_address || items.b || '') || cleanupLandAddressCertificateValue_(extractDislocatedLandAddressFromBlock_(source)),
     area: normalizeRealEstateAreaValue_(cleanupIndexedCertificateValue_(semantic.area || items.c || '')) || extractRealEstateArea_(source),
     usage_form: normalizeRealEstateUsageForm_(cleanupIndexedCertificateValue_(semantic.usage_form || '')),
     usage_purpose: cleanupIndexedCertificateValue_(semantic.usage_purpose || ''),
     usage_term: normalizeRealEstateUsageTerm_(cleanupIndexedCertificateValue_(semantic.usage_term || '')),
-    usage_origin: cleanupUsageOriginCertificateValue_(semantic.usage_origin || ''),
+    usage_origin: cleanupUsageOriginCertificateValue_(completeUsageOriginFromContext_(semantic.usage_origin || '', text || source)),
     _quality: selected
   };
 }
@@ -1152,7 +1251,7 @@ function extractNewA4RealEstateLandFields_(source, selected) {
   return {
     land_plot_number: extractLandPlotNumberFromIndexedValue_(semantic.land_plot_number || ''),
     map_sheet_number: extractMapSheetNumberFromIndexedValue_(semantic.map_sheet_number || semantic.land_plot_number || ''),
-    land_address: cleanupIndexedCertificateValue_(semantic.land_address || ''),
+    land_address: cleanupLandAddressCertificateValue_(semantic.land_address || ''),
     area: normalizeRealEstateAreaValue_(cleanupIndexedCertificateValue_(semantic.area || '')) || extractRealEstateArea_(source),
     usage_form: normalizeRealEstateUsageForm_(cleanupIndexedCertificateValue_(semantic.usage_form || '')),
     usage_purpose: cleanupIndexedCertificateValue_(semantic.land_type || ''),
@@ -1513,6 +1612,18 @@ function cleanupIndexedCertificateValue_(value) {
     .trim();
 }
 
+function cleanupLandAddressCertificateValue_(value) {
+  let cleaned = cleanupIndexedCertificateValue_(value);
+  const normalized = removeVietnameseAccents_(cleaned).toLowerCase();
+  const boundaries = [
+    normalized.search(/\s+\d+(?:[,.]\d+)?\s*m(?:2)?\b/i),
+    normalized.search(/\s+\(?\s*bang\s+chu\s*:/i),
+    normalized.search(/\s+(?:c|d|e|g)\s*[\).:]\s*(?:dien\s+tich|hinh\s+thuc|muc\s+dich|thoi\s+han|nguon\s+goc)\b/i)
+  ].filter(function(index) { return index >= 0; });
+  if (boundaries.length) cleaned = cleaned.slice(0, Math.min.apply(null, boundaries));
+  return cleaned.replace(/[;,.:\-\s]+$/g, '').trim();
+}
+
 function cleanupUsageOriginCertificateValue_(value) {
   return accentUsageOriginCertificateValue_(cleanupIndexedCertificateValue_(value)
     .replace(/\s+(?:2|3|4|5|6)\s*[\).:]\s*(?:nh[aÃ ]\s*[oá»Ÿ]|nha\s*o|c[oÃ´]ng\s*tr[Ã¬i]nh|cong\s*trinh|r[Æ°á»«]ng|rung|c[aÃ¢]y|cay|ghi\s*ch[uÃº]|ghi\s*chu)\b.*$/i, '')
@@ -1520,6 +1631,24 @@ function cleanupUsageOriginCertificateValue_(value) {
     .replace(/\s+iv\s*[\).:]?\s*nhung\s+thay\s+doi.*$/i, '')
     .replace(/[;,.:\-\s]+$/g, '')
     .trim());
+}
+
+function completeUsageOriginFromContext_(value, source) {
+  const current = String(value || '').replace(/\s+/g, ' ').trim();
+  if (!current) return '';
+  const currentNorm = removeVietnameseAccents_(current).toLowerCase().replace(/\s+/g, ' ').trim();
+  const sourceNorm = removeVietnameseAccents_(String(source || '')).toLowerCase().replace(/\s+/g, ' ').trim();
+  const sourceLines = String(source || '').split(/\r?\n/).map(function(line) {
+    return removeVietnameseAccents_(line).toLowerCase().replace(/[^a-z0-9]+/g, ' ').replace(/\s+/g, ' ').trim();
+  });
+  const hasStandaloneUsageTail = sourceLines.some(function(line) { return line === 'dung dat'; });
+  if (currentNorm.indexOf('nhan chuyen nhuong dat duoc nha nuoc giao') >= 0 &&
+      currentNorm.indexOf('co thu tien') < 0 &&
+      sourceNorm.indexOf('dat co thu tien su') >= 0 &&
+      hasStandaloneUsageTail) {
+    return 'Nh\u1eadn chuy\u1ec3n nh\u01b0\u1ee3ng \u0111\u1ea5t \u0111\u01b0\u1ee3c Nh\u00e0 n\u01b0\u1edbc giao \u0111\u1ea5t c\u00f3 thu ti\u1ec1n s\u1eed d\u1ee5ng \u0111\u1ea5t';
+  }
+  return current;
 }
 
 function accentUsageOriginCertificateValue_(value) {
@@ -1591,6 +1720,16 @@ function shouldReplaceSimpleOcrField_(field, candidate) {
   return false;
 }
 
+function shouldReplaceUsageOrigin_(field, candidate) {
+  if (shouldReplaceSimpleOcrField_(field, candidate)) return true;
+  if (!field || !candidate || field.manual_value) return false;
+  const current = String(field.final_value || field.ai_value || '').trim();
+  if (!current) return true;
+  const currentNorm = removeVietnameseAccents_(current).toLowerCase().replace(/\s+/g, ' ').trim();
+  const candidateNorm = removeVietnameseAccents_(candidate).toLowerCase().replace(/\s+/g, ' ').trim();
+  return candidateNorm.indexOf(currentNorm) >= 0 && candidate.length > current.length + 8;
+}
+
 function shouldReplaceRegistryNumber_(field, candidate, certificateNumber) {
   if (!field || !candidate || field.manual_value) return false;
   const current = String(field.final_value || field.ai_value || '').trim();
@@ -1614,7 +1753,9 @@ function shouldReplacePostIssueChanges_(field, candidate) {
   if (!current) return true;
   const currentNorm = removeVietnameseAccents_(current).toLowerCase();
   if (currentNorm === 'khong' || currentNorm === 'khong co') return true;
-  if (currentNorm.indexOf('khong doc ro') >= 0) return true;
+  if (currentNorm.indexOf('khong doc ro') >= 0 || currentNorm.indexOf('khong ro') >= 0) return true;
+  if (isPostIssueChangesUnclear_(current) && removeVietnameseAccents_(candidate).toLowerCase().indexOf('khong ro') >= 0) return true;
+  if (cleanPostIssueChangesCandidate_(current) !== current) return true;
   return false;
 }
 
@@ -1669,11 +1810,13 @@ function extractPostIssueChangesFromCertificateText_(text) {
   }
   if (start < 0) return { value: 'KhÃ´ng cÃ³', status: 'absent' };
   const content = [];
+  const startRemainder = stripPostIssueHeadingPrefix_(lines[start]);
+  if (startRemainder) content.push(startRemainder);
   for (let j = start + 1; j < lines.length; j++) {
-    const line = lines[j];
+    const line = stripPostIssueHeadingPrefix_(lines[j]);
+    if (!line) continue;
     const normalizedLine = removeVietnameseAccents_(line).toLowerCase();
-    if (normalizedLine.indexOf('noi dung thay doi') >= 0 ||
-        normalizedLine.indexOf('xac nhan cua co quan') >= 0 ||
+    if (normalizedLine.indexOf('xac nhan cua co quan') >= 0 ||
         normalizedLine.indexOf('co tham quyen') >= 0 ||
         normalizedLine.indexOf('giam doc') >= 0 ||
         normalizedLine.indexOf('so tai nguyen') >= 0) {
@@ -1733,11 +1876,13 @@ function extractPostIssueChangesFromPlainText_(text) {
   }
   if (start < 0) return { value: 'Kh\u00f4ng \u0111\u1ecdc r\u00f5, \u0111\u1ec1 ngh\u1ecb ki\u1ec3m tra k\u1ef9', status: 'partial_or_unclear' };
   const content = [];
+  const startRemainder = stripPostIssueHeadingPrefix_(lines[start]);
+  if (startRemainder) content.push(startRemainder);
   for (let j = start + 1; j < lines.length; j++) {
-    const line = lines[j];
+    const line = stripPostIssueHeadingPrefix_(lines[j]);
+    if (!line) continue;
     const normalizedLine = removeVietnameseAccents_(line).toLowerCase();
-    if (normalizedLine.indexOf('noi dung thay doi') >= 0 ||
-        normalizedLine.indexOf('xac nhan cua co quan') >= 0 ||
+    if (normalizedLine.indexOf('xac nhan cua co quan') >= 0 ||
         normalizedLine.indexOf('co tham quyen') >= 0 ||
         normalizedLine.indexOf('giam doc') >= 0 ||
         normalizedLine.indexOf('so tai nguyen') >= 0) {
@@ -1759,9 +1904,9 @@ function extractPostIssueChangesFromPlainText_(text) {
 function cleanPostIssueChangesCandidate_(value) {
   return String(value || '')
     .split(/\r?\n/)
-    .map(function(line) { return line.replace(/\s+/g, ' ').trim(); })
+    .map(function(line) { return stripPostIssueHeadingPrefix_(line.replace(/\s+/g, ' ').trim()); })
     .filter(function(line) {
-      const normalized = removeVietnameseAccents_(line).toLowerCase();
+      const normalized = removeVietnameseAccents_(line).toLowerCase().replace(/[^a-z0-9]+/g, ' ').replace(/\s+/g, ' ').trim();
       if (!normalized) return false;
       if (/^(ngay|thang|nam)\b/.test(normalized)) return false;
       if (normalized.indexOf('nguyen') >= 0 && normalized.indexOf('giam doc') >= 0) return false;
@@ -1773,9 +1918,36 @@ function cleanPostIssueChangesCandidate_(value) {
     .trim();
 }
 
+function stripPostIssueHeadingPrefix_(value) {
+  const raw = String(value || '');
+  const normalized = removeVietnameseAccents_(raw).toLowerCase();
+  const patterns = [
+    /^\s*(?:(?:iv|6)\s*[\).:-]?\s*)?nhung\s+thay\s+doi\s+sau\s+khi\s+cap\s+giay\s+chung\s+nhan\s*[:.-]?\s*/,
+    /^\s*noi\s+dung\s+thay\s+doi\s+va\s+co\s+so\s+phap\s+ly\s*[:.-]?\s*/
+  ];
+  for (let i = 0; i < patterns.length; i++) {
+    const match = normalized.match(patterns[i]);
+    if (match) return raw.slice(match[0].length).trim();
+  }
+  return raw.trim();
+}
+
+function postIssueChangesValueForReview_(postIssue) {
+  if (!postIssue || !postIssue.value) return '';
+  if (postIssue.status === 'partial_or_unclear') return 'Kh\u00f4ng r\u00f5, \u0111\u1ec1 ngh\u1ecb ki\u1ec3m tra';
+  return cleanPostIssueChangesCandidate_(postIssue.value);
+}
+
 function isPostIssueChangesUnclear_(value) {
   const text = removeVietnameseAccents_(String(value || '')).toLowerCase();
   if (text.indexOf('khong doc ro') >= 0) return true;
+  if (text.indexOf('khong ro') >= 0) return true;
+  const suspiciousTokens = ['chieri', 'theey', 'duttag', 'tras', 'hamdoc', 'cmind', ' phone ', ' for ', ' now ', ' byget ', ' taubin'];
+  let suspiciousCount = 0;
+  suspiciousTokens.forEach(function(token) {
+    if (text.indexOf(token) >= 0) suspiciousCount++;
+  });
+  if (suspiciousCount >= 2) return true;
   const letters = (text.match(/[a-z]/g) || []).length;
   const digits = (text.match(/[0-9]/g) || []).length;
   if (letters < 20 && digits > 6) return true;
@@ -2191,7 +2363,7 @@ function normalizeAssetCertificateCodes_(asset) {
 
 function normalizeLandAddressField_(field) {
   ['ai_value', 'form_value', 'manual_value', 'final_value'].forEach(function(key) {
-    if (field[key]) field[key] = normalizeCertificatePunctuationSpacing_(field[key]);
+    if (field[key]) field[key] = cleanupLandAddressCertificateValue_(normalizeCertificatePunctuationSpacing_(field[key]));
   });
 }
 

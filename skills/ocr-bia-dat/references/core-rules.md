@@ -172,3 +172,10 @@ Every extracted field should carry:
 - evidence text when available
 
 For unclear certificate fields, leave blank or mark manual review instead of inventing content.
+
+## Field Boundary Repairs
+
+- `Dia chi` must stop before area text, `Bang chu`, or the next indexed land-field label. Write the cleanup only to the land-address field.
+- `Nguon goc su dung` may join wrapped OCR fragments only when the same asset OCR contains the missing words and the assembled sentence follows the field label. Do not borrow text from another field or certificate.
+- In post-issue changes, remove repeated `IV. Nhung thay doi...` and table-column headings from the field value because the review layout renders the heading itself.
+- If handwritten post-issue content is too garbled to preserve faithfully, store `Khong ro, de nghi kiem tra` instead of presenting guessed names, numbers, or addresses.

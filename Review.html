@@ -713,7 +713,7 @@
         lines.push('<div class="asset-doc-line"><strong>6. ' + t('Nhung thay doi sau khi cap Giay chung nhan') + ':</strong></div>');
         lines.push('<div class="asset-doc-line">' + escapeHtml(a4PostIssueChangesDisplayValue(valueOf(re.post_issue_changes), ocrText)) + '</div>');
       } else {
-        lines.push('<div class="asset-doc-line"><strong>I. ' + t('Nguoi su dung dat, chu so huu nha o va tai san khac gan lien voi dat') + ':</strong></div>');
+        lines.push('<div class="asset-doc-line"><strong>I. ' + t('Nguoi su dung dat, chu so huu nha o va tai san khac gan lien voi dat') + '</strong></div>');
         ownerLines(asset, false).forEach(line => lines.push('<div class="asset-doc-line">' + escapeHtml(oneLineCertificateValue(line)) + '</div>'));
         lines.push('<div class="asset-doc-line"><strong>II. ' + t('Thua dat, nha o va tai san khac gan lien voi dat') + ':</strong></div>');
         lines.push('<div class="asset-doc-line"><strong>1. ' + t('Thua dat') + ':</strong></div>');
@@ -813,9 +813,11 @@
     }
 
     function a4PostIssueChangesDisplayValue(value, ocrText) {
-      const direct = cleanValue(value);
+      const direct = cleanPostIssueChangesDisplayValue(value);
       const normalized = removeVietnameseMarks(direct).toLowerCase().replace(/\s+/g, ' ').trim();
-      if (direct && normalized !== 'khong co' && !isAbsentCertificateText(direct)) return direct;
+      if (direct && normalized !== 'khong co' && !isAbsentCertificateText(direct)) {
+        return isUnclearPostIssueText(direct) ? 'Kh\u00f4ng r\u00f5, \u0111\u1ec1 ngh\u1ecb ki\u1ec3m tra' : direct;
+      }
       const inferred = inferPostIssueChangesFromOcr(ocrText);
       const inferredNormalized = removeVietnameseMarks(inferred).toLowerCase().replace(/\s+/g, ' ').trim();
       if (!inferred || inferredNormalized === 'khong co' || inferredNormalized.indexOf('co noi dung nhung bi mo') === 0) return '';
@@ -937,10 +939,34 @@
     }
 
     function postIssueChangesDisplayValue(value, ocrText) {
-      value = cleanValue(value);
-      if (value && !isAbsentCertificateText(value)) return value;
+      value = cleanPostIssueChangesDisplayValue(value);
+      if (value && !isAbsentCertificateText(value)) {
+        return isUnclearPostIssueText(value) ? 'Kh\u00f4ng r\u00f5, \u0111\u1ec1 ngh\u1ecb ki\u1ec3m tra' : value;
+      }
       const inferred = inferPostIssueChangesFromOcr(ocrText);
       return inferred || 'Kh\u00f4ng c\u00f3';
+    }
+
+    function cleanPostIssueChangesDisplayValue(value) {
+      return String(value || '').split(/\r?\n/)
+        .map(line => stripPostIssueHeadingPrefix(line.replace(/\s+/g, ' ').trim()))
+        .filter(Boolean)
+        .join('\n')
+        .trim();
+    }
+
+    function stripPostIssueHeadingPrefix(value) {
+      const raw = String(value || '');
+      const normalized = removeVietnameseMarks(raw).toLowerCase();
+      const patterns = [
+        /^\s*(?:(?:iv|6)\s*[\).:-]?\s*)?nhung\s+thay\s+doi\s+sau\s+khi\s+cap\s+giay\s+chung\s+nhan\s*[:.-]?\s*/,
+        /^\s*noi\s+dung\s+thay\s+doi\s+va\s+co\s+so\s+phap\s+ly\s*[:.-]?\s*/
+      ];
+      for (const pattern of patterns) {
+        const match = normalized.match(pattern);
+        if (match) return raw.slice(match[0].length).trim();
+      }
+      return raw.trim();
     }
 
     function inferPostIssueChangesFromOcr(ocrText) {
@@ -957,11 +983,13 @@
       }
       if (start < 0) return '';
       const content = [];
+      const startRemainder = stripPostIssueHeadingPrefix(lines[start]);
+      if (startRemainder) content.push(startRemainder);
       for (let j = start + 1; j < lines.length; j++) {
-        const line = lines[j];
+        const line = stripPostIssueHeadingPrefix(lines[j]);
+        if (!line) continue;
         const normalized = removeVietnameseMarks(line).toLowerCase();
-        if (normalized.indexOf('noi dung thay doi') >= 0 ||
-            normalized.indexOf('xac nhan cua co quan') >= 0 ||
+        if (normalized.indexOf('xac nhan cua co quan') >= 0 ||
             normalized.indexOf('co tham quyen') >= 0 ||
             normalized.indexOf('giam doc') >= 0 ||
             normalized.indexOf('so tai nguyen') >= 0) {
@@ -971,14 +999,17 @@
         content.push(line);
       }
       const cleaned = content.join('\n').replace(/\n{3,}/g, '\n\n').trim();
-      if (!cleaned) return 'C\u00f3 n\u1ed9i dung nh\u01b0ng b\u1ecb m\u1edd/kh\u00f4ng \u0111\u1ecdc r\u00f5, \u0111\u1ec1 ngh\u1ecb ki\u1ec3m tra k\u1ef9';
-      if (isUnclearPostIssueText(cleaned)) return cleaned + '\nC\u1ea3nh b\u00e1o: ph\u1ea7n n\u00e0y b\u1ecb m\u1edd/vi\u1ebft tay kh\u00f3 \u0111\u1ecdc, \u0111\u1ec1 ngh\u1ecb ki\u1ec3m tra k\u1ef9.';
+      if (!cleaned) return 'Kh\u00f4ng r\u00f5, \u0111\u1ec1 ngh\u1ecb ki\u1ec3m tra';
+      if (isUnclearPostIssueText(cleaned)) return 'Kh\u00f4ng r\u00f5, \u0111\u1ec1 ngh\u1ecb ki\u1ec3m tra';
       return cleaned;
     }
 
     function isUnclearPostIssueText(value) {
       const text = removeVietnameseMarks(value).toLowerCase();
-      if (text.indexOf('khong doc ro') >= 0 || text.indexOf('bi mo') >= 0) return true;
+      if (text.indexOf('khong doc ro') >= 0 || text.indexOf('khong ro') >= 0 || text.indexOf('bi mo') >= 0) return true;
+      const suspiciousTokens = ['chieri', 'theey', 'duttag', 'tras', 'hamdoc', 'cmind', ' phone ', ' for ', ' now ', ' byget ', ' taubin'];
+      const suspiciousCount = suspiciousTokens.filter(token => text.indexOf(token) >= 0).length;
+      if (suspiciousCount >= 2) return true;
       const letters = (text.match(/[a-z]/g) || []).length;
       const digits = (text.match(/[0-9]/g) || []).length;
       return letters < 20 && digits > 6;
