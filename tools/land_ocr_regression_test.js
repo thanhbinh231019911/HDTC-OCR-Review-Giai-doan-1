@@ -44,10 +44,12 @@ function collectSemanticLandLabelStarts_(normalizedText) {
     'to ban do so',
     'dia chi',
     'dien tich',
+    'loai dat',
     'hinh thuc su dung',
     'muc dich su dung',
     'thoi han su dung',
     'nguon goc su dung',
+    'thong tin tai san gan lien voi dat',
     'bang chu'
   ];
   const starts = [];
@@ -67,6 +69,7 @@ function cleanupSemanticLandFieldValue_(value) {
   return String(value || '')
     .replace(/\s+/g, ' ')
     .replace(/^[\s:;.,)\-]+/, '')
+    .replace(/\s+(?:dia\s*chi|loai\s*dat|hinh\s*thuc\s*su\s*dung|muc\s*dich\s*su\s*dung|thoi\s*han\s*su\s*dung|nguon\s*goc\s*su\s*dung|thong\s*tin\s*tai\s*san\s*gan\s*lien\s*voi\s*dat)\s*[:.-]?.*$/i, '')
     .replace(/(?:^|\s)(?:[a-g]|\u0111)\s*[\).:]?\s*$/i, '')
     .replace(/[\s:;.,)\-]+$/, '')
     .trim();
@@ -125,31 +128,64 @@ function normalizeCertificateIndexLine_(line) {
 function selectBestLandPlotText_(text) {
   const source = String(text || '');
   const lines = source.split(/\r?\n/);
-  let best = { text: '', score: 0, trusted: false };
+  let best = { text: '', score: 0, trusted: false, layout: 'unknown' };
   for (let i = 0; i < lines.length; i++) {
     const normalized = normalizeCertificateIndexLine_(lines[i]);
-    if (normalized.indexOf('ii thua dat') < 0 && normalized.indexOf('1 thua dat') < 0 && normalized.indexOf('thua dat so') < 0) continue;
+    const isOldAnchor = normalized.indexOf('ii thua dat') >= 0 || normalized.indexOf('1 thua dat') >= 0 || normalized.indexOf('thua dat so') >= 0;
+    const isNewA4Anchor = normalized.indexOf('2 thong tin thua dat') >= 0;
+    if (!isOldAnchor && !isNewA4Anchor) continue;
     const out = [];
     for (let j = i; j < lines.length; j++) {
       const current = normalizeCertificateIndexLine_(lines[j]);
       if (j > i && current.indexOf('iv nhung thay doi') >= 0) break;
+      if (j > i && current.indexOf('4 so do thua dat') >= 0) break;
       out.push(lines[j]);
-      if (j > i && /^(?:6|ghi chu)\b/.test(current) && out.length > 3) break;
+      if (isOldAnchor && j > i && /^(?:6|ghi chu)\b/.test(current) && out.length > 3) break;
     }
     const candidate = out.join('\n');
     const score = scoreLandPlotTextCandidate_(candidate);
-    if (score > best.score) best = { text: candidate, score, trusted: score >= 6 };
+    if (score > best.score) best = {
+      text: candidate,
+      score,
+      trusted: score >= 6,
+      layout: isNewA4Anchor ? 'new_a4_page_1' : 'old_4_page_land'
+    };
   }
   return best;
 }
 
+function classifyLandCertificatePageText_(value) {
+  const normalized = removeVietnameseAccents_(String(value || '')).toLowerCase().replace(/[.:)\-]+/g, ' ').replace(/\s+/g, ' ').trim();
+  const scores = {
+    old_4_page_cover: 0,
+    old_4_page_land: 0,
+    old_4_page_change: 0,
+    new_a4_page_1: 0,
+    new_a4_page_2: 0
+  };
+  if (normalized.indexOf('giay chung nhan') >= 0) scores.old_4_page_cover += 2;
+  if (/\b(?:co|dh|aa)\s*\d{5,}\b/i.test(normalized)) scores.old_4_page_cover += 1;
+  if (normalized.indexOf('ii thua dat') >= 0 || normalized.indexOf('1 thua dat') >= 0) scores.old_4_page_land += 3;
+  if (normalized.indexOf('nguon goc su dung') >= 0) scores.old_4_page_land += 1;
+  if (normalized.indexOf('iii so do') >= 0 || normalized.indexOf('iv nhung thay doi') >= 0) scores.old_4_page_change += 3;
+  if (normalized.indexOf('2 thong tin thua dat') >= 0) scores.new_a4_page_1 += 4;
+  if (normalized.indexOf('loai dat') >= 0) scores.new_a4_page_1 += 2;
+  if (normalized.indexOf('3 thong tin tai san gan lien voi dat') >= 0) scores.new_a4_page_1 += 1;
+  if (normalized.indexOf('4 so do thua dat') >= 0) scores.new_a4_page_2 += 3;
+  if (normalized.indexOf('5 ghi chu') >= 0 || normalized.indexOf('6 nhung thay doi') >= 0) scores.new_a4_page_2 += 2;
+  return Object.keys(scores).reduce((best, layout) => scores[layout] > best.score ? { layout, score: scores[layout] } : best, { layout: 'unknown', score: 0 });
+}
+
 function scoreLandPlotTextCandidate_(value) {
   const normalized = removeVietnameseAccents_(String(value || '')).toLowerCase().replace(/\s+/g, ' ').trim();
+  const classified = classifyLandCertificatePageText_(value);
   let score = 0;
+  if (classified.layout === 'new_a4_page_1') score += classified.score;
   if (normalized.indexOf('ii thua dat') >= 0) score += 2;
+  if (normalized.indexOf('2 thong tin thua dat') >= 0) score += 3;
   if (normalized.indexOf('1 thua dat') >= 0) score += 2;
   if (normalized.indexOf('thua dat so') >= 0) score += 2;
-  ['to ban do', 'dien tich', 'hinh thuc su dung', 'muc dich su dung', 'thoi han su dung', 'nguon goc su dung'].forEach(label => {
+  ['to ban do', 'dien tich', 'loai dat', 'hinh thuc su dung', 'muc dich su dung', 'thoi han su dung', 'nguon goc su dung'].forEach(label => {
     if (normalized.indexOf(label) >= 0) score += 1;
   });
   if (normalized.indexOf('dia chi thuong tru') >= 0) score -= 3;
@@ -265,6 +301,17 @@ function containsLaterLandCertificateContext_(normalized) {
 function extractRealEstateIndexedLandFields_(text) {
   const selected = selectBestLandPlotText_(text);
   const source = selected.text || text;
+  if (selected.layout === 'new_a4_page_1') {
+    return {
+      area: normalizeRealEstateAreaValue_(findSemanticLandFieldValue_(source, ['dien tich'])),
+      usage_form: normalizeRealEstateUsageForm_(findSemanticLandFieldValue_(source, ['hinh thuc su dung'])),
+      usage_purpose: findSemanticLandFieldValue_(source, ['loai dat']),
+      usage_term: normalizeRealEstateUsageTerm_(findSemanticLandFieldValue_(source, ['thoi han su dung'])),
+      usage_origin: '',
+      land_address: findSemanticLandFieldValue_(source, ['dia chi']),
+      _quality: selected
+    };
+  }
   return {
     area: normalizeRealEstateAreaValue_(findSemanticLandFieldValue_(source, ['dien tich'])),
     usage_form: normalizeRealEstateUsageForm_(findSemanticLandFieldValue_(source, ['hinh thuc su dung'])),
@@ -342,6 +389,32 @@ assert.strictEqual(noisyFields._quality.trusted, true);
 assert.strictEqual(noisyFields.usage_purpose, 'Đất ở tại nông thôn');
 assert.strictEqual(isUnsafeLandAddressValue_('Địa chỉ thường trú: Tỉnh Nhuệ, Thanh Sơn, tỉnh Phú Thọ. CO 402508'), true);
 assert.strictEqual(isUnsafeIndexedLandFieldValue_('Đất ở tại nông thôn Thời hạn sử dụng: Lâu dài Nguồn gốc sử dụng: Nhận chuyển nhượng đất'), true);
+const newA4Page1Text = `
+GIẤY CHỨNG NHẬN
+QUYỀN SỬ DỤNG ĐẤT, QUYỀN SỞ HỮU TÀI SẢN GẮN LIỀN VỚI ĐẤT
+1. Người sử dụng đất, chủ sở hữu tài sản gắn liền với đất:
+Ông: Nguyễn Viết Trọng, CCCD: 017065002419
+Và vợ: Lê Thị Huế, CCCD: 001166034340
+2. Thông tin thửa đất:
+a. Thửa đất số: 100 ; tờ bản đồ số: 40
+b. Diện tích: 1441,9 m²
+c. Loại đất: Đất ở tại nông thôn: 400,0 m²; Đất trồng cây lâu năm: 1041,9 m²
+d. Thời hạn sử dụng: Đất ở tại nông thôn: Lâu dài; Đất trồng cây lâu năm: Đến tháng 10/2045
+đ. Hình thức sử dụng: Sử dụng chung của vợ và chồng
+e. Địa chỉ: Xóm Giữa, xã Liên Sơn, tỉnh Phú Thọ
+3. Thông tin tài sản gắn liền với đất: -/-
+`;
+const newA4Fields = extractRealEstateIndexedLandFields_(newA4Page1Text);
+assert.strictEqual(classifyLandCertificatePageText_(newA4Page1Text).layout, 'new_a4_page_1');
+assert.strictEqual(newA4Fields._quality.layout, 'new_a4_page_1');
+assert.strictEqual(newA4Fields._quality.trusted, true);
+assert.strictEqual(newA4Fields.area, '1441,9 m²');
+assert.strictEqual(newA4Fields.usage_purpose, 'Đất ở tại nông thôn: 400,0 m²; Đất trồng cây lâu năm: 1041,9 m²');
+assert.strictEqual(newA4Fields.usage_term, 'Đất ở tại nông thôn: Lâu dài; Đất trồng cây lâu năm: Đến tháng 10/2045');
+assert.strictEqual(newA4Fields.usage_form, 'Sử dụng chung của vợ và chồng');
+assert.strictEqual(newA4Fields.land_address, 'Xóm Giữa, xã Liên Sơn, tỉnh Phú Thọ');
+assert.strictEqual(classifyLandCertificatePageText_('4. Sơ đồ thửa đất, tài sản gắn liền với đất\\n5. Ghi chú: -/-\\n6. Những thay đổi sau khi cấp Giấy chứng nhận').layout, 'new_a4_page_2');
+assert.strictEqual(classifyLandCertificatePageText_('IV. Những thay đổi sau khi cấp Giấy chứng nhận\\nNội dung thay đổi và cơ sở pháp lý').layout, 'old_4_page_change');
 
 const fileMeta = reclassifyOcrFileMetaByContent_({
   group: 'secured_party',

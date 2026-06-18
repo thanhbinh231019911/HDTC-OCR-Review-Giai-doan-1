@@ -843,6 +843,12 @@ function enrichAssetFromOcr_(asset, text) {
     asset.real_estate.usage_origin.source = 'OCR_INDEXED_ASSET_TEXT';
     asset.real_estate.usage_origin.confidence = Math.max(Number(asset.real_estate.usage_origin.confidence || 0), 0.86);
   }
+  if (indexedLandFields.attached_assets && asset.real_estate.attached_assets && shouldReplaceSimpleOcrField_(asset.real_estate.attached_assets, indexedLandFields.attached_assets)) {
+    asset.real_estate.attached_assets.ai_value = indexedLandFields.attached_assets;
+    asset.real_estate.attached_assets.final_value = indexedLandFields.attached_assets;
+    asset.real_estate.attached_assets.source = 'OCR_INDEXED_ASSET_TEXT';
+    asset.real_estate.attached_assets.confidence = Math.max(Number(asset.real_estate.attached_assets.confidence || 0), 0.86);
+  }
   const postIssueChanges = extractPostIssueChangesFromCertificateText_(text);
   if (postIssueChanges.value && shouldReplacePostIssueChanges_(asset.real_estate.post_issue_changes, postIssueChanges.value)) {
     asset.real_estate.post_issue_changes.ai_value = postIssueChanges.value;
@@ -928,6 +934,9 @@ function extractRealEstateIndexedLandFields_(text) {
   const block = selected.text;
   const items = extractIndexedCertificateItems_(block || text);
   const source = block || text;
+  if (selected.layout === 'new_a4_page_1') {
+    return extractNewA4RealEstateLandFields_(source, selected);
+  }
   const semantic = {
     land_plot_number: findSemanticLandFieldValue_(source, ['thua dat so']),
     map_sheet_number: findSemanticLandFieldValue_(source, ['to ban do so']),
@@ -951,9 +960,34 @@ function extractRealEstateIndexedLandFields_(text) {
   };
 }
 
+function extractNewA4RealEstateLandFields_(source, selected) {
+  const semantic = {
+    land_plot_number: findSemanticLandFieldValue_(source, ['thua dat so']),
+    map_sheet_number: findSemanticLandFieldValue_(source, ['to ban do so']),
+    land_address: findSemanticLandFieldValue_(source, ['dia chi']),
+    area: findSemanticLandFieldValue_(source, ['dien tich']),
+    land_type: findSemanticLandFieldValue_(source, ['loai dat']),
+    usage_form: findSemanticLandFieldValue_(source, ['hinh thuc su dung']),
+    usage_term: findSemanticLandFieldValue_(source, ['thoi han su dung']),
+    attached_assets: findSemanticLandFieldValue_(source, ['thong tin tai san gan lien voi dat'])
+  };
+  return {
+    land_plot_number: extractLandPlotNumberFromIndexedValue_(semantic.land_plot_number || ''),
+    map_sheet_number: extractMapSheetNumberFromIndexedValue_(semantic.map_sheet_number || semantic.land_plot_number || ''),
+    land_address: cleanupIndexedCertificateValue_(semantic.land_address || ''),
+    area: normalizeRealEstateAreaValue_(cleanupIndexedCertificateValue_(semantic.area || '')) || extractRealEstateArea_(source),
+    usage_form: normalizeRealEstateUsageForm_(cleanupIndexedCertificateValue_(semantic.usage_form || '')),
+    usage_purpose: cleanupIndexedCertificateValue_(semantic.land_type || ''),
+    usage_term: normalizeRealEstateUsageTerm_(cleanupIndexedCertificateValue_(semantic.usage_term || '')),
+    usage_origin: '',
+    attached_assets: cleanupIndexedCertificateValue_(semantic.attached_assets || ''),
+    _quality: selected
+  };
+}
+
 function selectBestLandPlotText_(text) {
   const candidates = buildLandPlotTextCandidates_(text);
-  let best = { text: extractLandPlotIndexedBlock_(text), score: 0, trusted: false, reason: 'legacy_block' };
+  let best = { text: extractLandPlotIndexedBlock_(text), score: 0, trusted: false, reason: 'legacy_block', layout: 'old_4_page_land' };
   best.score = scoreLandPlotTextCandidate_(best.text);
   candidates.forEach(function(candidate) {
     const score = scoreLandPlotTextCandidate_(candidate.text);
@@ -962,7 +996,8 @@ function selectBestLandPlotText_(text) {
         text: candidate.text,
         score: score,
         trusted: score >= 6,
-        reason: candidate.reason
+        reason: candidate.reason,
+        layout: candidate.layout || classifyLandCertificatePageText_(candidate.text).layout
       };
     }
   });
@@ -984,36 +1019,80 @@ function buildLandPlotTextCandidates_(text) {
   const candidates = [];
   for (let i = 0; i < normalizedLines.length; i++) {
     const line = normalizedLines[i].normalized;
-    if (line.indexOf('ii thua dat') < 0 && line.indexOf('1 thua dat') < 0 && line.indexOf('thua dat so') < 0) continue;
+    const isOldAnchor = line.indexOf('ii thua dat') >= 0 || line.indexOf('1 thua dat') >= 0 || line.indexOf('thua dat so') >= 0;
+    const isNewA4Anchor = line.indexOf('2 thong tin thua dat') >= 0;
+    if (!isOldAnchor && !isNewA4Anchor) continue;
     const out = [];
     for (let j = i; j < normalizedLines.length; j++) {
       const current = normalizedLines[j].normalized;
       if (j > i && /^(?:iii|iv)\s+/.test(current)) break;
       if (j > i && current.indexOf('iv nhung thay doi') >= 0) break;
+      if (j > i && current.indexOf('4 so do thua dat') >= 0) break;
       out.push(normalizedLines[j].raw);
-      if (j > i && /^(?:6|ghi chu)\b/.test(current) && out.length > 3) break;
+      if (isOldAnchor && j > i && /^(?:6|ghi chu)\b/.test(current) && out.length > 3) break;
+      if (isNewA4Anchor && j > i && current.indexOf('3 thong tin tai san') >= 0 && out.length > 3) {
+        if (j + 1 >= normalizedLines.length) break;
+      }
     }
-    candidates.push({ text: out.join('\n'), reason: 'line_anchor_' + i });
+    candidates.push({
+      text: out.join('\n'),
+      reason: 'line_anchor_' + i,
+      layout: isNewA4Anchor ? 'new_a4_page_1' : 'old_4_page_land'
+    });
   }
   const compact = source.replace(/\r?\n+/g, ' ').replace(/\s+/g, ' ').trim();
   const normalized = removeVietnameseAccents_(compact).toLowerCase();
-  ['ii thua dat', '1 thua dat', 'thua dat so'].forEach(function(anchor) {
+  ['ii thua dat', '1 thua dat', 'thua dat so', '2 thong tin thua dat'].forEach(function(anchor) {
     const index = normalized.indexOf(anchor);
     if (index < 0) return;
-    candidates.push({ text: compact, reason: 'compact_anchor_' + anchor });
+    candidates.push({
+      text: compact,
+      reason: 'compact_anchor_' + anchor,
+      layout: anchor === '2 thong tin thua dat' ? 'new_a4_page_1' : 'old_4_page_land'
+    });
   });
   return candidates;
+}
+
+function classifyLandCertificatePageText_(value) {
+  const normalized = removeVietnameseAccents_(String(value || '')).toLowerCase().replace(/[.:)\-]+/g, ' ').replace(/\s+/g, ' ').trim();
+  let best = { layout: 'unknown', score: 0 };
+  const scores = {
+    old_4_page_cover: 0,
+    old_4_page_land: 0,
+    old_4_page_change: 0,
+    new_a4_page_1: 0,
+    new_a4_page_2: 0
+  };
+  if (normalized.indexOf('giay chung nhan') >= 0) scores.old_4_page_cover += 2;
+  if (/\b(?:co|dh|aa)\s*\d{5,}\b/i.test(normalized)) scores.old_4_page_cover += 1;
+  if (normalized.indexOf('ii thua dat') >= 0 || normalized.indexOf('1 thua dat') >= 0) scores.old_4_page_land += 3;
+  if (normalized.indexOf('nguon goc su dung') >= 0) scores.old_4_page_land += 1;
+  if (normalized.indexOf('iii so do') >= 0 || normalized.indexOf('iv nhung thay doi') >= 0) scores.old_4_page_change += 3;
+  if (normalized.indexOf('2 thong tin thua dat') >= 0) scores.new_a4_page_1 += 4;
+  if (normalized.indexOf('loai dat') >= 0) scores.new_a4_page_1 += 2;
+  if (normalized.indexOf('3 thong tin tai san gan lien voi dat') >= 0) scores.new_a4_page_1 += 1;
+  if (normalized.indexOf('4 so do thua dat') >= 0) scores.new_a4_page_2 += 3;
+  if (normalized.indexOf('5 ghi chu') >= 0 || normalized.indexOf('6 nhung thay doi') >= 0) scores.new_a4_page_2 += 2;
+  Object.keys(scores).forEach(function(layout) {
+    if (scores[layout] > best.score) best = { layout: layout, score: scores[layout] };
+  });
+  return best;
 }
 
 function scoreLandPlotTextCandidate_(value) {
   const normalized = removeVietnameseAccents_(String(value || '')).toLowerCase().replace(/\s+/g, ' ').trim();
   if (!normalized) return 0;
+  const classified = classifyLandCertificatePageText_(value);
   let score = 0;
+  if (classified.layout === 'new_a4_page_1') score += classified.score;
   if (normalized.indexOf('ii thua dat') >= 0) score += 2;
+  if (normalized.indexOf('2 thong tin thua dat') >= 0) score += 3;
   if (normalized.indexOf('1 thua dat') >= 0) score += 2;
   if (normalized.indexOf('thua dat so') >= 0) score += 2;
   if (normalized.indexOf('to ban do') >= 0) score += 1;
   if (normalized.indexOf('dien tich') >= 0) score += 1;
+  if (normalized.indexOf('loai dat') >= 0) score += 1;
   if (normalized.indexOf('hinh thuc su dung') >= 0) score += 1;
   if (normalized.indexOf('muc dich su dung') >= 0) score += 1;
   if (normalized.indexOf('thoi han su dung') >= 0) score += 1;
@@ -1055,10 +1134,12 @@ function collectSemanticLandLabelStarts_(normalizedText) {
     'to ban do so',
     'dia chi',
     'dien tich',
+    'loai dat',
     'hinh thuc su dung',
     'muc dich su dung',
     'thoi han su dung',
     'nguon goc su dung',
+    'thong tin tai san gan lien voi dat',
     'bang chu'
   ];
   const starts = [];
@@ -1078,7 +1159,7 @@ function cleanupSemanticLandFieldValue_(value) {
   return String(value || '')
     .replace(/\s+/g, ' ')
     .replace(/^[\s:;.,)\-]+/, '')
-    .replace(/\s+(?:hinh\s*thuc\s*su\s*dung|muc\s*dich\s*su\s*dung|thoi\s*han\s*su\s*dung|nguon\s*goc\s*su\s*dung)\s*[:.-]?.*$/i, '')
+    .replace(/\s+(?:dia\s*chi|loai\s*dat|hinh\s*thuc\s*su\s*dung|muc\s*dich\s*su\s*dung|thoi\s*han\s*su\s*dung|nguon\s*goc\s*su\s*dung|thong\s*tin\s*tai\s*san\s*gan\s*lien\s*voi\s*dat)\s*[:.-]?.*$/i, '')
     .replace(/(?:^|\s)(?:[a-g]|\u0111)\s*[\).:]?\s*$/i, '')
     .replace(/[\s:;.,)\-]+$/, '')
     .trim();

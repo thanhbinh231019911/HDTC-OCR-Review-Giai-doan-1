@@ -38,6 +38,30 @@ Rules:
 - In contract text, write the matching type at `theo ... số ...`.
 - Correct clear OCR typo variants such as `hwuux`, `hwux`, `huux` in `quyền sở hữu` to `hữu`.
 
+## Page And Layout Classification
+
+Land-certificate uploads may contain one physical page per image, two facing pages in one image, or rendered PDF pages. Before extracting certificate fields, classify candidate pages/regions by OCR markers.
+
+Use the OCR-read certificate title as a classification signal. Different certificate generations have different titles and section structures; do not assume all land certificates use the old 4-page `II. Thua dat` layout.
+
+Recognize these page/layout classes:
+
+- `old_4_page_cover`: title page with `Giay chung nhan`, certificate title text, owner block, and a printed certificate serial such as `CO...`, `DH...`, or similar.
+- `old_4_page_land`: old-style land-detail page with `II. Thua dat`, `1. Thua dat`, and indexed fields `a)`, `b)`, `c)`, `d)`, `d/đ)`, `e)`, `g)`.
+- `old_4_page_change`: map/change page with `III. So do`, `IV. Nhung thay doi sau khi cap Giay chung nhan`, `Noi dung thay doi`, or `Xac nhan cua co quan co tham quyen`.
+- `new_a4_page_1`: new A4 page with `1. Nguoi su dung`, `2. Thong tin thua dat`, and often `3. Thong tin tai san gan lien voi dat`.
+- `new_a4_page_2`: new A4 page with `4. So do thua dat`, `5. Ghi chu`, `6. Nhung thay doi sau khi cap Giay chung nhan`, and `So vao so cap Giay chung nhan`.
+
+For images that show two pages at once, create left/right page candidates after orientation normalization. For single-page images, keep the full page candidate. Classify by OCR markers, not by filename or upload order.
+
+Crop/OCR policy:
+
+- Extract old-style `a-g` land fields only from an `old_4_page_land` region.
+- Extract new A4 land fields only from a `new_a4_page_1` region.
+- Extract post-issue changes only from `old_4_page_change` or `new_a4_page_2`.
+- Extract registry number only from the region around `So vao so cap GCN/Giay chung nhan`; never infer it from the printed certificate serial.
+- If no trusted page/region is available, leave the affected field blank and add a manual-review warning instead of falling back to whole-image OCR.
+
 ## Field Extraction
 
 - Use section/index boundaries such as `II`, `1`, `2`, `a)`, `b)`, `c)`, `d)`, `đ)`, `e)`, `g)`.
@@ -55,6 +79,22 @@ Rules:
 - After OCR, if the OCR text itself clearly matches a land/property certificate, classify that OCR result as asset even if the original upload group was wrong. Do not apply the reverse rule to identity-card OCR.
 - Optional item `Ghi chú` must stop at later certificate boundaries such as `Số vào sổ cấp GCN/Giấy chứng nhận`, section `IV`, or the next numbered section. Do not let registry/date/map text become note content.
 - Treat OCR variants such as `Số vào số cấp GCN` as the same registry boundary as `Số vào sổ cấp GCN`.
+
+## New A4 Certificate Fields
+
+For new A4 certificates, the land fields may be under `2. Thong tin thua dat` instead of old `II. Thua dat`.
+
+Recognize at least these labels:
+
+- `a. Thua dat so`, `to ban do so`
+- `b. Dien tich`
+- `c. Loai dat`
+- `d. Thoi han su dung`
+- `d/đ. Hinh thuc su dung`
+- `e. Dia chi`
+- `3. Thong tin tai san gan lien voi dat`
+
+When the schema does not have a separate `land_type` field, map `Loai dat` into the existing land-use purpose/description field without inventing wording. Preserve compound values such as `Dat o tai nong thon: 400,0 m2; Dat trong cay lau nam: 1041,9 m2`.
 
 ## Registry Number
 
