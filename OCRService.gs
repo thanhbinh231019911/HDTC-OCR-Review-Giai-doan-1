@@ -66,6 +66,14 @@ function ocrSingleFile_(fileMeta) {
   if (mimeType.indexOf('image/') === 0 && CONFIG.DEFAULT_OCR_ENGINE === 'CLOUD_VISION') {
     return ocrImageWithCloudVision_(file);
   }
+  if (isPdfMime_(mimeType) && CONFIG.DEFAULT_OCR_ENGINE === 'CLOUD_VISION') {
+    try {
+      return ocrPdfWithCloudVision_(file);
+    } catch (err) {
+      console.warn('Cloud Vision PDF OCR failed; falling back to Drive OCR: ' + err);
+      return ocrWithDrive_(file, mimeType);
+    }
+  }
   return ocrWithDrive_(file, mimeType);
 }
 
@@ -77,6 +85,11 @@ function isGoogleDocsMime_(mimeType) {
 function isWordMime_(mimeType) {
   return mimeType === 'application/msword' ||
     mimeType === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+}
+
+function isPdfMime_(mimeType) {
+  return mimeType === 'application/pdf' ||
+    (typeof MimeType !== 'undefined' && mimeType === MimeType.PDF);
 }
 
 function convertOfficeFileToText_(file) {
@@ -222,6 +235,75 @@ function ocrImageWithCloudVision_(file) {
   };
 }
 
+function ocrPdfWithCloudVision_(file) {
+  const apiKey = PropertiesService.getScriptProperties().getProperty(CONFIG.CLOUD_VISION_API_KEY_PROPERTY);
+  if (!apiKey) {
+    throw new Error(
+      'Missing script property ' + CONFIG.CLOUD_VISION_API_KEY_PROPERTY +
+      '. Add a Google Cloud Vision API key to Script Properties, or set CONFIG.DEFAULT_OCR_ENGINE to DRIVE_OCR.'
+    );
+  }
+  const blob = file.getBlob();
+  const payload = {
+    requests: [{
+      inputConfig: {
+        content: Utilities.base64Encode(blob.getBytes()),
+        mimeType: blob.getContentType() || 'application/pdf'
+      },
+      features: [{ type: 'DOCUMENT_TEXT_DETECTION' }],
+      imageContext: { languageHints: ['vi', 'en'] }
+    }]
+  };
+  const response = withRetry('Cloud Vision PDF OCR ' + file.getName(), function() {
+    const res = UrlFetchApp.fetch('https://vision.googleapis.com/v1/files:annotate?key=' + encodeURIComponent(apiKey), {
+      method: 'post',
+      contentType: 'application/json',
+      payload: JSON.stringify(payload),
+      muteHttpExceptions: true
+    });
+    if (res.getResponseCode() >= 300) throw new Error(res.getContentText());
+    const parsed = JSON.parse(res.getContentText());
+    const first = parsed.responses && parsed.responses[0];
+    if (first && first.error) throw new Error(JSON.stringify(first.error));
+    return parsed;
+  }, CONFIG.MAX_API_RETRIES);
+  const annotations = extractCloudVisionPdfAnnotations_(response);
+  if (!annotations.length) throw new Error('Cloud Vision PDF OCR returned no page annotations.');
+  const parts = [];
+  annotations.forEach(function(annotation, index) {
+    const regionText = buildLandCertificateRegionTextFromVisionAnnotation_(annotation);
+    if (regionText) parts.push('[LAND_OCR_PDF_PAGE page=' + (index + 1) + ']\n' + regionText + '\n[/LAND_OCR_PDF_PAGE]');
+    if (annotation.text) parts.push(annotation.text);
+  });
+  return {
+    text: parts.join('\n\n'),
+    confidence: estimateVisionConfidenceFromAnnotations_(annotations),
+    orientation_degrees: 0
+  };
+}
+
+function extractCloudVisionPdfAnnotations_(response) {
+  const fileResponse = response && response.responses && response.responses[0];
+  if (fileResponse && fileResponse.error) throw new Error(JSON.stringify(fileResponse.error));
+  return (fileResponse && fileResponse.responses || []).map(function(pageResponse) {
+    if (pageResponse && pageResponse.error) throw new Error(JSON.stringify(pageResponse.error));
+    return pageResponse && pageResponse.fullTextAnnotation;
+  }).filter(Boolean);
+}
+
+function estimateVisionConfidenceFromAnnotations_(annotations) {
+  let sum = 0;
+  let count = 0;
+  (annotations || []).forEach(function(annotation) {
+    const value = estimateVisionConfidence_(annotation);
+    if (value !== '') {
+      sum += Number(value);
+      count++;
+    }
+  });
+  return count ? Math.round((sum / count) * 1000) / 1000 : '';
+}
+
 function buildLandCertificateRegionTextFromVisionAnnotation_(annotation) {
   const blocks = collectVisionTextBlocksForRegions_(annotation);
   if (!blocks.length) return '';
@@ -276,7 +358,7 @@ function collectVisionTextBlocksForRegions_(annotation) {
     const pageHeight = Number(page.height || 0);
     (page.blocks || []).forEach(function(block) {
       const text = collectVisionBlockText_(block);
-      const box = visionBoundingRectForRegions_(block.boundingBox);
+      const box = visionBoundingRectForRegions_(block.boundingBox, pageWidth, pageHeight);
       if (!text || !box) return;
       out.push({
         text: text,
@@ -339,8 +421,16 @@ function rectContainsBlockCenter_(rect, block) {
     block.centerY <= rect.y + rect.height;
 }
 
-function visionBoundingRectForRegions_(box) {
-  const vertices = box && box.vertices || [];
+function visionBoundingRectForRegions_(box, pageWidth, pageHeight) {
+  let vertices = box && box.vertices || [];
+  if (!vertices.length && box && box.normalizedVertices) {
+    vertices = box.normalizedVertices.map(function(vertex) {
+      return {
+        x: Number(vertex.x || 0) * Number(pageWidth || 0),
+        y: Number(vertex.y || 0) * Number(pageHeight || 0)
+      };
+    });
+  }
   if (!vertices.length) return null;
   const xs = vertices.map(function(v) { return Number(v.x || 0); });
   const ys = vertices.map(function(v) { return Number(v.y || 0); });

@@ -58,6 +58,8 @@ Classify page/layout classes within those generations:
 
 For images that show two pages at once, create left/right page candidates after orientation normalization. For single-page images, keep the full page candidate. Classify by OCR markers, not by filename or upload order.
 
+For scanned PDFs, do not use a single Drive OCR text blob as the authoritative source for certificate fields. Render or submit each PDF page to Cloud Vision as page-level OCR, create the same page/region candidates as image uploads, then classify and extract from those regions. A clear scanned PDF must be treated as page images, not as unstructured full-document text.
+
 Crop/OCR policy:
 
 - Extract `gcn_qsdd` land fields only from `gcn_qsdd_land`.
@@ -66,6 +68,14 @@ Crop/OCR policy:
 - Extract post-issue changes only from `gcn_qsdd_change`, `gcn_qsdd_qsh_nha_o_va_tsk_change`, or `gcn_qsdd_qsh_tsglvd_page_2`.
 - Extract registry number only from the region around `So vao so cap GCN/Giay chung nhan`; never infer it from the printed certificate serial.
 - If no trusted page/region is available, leave the affected field blank and add a manual-review warning instead of falling back to whole-image OCR.
+
+Review display policy:
+
+- The review screen must preserve the printed certificate layout for the classified template.
+- For `gcn_qsdd_qsh_tsglvd`, display page 1 as `1. Nguoi su dung dat, chu so huu tai san gan lien voi dat`, `2. Thong tin thua dat`, `3. Thong tin tai san gan lien voi dat`; display page 2 as `4. So do thua dat, tai san gan lien voi dat`, `5. Ghi chu`, `6. Nhung thay doi sau khi cap Giay chung nhan`.
+- Do not render the old `I/II/1/a-g/2-6/IV` layout for `gcn_qsdd_qsh_tsglvd`.
+- Do not create an owner/user address when the printed `1. Nguoi su dung...` section has only name and ID number. The `e. Dia chi` item under `2. Thong tin thua dat` is land address only.
+- For new A4 certificates, display `c. Loai dat` as `Loai dat`; do not rename it to `Muc dich su dung` in the certificate-layout review.
 
 ## Field Extraction
 

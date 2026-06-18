@@ -164,6 +164,7 @@ function getExtractionJsonSchema_() {
           usage_term: field,
           usage_origin: field,
           attached_assets: field,
+          certificate_note: field,
           post_issue_changes: field,
           certificate_info_raw_text: field,
           certificate_owner_raw_text: field,

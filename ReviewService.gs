@@ -47,6 +47,7 @@ function repairReviewDataFromFullOcr_(data, caseId) {
   repairIdentityIssueDatesInReviewJson(data, fullOcr.byFileName);
   repairAssetCertificateTitleInReviewJson(data, fullOcr.assetText);
   repairAssetCertificateCodesInReviewJson(data, fullOcr.assetText);
+  repairAssetIssueDateInReviewJson(data, fullOcr.assetText);
   repairAssetIssuingAuthorityInReviewJson(data, fullOcr.assetText);
   repairAssetPlotAndMapSheetInReviewJson(data, fullOcr.assetText);
   repairAssetLandAddressInReviewJson(data, fullOcr.assetText);
@@ -55,7 +56,9 @@ function repairReviewDataFromFullOcr_(data, caseId) {
   repairAssetUsageTermInReviewJson(data, fullOcr.assetText);
   repairAssetAreaWordsInReviewJson(data, fullOcr.assetText);
   repairAssetPostIssueChangesInReviewJson(data, fullOcr.assetText);
+  repairAssetCertificateNoteInReviewJson(data, fullOcr.assetText);
   repairUnsafeLandCertificateFieldsInReviewJson(data, fullOcr.assetText);
+  repairAssetOwnerAddressInReviewJson(data, fullOcr.assetText);
   return data;
 }
 

@@ -1,5 +1,8 @@
 ﻿const assert = require('assert');
 
+const fs = require('fs');
+const vm = require('vm');
+
 function removeVietnameseAccents_(value) {
   return String(value || '')
     .normalize('NFD')
@@ -464,6 +467,104 @@ const fileMeta = reclassifyOcrFileMetaByContent_({
 }, landOcrText);
 assert.strictEqual(fileMeta.group, 'asset');
 assert.strictEqual(fileMeta.fileName, 'asset__bia 1-1.jpg');
+
+const dataMergeContext = { console };
+vm.createContext(dataMergeContext);
+vm.runInContext(fs.readFileSync('DataMergeService.gs', 'utf8'), dataMergeContext);
+
+const newA4PdfText = `
+[LAND_OCR_REGION layout=gcn_qsdd_qsh_tsglvd_page_1 score=11 region=full]
+GIAY CHUNG NHAN
+QUYEN SU DUNG DAT, QUYEN SO HUU TAI SAN GAN LIEN VOI DAT
+1. Nguoi su dung dat, chu so huu tai san gan lien voi dat:
+Ong: Nguyen Viet Trong, CCCD: 017065002419
+Va vo: Le Thi Hue, CCCD: 001166034340
+2. Thong tin thua dat:
+a. Thua dat so: 100 ; to ban do so: 40
+b. Dien tich: 1441,9 m2
+c. Loai dat: Dat o tai nong thon: 400,0 m2; Dat trong cay lau nam: 1041,9 m2
+d. Thoi han su dung: Dat o tai nong thon: Lau dai; Dat trong cay lau nam: Den thang 10/2045
+d. Hinh thuc su dung: Su dung chung cua vo va chong
+e. Dia chi: Xom Giua, xa Lien Son, tinh Phu Tho
+3. Thong tin tai san gan lien voi dat: -/-
+Phu Tho, ngay 04 thang 7 nam 2025
+CHI NHANH VAN PHONG DANG KY DAT DAI LUONG SON
+[/LAND_OCR_REGION]
+[LAND_OCR_REGION layout=gcn_qsdd_qsh_tsglvd_page_2 score=8 region=full]
+4. So do thua dat, tai san gan lien voi dat:
+5. Ghi chu: -/-
+6. Nhung thay doi sau khi cap Giay chung nhan:
+Noi dung thay doi va co so phap ly
+Xac nhan cua co quan co tham quyen
+So vao so cap Giay chung nhan: CN.5.42.9
+[/LAND_OCR_REGION]
+`;
+const a4PdfFields = dataMergeContext.extractRealEstateIndexedLandFields_(newA4PdfText);
+assert.strictEqual(a4PdfFields.land_plot_number, '100');
+assert.strictEqual(a4PdfFields.map_sheet_number, '40');
+assert(/^1441,9 m/.test(a4PdfFields.area));
+assert.strictEqual(a4PdfFields.usage_purpose, 'Dat o tai nong thon: 400,0 m2; Dat trong cay lau nam: 1041,9 m2');
+assert.strictEqual(a4PdfFields.usage_term, 'Dat o tai nong thon: L\u00e2u d\u00e0i; Dat trong cay lau nam: Den thang 10/2045');
+assert.strictEqual(a4PdfFields.usage_form, 'Su dung chung cua vo va chong');
+assert.strictEqual(a4PdfFields.land_address, 'Xom Giua, xa Lien Son, tinh Phu Tho');
+const newA4WithOwnerAddress = newA4PdfText.replace(
+  'Ong: Nguyen Viet Trong, CCCD: 017065002419',
+  'Ong: Nguyen Viet Trong, CCCD: 017065002419\nDia chi: 12 Duong Mau, phuong Mau'
+);
+assert.strictEqual(
+  dataMergeContext.extractRealEstateIndexedLandFields_(newA4WithOwnerAddress).land_address,
+  'Xom Giua, xa Lien Son, tinh Phu Tho'
+);
+assert.strictEqual(
+  dataMergeContext.extractOwnerAddressFromCertificateText_(newA4WithOwnerAddress),
+  '12 Duong Mau, phuong Mau'
+);
+assert.strictEqual(dataMergeContext.extractRealEstateRegistryNumber_(newA4PdfText), 'CN5429');
+assert.strictEqual(dataMergeContext.extractRealEstateIssueDate_(newA4PdfText), '04/07/2025');
+assert.strictEqual(dataMergeContext.extractOwnerAddressFromCertificateText_(newA4PdfText), '');
+assert.strictEqual(dataMergeContext.extractCertificateNoteFromCertificateText_(newA4PdfText), '-/-');
+assert.strictEqual(dataMergeContext.extractPostIssueChangesFromCertificateText_(newA4PdfText).status, 'absent');
+assert.strictEqual(
+  dataMergeContext.normalizeVietnameseAgencyNameClean_('Chi nh\u00e1nh v\u0103n ph\u00f2ng \u0111\u0103ng k\u00fd \u0111\u1ea5t \u0111ai l\u01b0\u01a1ng s\u01a1n'),
+  'Chi nh\u00e1nh V\u0103n ph\u00f2ng \u0111\u0103ng k\u00fd \u0111\u1ea5t \u0111ai L\u01b0\u01a1ng S\u01a1n'
+);
+assert.strictEqual(
+  dataMergeContext.normalizeVietnameseAgencyNameClean_('V\u0103n ph\u00f2ng \u0111\u0103ng k\u00fd \u0111\u1ea5t \u0111ai l\u01b0\u01a1ng s\u01a1n'),
+  'V\u0103n ph\u00f2ng \u0111\u0103ng k\u00fd \u0111\u1ea5t \u0111ai L\u01b0\u01a1ng S\u01a1n'
+);
+const reviewJson = {
+  assets: [{
+    owner_address: { final_value: 'Xom Giua, xa Lien Son, tinh Phu Tho', ai_value: 'Xom Giua, xa Lien Son, tinh Phu Tho' },
+    real_estate: {
+      owner_address: { final_value: 'Xom Giua, xa Lien Son, tinh Phu Tho', ai_value: 'Xom Giua, xa Lien Son, tinh Phu Tho' },
+      land_address: { final_value: 'Xom Giua, xa Lien Son, tinh Phu Tho', ai_value: 'Xom Giua, xa Lien Son, tinh Phu Tho' }
+    }
+  }]
+};
+dataMergeContext.repairAssetOwnerAddressInReviewJson(reviewJson, newA4PdfText);
+assert.strictEqual(reviewJson.assets[0].owner_address.final_value, '');
+assert.strictEqual(reviewJson.assets[0].real_estate.owner_address.final_value, '');
+
+const ocrServiceContext = {};
+vm.createContext(ocrServiceContext);
+vm.runInContext(fs.readFileSync('OCRService.gs', 'utf8'), ocrServiceContext);
+assert.strictEqual(
+  ocrServiceContext.extractCloudVisionPdfAnnotations_({
+    responses: [{
+      responses: [
+        { fullTextAnnotation: { text: 'page 1' } },
+        { fullTextAnnotation: { text: 'page 2' } }
+      ]
+    }]
+  }).map(item => item.text).join('|'),
+  'page 1|page 2'
+);
+assert.deepStrictEqual(
+  JSON.parse(JSON.stringify(ocrServiceContext.visionBoundingRectForRegions_({
+    normalizedVertices: [{ x: 0.1, y: 0.2 }, { x: 0.3, y: 0.2 }, { x: 0.3, y: 0.4 }, { x: 0.1, y: 0.4 }]
+  }, 1000, 2000))),
+  { x: 100, y: 400, width: 200, height: 400 }
+);
 
 console.log('OK land OCR regression');
 
