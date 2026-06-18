@@ -190,7 +190,7 @@ function repairAssetIssuingAuthorityInReviewJson(reviewJson, fullAssetOcrText) {
     const field = asset && asset.real_estate && asset.real_estate.issuing_authority;
     if (!field || !field.hasOwnProperty('final_value') || field.manual_value) return;
     const current = String(field.final_value || field.ai_value || '').trim();
-    if (current) return;
+    if (current && !isUnsafeRealEstateIssuingAuthorityValue_(current)) return;
     field.ai_value = authority;
     field.final_value = authority;
     field.source = field.source || 'OCR_ASSET_TEXT_AUTHORITY_REPAIR';
@@ -1010,6 +1010,8 @@ function selectBestLandPlotText_(text) {
 
 function buildLandPlotTextCandidates_(text) {
   const source = String(text || '');
+  const markedCandidates = extractLandOcrRegionMarkedTexts_(source);
+  if (markedCandidates.length) return markedCandidates;
   const normalizedLines = source.split(/\r?\n/).map(function(line) {
     return {
       raw: line,
@@ -1052,6 +1054,49 @@ function buildLandPlotTextCandidates_(text) {
     });
   });
   return candidates;
+}
+
+function extractLandOcrRegionMarkedTexts_(text) {
+  const candidates = [];
+  const nonFullCandidates = [];
+  const marker = /\[LAND_OCR_REGION\s+([^\]]*)\]([\s\S]*?)\[\/LAND_OCR_REGION\]/g;
+  let match;
+  while ((match = marker.exec(String(text || ''))) !== null) {
+    const attrs = parseLandOcrMarkerAttrs_(match[1]);
+    const value = String(match[2] || '').trim();
+    if (!value) continue;
+    const layout = attrs.layout || classifyLandCertificatePageText_(value).layout;
+    if (!isLandDetailRegionLayout_(layout, value)) continue;
+    candidates.push({
+      text: value,
+      reason: 'vision_region_' + (attrs.region || ''),
+      layout: layout
+    });
+    if (attrs.region && attrs.region !== 'full') {
+      nonFullCandidates.push(candidates[candidates.length - 1]);
+    }
+  }
+  return nonFullCandidates.length ? nonFullCandidates : candidates;
+}
+
+function parseLandOcrMarkerAttrs_(value) {
+  const out = {};
+  String(value || '').replace(/([a-z_]+)=([^\s\]]+)/ig, function(match, key, val) {
+    out[key] = val;
+    return match;
+  });
+  return out;
+}
+
+function isLandDetailRegionLayout_(layout, value) {
+  if (layout === 'gcn_qsdd_land' ||
+      layout === 'gcn_qsdd_qsh_nha_o_va_tsk_land' ||
+      layout === 'gcn_qsdd_qsh_tsglvd_page_1') return true;
+  const normalized = normalizeCertificateIndexLine_(value);
+  return normalized.indexOf('ii thua dat') >= 0 ||
+    normalized.indexOf('1 thua dat') >= 0 ||
+    normalized.indexOf('2 thong tin thua dat') >= 0 ||
+    normalized.indexOf('thua dat so') >= 0;
 }
 
 function classifyLandCertificatePageText_(value) {
@@ -1366,6 +1411,8 @@ function shouldReplacePostIssueChanges_(field, candidate) {
 }
 
 function extractPostIssueChangesFromCertificateText_(text) {
+  const markedChange = extractPostIssueChangesFromMarkedRegions_(text);
+  if (markedChange) return markedChange;
   const lines = String(text || '').split(/\r?\n/)
     .map(function(line) { return String(line || '').replace(/\s+/g, ' ').trim(); })
     .filter(Boolean);
@@ -1400,6 +1447,67 @@ function extractPostIssueChangesFromCertificateText_(text) {
   };
 }
 
+function extractPostIssueChangesFromMarkedRegions_(text) {
+  const source = String(text || '');
+  if (source.indexOf('[LAND_OCR_REGION') < 0) return null;
+  const regions = [];
+  const marker = /\[LAND_OCR_REGION\s+([^\]]*)\]([\s\S]*?)\[\/LAND_OCR_REGION\]/g;
+  let match;
+  while ((match = marker.exec(source)) !== null) {
+    const attrs = parseLandOcrMarkerAttrs_(match[1]);
+    const value = String(match[2] || '').trim();
+    if (!value) continue;
+    const layout = attrs.layout || classifyLandCertificatePageText_(value).layout;
+    const normalized = normalizeCertificateIndexLine_(value);
+    if (layout === 'gcn_qsdd_change' ||
+        layout === 'gcn_qsdd_qsh_nha_o_va_tsk_change' ||
+        layout === 'gcn_qsdd_qsh_tsglvd_page_2' ||
+        normalized.indexOf('iv nhung thay doi') >= 0 ||
+        normalized.indexOf('noi dung thay doi') >= 0) {
+      regions.push(value);
+    }
+  }
+  if (!regions.length) return { value: 'Kh\u00f4ng \u0111\u1ecdc r\u00f5, \u0111\u1ec1 ngh\u1ecb ki\u1ec3m tra k\u1ef9', status: 'partial_or_unclear' };
+  const combined = regions.join('\n');
+  const withoutMarkers = combined.replace(/\[LAND_OCR_REGION[^\]]*\]|\[\/LAND_OCR_REGION\]/g, '');
+  return extractPostIssueChangesFromPlainText_(withoutMarkers);
+}
+
+function extractPostIssueChangesFromPlainText_(text) {
+  const lines = String(text || '').split(/\r?\n/)
+    .map(function(line) { return String(line || '').replace(/\s+/g, ' ').trim(); })
+    .filter(Boolean);
+  let start = -1;
+  for (let i = 0; i < lines.length; i++) {
+    const normalized = removeVietnameseAccents_(lines[i]).toLowerCase();
+    if (normalized.indexOf('iv') >= 0 && normalized.indexOf('nhung thay doi') >= 0) {
+      start = i;
+      break;
+    }
+  }
+  if (start < 0) return { value: 'Kh\u00f4ng \u0111\u1ecdc r\u00f5, \u0111\u1ec1 ngh\u1ecb ki\u1ec3m tra k\u1ef9', status: 'partial_or_unclear' };
+  const content = [];
+  for (let j = start + 1; j < lines.length; j++) {
+    const line = lines[j];
+    const normalizedLine = removeVietnameseAccents_(line).toLowerCase();
+    if (normalizedLine.indexOf('noi dung thay doi') >= 0 ||
+        normalizedLine.indexOf('xac nhan cua co quan') >= 0 ||
+        normalizedLine.indexOf('co tham quyen') >= 0 ||
+        normalizedLine.indexOf('giam doc') >= 0 ||
+        normalizedLine.indexOf('so tai nguyen') >= 0) {
+      continue;
+    }
+    if (/^[ivx]+\s*[\).]/i.test(normalizedLine) && content.length) break;
+    content.push(line);
+  }
+  const cleaned = cleanPostIssueChangesCandidate_(content.join('\n'));
+  if (!cleaned) return { value: 'Kh\u00f4ng \u0111\u1ecdc r\u00f5, \u0111\u1ec1 ngh\u1ecb ki\u1ec3m tra k\u1ef9', status: 'partial_or_unclear' };
+  return {
+    value: cleaned,
+    status: isPostIssueChangesUnclear_(cleaned) ? 'partial_or_unclear' : 'readable'
+  };
+}
+
 function cleanPostIssueChangesCandidate_(value) {
   return String(value || '')
     .split(/\r?\n/)
@@ -1409,6 +1517,7 @@ function cleanPostIssueChangesCandidate_(value) {
       if (!normalized) return false;
       if (/^(ngay|thang|nam)\b/.test(normalized)) return false;
       if (normalized.indexOf('nguyen') >= 0 && normalized.indexOf('giam doc') >= 0) return false;
+      if (normalized.indexOf('phone') >= 0 || normalized.indexOf('bank') >= 0 || normalized.indexOf('hamdoc') >= 0) return false;
       return true;
     })
     .join('\n')
@@ -1874,6 +1983,8 @@ function normalizeRegistryCodeValue_(value) {
 }
 
 function extractRealEstateIssuingAuthority_(text) {
+  const trusted = extractRealEstateIssuingAuthorityFromMarkedRegions_(text);
+  if (trusted) return trusted;
   const raw = String(text || '').replace(/\s+/g, ' ').trim();
   if (!raw) return '';
   const direct = raw.match(/\b(?:do|duoc|Ä‘Æ°á»£c)\s+(.{5,160}?)\s+c.{0,3}p\s+ng.{0,3}y/i);
@@ -1904,6 +2015,38 @@ function extractRealEstateIssuingAuthority_(text) {
   return '';
 }
 
+function extractRealEstateIssuingAuthorityFromMarkedRegions_(text) {
+  const regions = extractLandOcrMarkedRegionTexts_(text, 'LAND_OCR_AUTHORITY_REGION')
+    .concat(extractLandOcrMarkedRegionTexts_(text, 'LAND_OCR_REGION'));
+  for (let i = 0; i < regions.length; i++) {
+    const raw = String(regions[i] || '');
+    const lines = raw.split(/\r?\n/).map(function(line) {
+      return String(line || '').replace(/\s+/g, ' ').trim();
+    }).filter(Boolean);
+    for (let j = 0; j < lines.length; j++) {
+      const plain = removeVietnameseAccents_(lines[j]).toLowerCase();
+      if (plain.indexOf('so tai nguyen') < 0 &&
+          plain.indexOf('uy ban nhan dan') < 0 &&
+          plain.indexOf('van phong dang ky dat dai') < 0) continue;
+      const cleaned = cleanRealEstateIssuingAuthority_(lines[j]);
+      if (cleaned) return cleaned;
+    }
+  }
+  return '';
+}
+
+function extractLandOcrMarkedRegionTexts_(text, markerName) {
+  const escaped = String(markerName || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const regex = new RegExp('\\[' + escaped + '[^\\]]*\\]([\\s\\S]*?)\\[\\/' + escaped + '\\]', 'g');
+  const out = [];
+  let match;
+  while ((match = regex.exec(String(text || ''))) !== null) {
+    const value = String(match[1] || '').trim();
+    if (value) out.push(value);
+  }
+  return out;
+}
+
 function extractTextBetweenNormalizedAnchors_(raw, normalized, startAnchor, endAnchor) {
   const start = normalized.indexOf(startAnchor);
   if (start < 0) return '';
@@ -1928,8 +2071,26 @@ function cleanRealEstateIssuingAuthority_(value) {
     plain.indexOf('chi nhanh van phong dang ky dat dai')
   ].filter(function(index) { return index >= 0; }).sort(function(a, b) { return a - b; })[0];
   if (keepFrom > 0) raw = raw.slice(keepFrom).trim();
+  if (isUnsafeRealEstateIssuingAuthorityValue_(raw)) return '';
   if (raw.length > 160) return '';
   return normalizeVietnameseAgencyNameClean_(raw);
+}
+
+function isUnsafeRealEstateIssuingAuthorityValue_(value) {
+  const plain = removeVietnameseAccents_(String(value || '')).toLowerCase().replace(/\s+/g, ' ').trim();
+  if (!plain) return false;
+  if (plain.indexOf('so tai nguyen') >= 0 ||
+      plain.indexOf('uy ban nhan dan') >= 0 ||
+      plain.indexOf('van phong dang ky dat dai') >= 0 ||
+      plain.indexOf('chi nhanh van phong dang ky dat dai') >= 0) return false;
+  return plain.length > 80 ||
+    plain.indexOf('noi dung thay doi') >= 0 ||
+    plain.indexOf('hamdoc') >= 0 ||
+    plain.indexOf('phone') >= 0 ||
+    plain.indexOf('bank') >= 0 ||
+    plain.indexOf('bangky') >= 0 ||
+    plain.indexOf('thich phot') >= 0 ||
+    /\b\d{5,}\b/.test(plain);
 }
 function applyFormPriorityRules_(reviewJson) {
   function applyPersonAddress(person) {

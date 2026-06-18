@@ -214,11 +214,141 @@ function ocrImageWithCloudVision_(file) {
     return parsed;
   }, CONFIG.MAX_API_RETRIES);
   const annotation = response.responses && response.responses[0] && response.responses[0].fullTextAnnotation;
+  const regionText = buildLandCertificateRegionTextFromVisionAnnotation_(annotation);
   return {
-    text: annotation ? annotation.text : '',
+    text: [regionText, annotation ? annotation.text : ''].filter(Boolean).join('\n\n'),
     confidence: estimateVisionConfidence_(annotation),
     orientation_degrees: estimateVisionDisplayRotation_(annotation)
   };
+}
+
+function buildLandCertificateRegionTextFromVisionAnnotation_(annotation) {
+  const blocks = collectVisionTextBlocksForRegions_(annotation);
+  if (!blocks.length) return '';
+  const pageGroups = {};
+  blocks.forEach(function(block) {
+    const key = block.pageIndex + ':' + block.pageWidth + 'x' + block.pageHeight;
+    pageGroups[key] = pageGroups[key] || [];
+    pageGroups[key].push(block);
+  });
+  const out = [];
+  Object.keys(pageGroups).forEach(function(key) {
+    const pageBlocks = pageGroups[key];
+    const pageWidth = pageBlocks[0].pageWidth;
+    const pageHeight = pageBlocks[0].pageHeight;
+    const regions = buildLandCertificateRegionRects_(pageWidth, pageHeight);
+    regions.forEach(function(region) {
+      const text = textFromVisionBlocksInRect_(pageBlocks, region.rect);
+      if (!text) return;
+      const classified = typeof classifyLandCertificatePageText_ === 'function'
+        ? classifyLandCertificatePageText_(text)
+        : { layout: 'unknown', score: 0 };
+      const normalized = removeVietnameseAccents_(text).toLowerCase().replace(/\s+/g, ' ');
+      const isLandLike = classified.score >= 3 ||
+        normalized.indexOf('thua dat') >= 0 ||
+        normalized.indexOf('nguon goc su dung') >= 0 ||
+        normalized.indexOf('so vao so') >= 0 ||
+        normalized.indexOf('iv nhung thay doi') >= 0 ||
+        normalized.indexOf('noi dung thay doi') >= 0;
+      const isAuthorityLike = normalized.indexOf('so tai nguyen') >= 0 ||
+        normalized.indexOf('uy ban nhan dan') >= 0 ||
+        normalized.indexOf('van phong dang ky dat dai') >= 0;
+      if (isLandLike) {
+        out.push('[LAND_OCR_REGION layout=' + classified.layout + ' score=' + classified.score + ' region=' + region.name + ']');
+        out.push(text);
+        out.push('[/LAND_OCR_REGION]');
+      }
+      if (isAuthorityLike) {
+        out.push('[LAND_OCR_AUTHORITY_REGION region=' + region.name + ']');
+        out.push(text);
+        out.push('[/LAND_OCR_AUTHORITY_REGION]');
+      }
+    });
+  });
+  return out.join('\n');
+}
+
+function collectVisionTextBlocksForRegions_(annotation) {
+  const out = [];
+  const pages = annotation && annotation.pages || [];
+  pages.forEach(function(page, pageIndex) {
+    const pageWidth = Number(page.width || 0);
+    const pageHeight = Number(page.height || 0);
+    (page.blocks || []).forEach(function(block) {
+      const text = collectVisionBlockText_(block);
+      const box = visionBoundingRectForRegions_(block.boundingBox);
+      if (!text || !box) return;
+      out.push({
+        text: text,
+        box: box,
+        pageIndex: pageIndex,
+        pageWidth: pageWidth,
+        pageHeight: pageHeight,
+        centerX: box.x + box.width / 2,
+        centerY: box.y + box.height / 2
+      });
+    });
+  });
+  return out;
+}
+
+function collectVisionBlockText_(block) {
+  const paragraphs = [];
+  (block.paragraphs || []).forEach(function(paragraph) {
+    const words = [];
+    (paragraph.words || []).forEach(function(word) {
+      const text = (word.symbols || []).map(function(symbol) { return symbol.text || ''; }).join('');
+      if (text) words.push(text);
+    });
+    if (words.length) paragraphs.push(words.join(' '));
+  });
+  return paragraphs.join('\n').replace(/\s+\n/g, '\n').replace(/\n\s+/g, '\n').trim();
+}
+
+function buildLandCertificateRegionRects_(pageWidth, pageHeight) {
+  const w = Math.max(Number(pageWidth || 0), 1);
+  const h = Math.max(Number(pageHeight || 0), 1);
+  const regions = [
+    { name: 'full', rect: { x: 0, y: 0, width: w, height: h } },
+    { name: 'left', rect: { x: 0, y: 0, width: w * 0.54, height: h } },
+    { name: 'right', rect: { x: w * 0.46, y: 0, width: w * 0.54, height: h } },
+    { name: 'top', rect: { x: 0, y: 0, width: w, height: h * 0.54 } },
+    { name: 'bottom', rect: { x: 0, y: h * 0.46, width: w, height: h * 0.54 } }
+  ];
+  return regions;
+}
+
+function textFromVisionBlocksInRect_(blocks, rect) {
+  return (blocks || [])
+    .filter(function(block) { return rectContainsBlockCenter_(rect, block); })
+    .sort(function(a, b) {
+      const rowDelta = a.centerY - b.centerY;
+      if (Math.abs(rowDelta) > Math.max(8, Math.min(a.box.height, b.box.height) * 0.8)) return rowDelta;
+      return a.centerX - b.centerX;
+    })
+    .map(function(block) { return block.text; })
+    .join('\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
+
+function rectContainsBlockCenter_(rect, block) {
+  return block.centerX >= rect.x &&
+    block.centerX <= rect.x + rect.width &&
+    block.centerY >= rect.y &&
+    block.centerY <= rect.y + rect.height;
+}
+
+function visionBoundingRectForRegions_(box) {
+  const vertices = box && box.vertices || [];
+  if (!vertices.length) return null;
+  const xs = vertices.map(function(v) { return Number(v.x || 0); });
+  const ys = vertices.map(function(v) { return Number(v.y || 0); });
+  const minX = Math.min.apply(null, xs);
+  const maxX = Math.max.apply(null, xs);
+  const minY = Math.min.apply(null, ys);
+  const maxY = Math.max.apply(null, ys);
+  return { x: minX, y: minY, width: maxX - minX, height: maxY - minY };
 }
 
 function estimateVisionConfidence_(annotation) {
