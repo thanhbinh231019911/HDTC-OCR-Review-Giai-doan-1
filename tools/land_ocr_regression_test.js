@@ -658,6 +658,15 @@ assert.deepStrictEqual(
     usage_term: 'Đất ở tại nông thôn: Lâu dài; Đất trồng cây lâu năm: Đến tháng 10/2045'
   }
 );
+dataMergeContext.getCaseOcrText = function() {
+  return { file_id: 'pdf1', file_name: 'So do nha.pdf', text: actualA4HouseCertificateText };
+};
+dataMergeContext.logAudit = function() {};
+const storedA4Fields = dataMergeContext.extractA4LandCertificateFieldsFromStoredOcr('CASE', 'TOKEN', 'pdf1', 'So do nha.pdf');
+assert.strictEqual(storedA4Fields.reason, 'OK');
+assert.strictEqual(storedA4Fields.issue_date, '04/07/2025');
+assert.strictEqual(storedA4Fields.usage_purpose, 'Đất ở tại nông thôn: 400,0 m2; Đất trồng cây lâu năm: 1041,9 m2');
+assert.strictEqual(storedA4Fields.usage_term, 'Đất ở tại nông thôn: Lâu dài; Đất trồng cây lâu năm: Đến tháng 10/2045');
 assert.strictEqual(
   dataMergeContext.normalizeVietnameseAgencyNameClean_('Chi nh\u00e1nh v\u0103n ph\u00f2ng \u0111\u0103ng k\u00fd \u0111\u1ea5t \u0111ai l\u01b0\u01a1ng s\u01a1n'),
   'Chi nh\u00e1nh V\u0103n ph\u00f2ng \u0111\u0103ng k\u00fd \u0111\u1ea5t \u0111ai L\u01b0\u01a1ng S\u01a1n'

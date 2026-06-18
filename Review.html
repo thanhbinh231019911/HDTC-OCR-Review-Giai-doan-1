@@ -333,6 +333,7 @@
     let autoRegistryOcrBusy = false;
     let autoA4OcrBusy = false;
     let autoOcrDonePaths = {};
+    let autoA4OcrDebug = [];
 
     function vi(key) {
       const map = {
@@ -1412,7 +1413,7 @@
           ].filter(job => job.missing && !autoOcrDonePaths[job.path]);
           if (!jobs.length) continue;
           jobs.forEach(job => { autoOcrDonePaths[job.path] = true; });
-          const files = getFilesForObject(asset, 'asset');
+          const files = uniqueReviewFiles_(getFilesForObject(asset, 'asset').concat(getLandCertificateFilesFromOcr_()));
           const result = await readA4CertificateFieldsFromFiles_(files, {
             issueDate: jobs.some(job => job.key === 'issue_date'),
             landFields: jobs.some(job => job.key !== 'issue_date')
@@ -1420,15 +1421,16 @@
           for (const job of jobs) {
             const newValue = cleanValue(result && result[job.key]);
             if (!newValue) continue;
+            const source = result && result._sources && result._sources[job.key] || job.source;
             const saved = await api('saveAutoOcrFieldValue', {
               fieldPath: job.path,
               newValue: newValue,
-              source: job.source
+              source: source
             });
             if (!saved || !saved.ok) continue;
             job.field.ai_value = newValue;
             job.field.final_value = newValue;
-            job.field.source = job.source;
+            job.field.source = source;
             job.field.confidence = '0.9';
             changed = true;
           }
@@ -1447,25 +1449,88 @@
     }
 
     async function readA4CertificateFieldsFromFiles_(files, needs) {
-      const out = { issue_date: '', usage_purpose: '', usage_term: '' };
+      const out = { issue_date: '', usage_purpose: '', usage_term: '', _sources: {} };
       const ordered = (files || []).slice().sort((a, b) => {
         const aPdf = String(a.file_type || '').toLowerCase() === 'application/pdf' ? 0 : 1;
         const bPdf = String(b.file_type || '').toLowerCase() === 'application/pdf' ? 0 : 1;
         return aPdf - bPdf;
       });
       for (const file of ordered) {
+        if (!file.file_id && !file.file_name) continue;
+        try {
+          const read = await api('extractA4LandCertificateFieldsFromStoredOcr', {
+            fileId: file.file_id || '',
+            fileName: file.file_name || ''
+          });
+          autoA4OcrDebug.push({
+            stage: 'stored_ocr',
+            file: file.file_name || file.file_id || '',
+            reason: read && read.reason,
+            rawLength: read && read.raw_length,
+            issueDate: Boolean(read && read.issue_date),
+            usagePurpose: Boolean(read && read.usage_purpose),
+            usageTerm: Boolean(read && read.usage_term)
+          });
+          if (needs.landFields) {
+            if (!out.usage_purpose && cleanValue(read && read.usage_purpose)) {
+              out.usage_purpose = cleanValue(read && read.usage_purpose);
+              out._sources.usage_purpose = 'AUTO_OCR_A4_STORED_TEXT';
+            }
+            if (!out.usage_term && cleanValue(read && read.usage_term)) {
+              out.usage_term = cleanValue(read && read.usage_term);
+              out._sources.usage_term = 'AUTO_OCR_A4_STORED_TEXT';
+            }
+          }
+          if (needs.issueDate) {
+            if (!out.issue_date && cleanValue(read && read.issue_date)) {
+              out.issue_date = cleanValue(read && read.issue_date);
+              out._sources.issue_date = 'AUTO_OCR_A4_STORED_TEXT';
+            }
+          }
+          if ((!needs.landFields || out.usage_purpose && out.usage_term) && (!needs.issueDate || out.issue_date)) return out;
+        } catch (err) {
+          autoA4OcrDebug.push({
+            stage: 'stored_ocr_error',
+            file: file.file_name || file.file_id || '',
+            error: err && err.message ? err.message : String(err)
+          });
+          console.warn('A4 stored OCR extraction failed', file && file.file_name, err);
+        }
+      }
+      for (const file of ordered) {
         if (!file.file_id) continue;
         const preview = imageCache[file.file_id] || await api('getCaseImagePreview', { fileId: file.file_id });
         imageCache[file.file_id] = preview;
-        if (!preview || !preview.is_image || !preview.data_url) continue;
+        if (!preview || !preview.is_image || !preview.data_url) {
+          autoA4OcrDebug.push({
+            stage: 'preview_missing',
+            file: file.file_name || file.file_id || '',
+            isImage: Boolean(preview && preview.is_image)
+          });
+          continue;
+        }
         const boxes = await buildA4CertificateCropCandidates_(preview.data_url);
         if (needs.landFields && (!out.usage_purpose || !out.usage_term)) {
           for (const box of boxes.land) {
             const dataUrl = await cropDataUrlFromImage_(preview.data_url, box, { scale: 3, enhance: true });
             if (!dataUrl) continue;
             const read = await api('ocrA4LandCertificateCrop', { dataUrl: dataUrl, cropType: 'land_fields' });
-            out.usage_purpose = out.usage_purpose || cleanValue(read && read.usage_purpose);
-            out.usage_term = out.usage_term || cleanValue(read && read.usage_term);
+            autoA4OcrDebug.push({
+              stage: 'land_crop',
+              file: file.file_name || file.file_id || '',
+              reason: box.reason,
+              rawLength: read && read.raw_text ? read.raw_text.length : 0,
+              usagePurpose: Boolean(read && read.usage_purpose),
+              usageTerm: Boolean(read && read.usage_term)
+            });
+            if (!out.usage_purpose && cleanValue(read && read.usage_purpose)) {
+              out.usage_purpose = cleanValue(read && read.usage_purpose);
+              out._sources.usage_purpose = 'AUTO_OCR_A4_LAND_CROP';
+            }
+            if (!out.usage_term && cleanValue(read && read.usage_term)) {
+              out.usage_term = cleanValue(read && read.usage_term);
+              out._sources.usage_term = 'AUTO_OCR_A4_LAND_CROP';
+            }
             if (out.usage_purpose && out.usage_term) break;
           }
         }
@@ -1474,7 +1539,17 @@
             const dataUrl = await cropDataUrlFromImage_(preview.data_url, box, { scale: 3, enhance: true });
             if (!dataUrl) continue;
             const read = await api('ocrA4LandCertificateCrop', { dataUrl: dataUrl, cropType: 'issue_date' });
-            out.issue_date = cleanValue(read && read.issue_date);
+            autoA4OcrDebug.push({
+              stage: 'date_crop',
+              file: file.file_name || file.file_id || '',
+              reason: box.reason,
+              rawLength: read && read.raw_text ? read.raw_text.length : 0,
+              issueDate: Boolean(read && read.issue_date)
+            });
+            if (cleanValue(read && read.issue_date)) {
+              out.issue_date = cleanValue(read && read.issue_date);
+              out._sources.issue_date = 'AUTO_OCR_A4_ISSUE_DATE_CROP';
+            }
             if (out.issue_date) break;
           }
         }
@@ -1514,6 +1589,19 @@
           text.indexOf('so vao so') >= 0 ||
           text.indexOf('dien tich') >= 0;
       });
+    }
+
+    function uniqueReviewFiles_(files) {
+      const seen = {};
+      const out = [];
+      (files || []).forEach(function(file) {
+        if (!file) return;
+        const key = String(file.file_id || file.file_name || '');
+        if (!key || seen[key]) return;
+        seen[key] = true;
+        out.push(file);
+      });
+      return out;
     }
 
     async function readIssueDateFromIdentityFiles_(files) {

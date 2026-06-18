@@ -218,6 +218,15 @@ function ocrA4LandCertificateCrop(caseId, token, dataUrl, cropType) {
     result.usage_purpose = fields.usage_purpose || '';
     result.usage_term = fields.usage_term || '';
   }
+  logA4AutoOcrDebug_(caseId, 'AUTO_OCR_A4_CROP_RESULT', {
+    crop_type: cropType || '',
+    raw_length: text.length,
+    issue_date_found: Boolean(result.issue_date),
+    usage_purpose_found: Boolean(result.usage_purpose),
+    usage_term_found: Boolean(result.usage_term),
+    reason: result.reason,
+    excerpt: text.slice(0, 300)
+  });
   return result;
 }
 
@@ -227,6 +236,46 @@ function extractA4LandFieldsFromFocusedCrop_(text) {
     usage_purpose: cleanupIndexedCertificateValue_(findSemanticLandFieldValue_(source, ['loai dat'])),
     usage_term: normalizeRealEstateUsageTerm_(cleanupIndexedCertificateValue_(findSemanticLandFieldValue_(source, ['thoi han su dung'])))
   };
+}
+
+function extractA4LandCertificateFieldsFromStoredOcr(caseId, token, fileId, fileName) {
+  const ocr = getCaseOcrText(caseId, token, fileId, fileName);
+  const text = String(ocr.text || '');
+  const normalized = removeVietnameseAccents_(text).toLowerCase().replace(/[^a-z0-9]+/g, ' ').replace(/\s+/g, ' ');
+  const looksA4 = normalized.indexOf('quyen so huu tai san gan lien voi dat') >= 0 ||
+    normalized.indexOf('2 thong tin thua dat') >= 0 && normalized.indexOf('3 thong tin tai san gan lien voi dat') >= 0;
+  const result = {
+    file_id: ocr.file_id || fileId || '',
+    file_name: ocr.file_name || fileName || '',
+    issue_date: '',
+    usage_purpose: '',
+    usage_term: '',
+    raw_length: text.length,
+    reason: text ? (looksA4 ? 'OK' : 'NOT_A4_TEXT') : 'NO_TEXT'
+  };
+  if (looksA4) {
+    const fields = extractRealEstateIndexedLandFields_(text);
+    result.issue_date = extractRealEstateIssueDate_(text) || '';
+    result.usage_purpose = fields.usage_purpose || '';
+    result.usage_term = fields.usage_term || '';
+  }
+  logA4AutoOcrDebug_(caseId, 'AUTO_OCR_A4_STORED_TEXT_RESULT', {
+    file_name: result.file_name,
+    raw_length: result.raw_length,
+    issue_date_found: Boolean(result.issue_date),
+    usage_purpose_found: Boolean(result.usage_purpose),
+    usage_term_found: Boolean(result.usage_term),
+    reason: result.reason
+  });
+  return result;
+}
+
+function logA4AutoOcrDebug_(caseId, action, detail) {
+  try {
+    logAudit(caseId, action, detail || {});
+  } catch (err) {
+    console.warn('Cannot log A4 auto OCR debug: ' + err);
+  }
 }
 
 function saveAutoOcrFieldValue(caseId, token, fieldPath, newValue, source) {

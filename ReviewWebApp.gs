@@ -52,6 +52,9 @@ function reviewApi(body) {
   if (action === 'ocrA4LandCertificateCrop') {
     return ocrA4LandCertificateCrop(body.caseId, body.token, body.dataUrl, body.cropType);
   }
+  if (action === 'extractA4LandCertificateFieldsFromStoredOcr') {
+    return extractA4LandCertificateFieldsFromStoredOcr(body.caseId, body.token, body.fileId, body.fileName);
+  }
   if (action === 'saveAutoOcrFieldValue') {
     return saveAutoOcrFieldValue(body.caseId, body.token, body.fieldPath, body.newValue, body.source);
   }

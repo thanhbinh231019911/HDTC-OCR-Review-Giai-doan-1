@@ -59,6 +59,7 @@ Classify page/layout classes within those generations:
 For images that show two pages at once, create left/right page candidates after orientation normalization. For single-page images, keep the full page candidate. Classify by OCR markers, not by filename or upload order.
 
 For scanned PDFs, do not use a single Drive OCR text blob as the authoritative source for certificate fields. Render or submit each PDF page to Cloud Vision as page-level OCR, create the same page/region candidates as image uploads, then classify and extract from those regions. A clear scanned PDF must be treated as page images, not as unstructured full-document text.
+When repairing A4 review fields after the review page loads, first try the stored full OCR text for land-certificate files. If the asset has no directly linked files, fall back to OCR results whose text/name clearly contains land-certificate markers. Only then run field-specific image crops.
 
 Crop/OCR policy:
 
