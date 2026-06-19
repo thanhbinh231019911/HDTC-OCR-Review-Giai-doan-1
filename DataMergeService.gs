@@ -1227,7 +1227,7 @@ function extractRealEstateIndexedLandFields_(text) {
     usage_origin: findSemanticLandFieldValue_(source, ['nguon goc su dung'])
   };
   return {
-    land_plot_number: extractLandPlotNumberFromIndexedValue_(semantic.land_plot_number || items.a || ''),
+    land_plot_number: extractLandPlotNumberFromContext_(semantic.land_plot_number || items.a || '', source),
     map_sheet_number: extractMapSheetNumberFromIndexedValue_(semantic.map_sheet_number || items.a || ''),
     land_address: cleanupLandAddressCertificateValue_(semantic.land_address || items.b || '') || cleanupLandAddressCertificateValue_(extractDislocatedLandAddressFromBlock_(source)),
     area: normalizeRealEstateAreaValue_(cleanupIndexedCertificateValue_(semantic.area || items.c || '')) || extractRealEstateArea_(source),
@@ -1641,17 +1641,74 @@ function completeUsageOriginFromContext_(value, source) {
   if (!current) return '';
   const currentNorm = removeVietnameseAccents_(current).toLowerCase().replace(/\s+/g, ' ').trim();
   const sourceNorm = removeVietnameseAccents_(String(source || '')).toLowerCase().replace(/\s+/g, ' ').trim();
-  const sourceLines = String(source || '').split(/\r?\n/).map(function(line) {
-    return removeVietnameseAccents_(line).toLowerCase().replace(/[^a-z0-9]+/g, ' ').replace(/\s+/g, ' ').trim();
-  });
-  const hasStandaloneUsageTail = sourceLines.some(function(line) { return line === 'dung dat'; });
-  if (currentNorm.indexOf('nhan chuyen nhuong dat duoc nha nuoc giao') >= 0 &&
-      currentNorm.indexOf('co thu tien') < 0 &&
-      sourceNorm.indexOf('dat co thu tien su') >= 0 &&
-      hasStandaloneUsageTail) {
-    return 'Nh\u1eadn chuy\u1ec3n nh\u01b0\u1ee3ng \u0111\u1ea5t \u0111\u01b0\u1ee3c Nh\u00e0 n\u01b0\u1edbc giao \u0111\u1ea5t c\u00f3 thu ti\u1ec1n s\u1eed d\u1ee5ng \u0111\u1ea5t';
+  if (currentNorm.indexOf('giao dung dat') >= 0 && sourceNorm.indexOf('dat co thu tien su') >= 0) {
+    return current.replace(/giao\s+d[uụ]ng\s+[dđ]ất/ig, 'giao đất có thu tiền sử dụng đất');
   }
-  return current;
+  const pieces = [current];
+  collectUsageOriginContinuationPieces_(source).forEach(function(piece) {
+    const pieceNorm = removeVietnameseAccents_(piece).toLowerCase().replace(/\s+/g, ' ').trim();
+    const combinedNorm = removeVietnameseAccents_(pieces.join(' ')).toLowerCase().replace(/\s+/g, ' ').trim();
+    if (!pieceNorm || combinedNorm.indexOf(pieceNorm) >= 0 || currentNorm.indexOf(pieceNorm) >= 0) return;
+    if (shouldAppendUsageOriginContinuation_(combinedNorm, pieceNorm)) pieces.push(piece);
+  });
+  return pieces.join(' ');
+}
+
+function collectUsageOriginContinuationPieces_(source) {
+  const out = [];
+  String(source || '').split(/\r?\n/).forEach(function(line) {
+    const cleaned = cleanupIndexedCertificateValue_(line);
+    const normalized = removeVietnameseAccents_(cleaned).toLowerCase().replace(/[^a-z0-9]+/g, ' ').replace(/\s+/g, ' ').trim();
+    if (!normalized || normalized.length < 6) return;
+    if (isLandFieldBoundaryLine_(normalized)) return;
+    if (scoreUsageOriginContinuationLine_(normalized) < 2) return;
+    out.push(cleaned);
+  });
+  return out;
+}
+
+function isLandFieldBoundaryLine_(normalizedLine) {
+  return /^(?:[a-g]|\d+|ii|iii|iv)\s+/.test(normalizedLine) ||
+    normalizedLine.indexOf('thua dat so') >= 0 ||
+    normalizedLine.indexOf('to ban do so') >= 0 ||
+    normalizedLine.indexOf('dia chi') >= 0 ||
+    normalizedLine.indexOf('dien tich') >= 0 ||
+    normalizedLine.indexOf('hinh thuc') >= 0 ||
+    normalizedLine.indexOf('muc dich') >= 0 ||
+    normalizedLine.indexOf('thoi han') >= 0 ||
+    normalizedLine.indexOf('nguon goc') >= 0 ||
+    normalizedLine.indexOf('nha o') >= 0 ||
+    normalizedLine.indexOf('cong trinh') >= 0 ||
+    normalizedLine.indexOf('ghi chu') >= 0;
+}
+
+function scoreUsageOriginContinuationLine_(normalizedLine) {
+  let score = 0;
+  [
+    'thu tien su dung dat',
+    'khong thu tien su dung dat',
+    'co thu tien',
+    'nha nuoc giao dat',
+    'cong nhan qsdd',
+    'cong nhan quyen su dung dat',
+    'nhan chuyen nhuong',
+    'chuyen nhuong dat',
+    'giao dat co',
+    'giao dat khong'
+  ].forEach(function(token) {
+    if (normalizedLine.indexOf(token) >= 0) score += 2;
+  });
+  if (normalizedLine.indexOf('su dung dat') >= 0) score++;
+  if (normalizedLine.indexOf('dat') >= 0 && normalizedLine.indexOf('tien') >= 0) score++;
+  return score;
+}
+
+function shouldAppendUsageOriginContinuation_(currentNorm, pieceNorm) {
+  if (!pieceNorm) return false;
+  if (currentNorm.indexOf(pieceNorm) >= 0) return false;
+  if (/\b(?:su|su dung)$/.test(pieceNorm) && pieceNorm.indexOf('su dung dat') < 0) return false;
+  if (scoreUsageOriginContinuationLine_(pieceNorm) >= 3) return true;
+  return /(?:\bco|\bkhong|\bduoc|\bgiao|\bnhan|\bchuyen|\bthu)$/.test(currentNorm);
 }
 
 function accentUsageOriginCertificateValue_(value) {
@@ -1677,7 +1734,65 @@ function fixVietnameseUsageWord_(value) {
 function extractLandPlotNumberFromIndexedValue_(value) {
   const text = cleanupIndexedCertificateValue_(value);
   const match = text.match(/(?:thá»­a\s*Ä‘áº¥t\s*sá»‘|thua\s*dat\s*so)?\s*:?\s*([0-9A-Z.\/-]+)/i);
-  return match ? match[1].trim() : '';
+  return match ? normalizeLandPlotNumberOcr_(match[1].trim()) : '';
+}
+
+function extractLandPlotNumberFromContext_(value, source) {
+  const direct = extractLandPlotNumberFromIndexedValue_(value);
+  const directRaw = removeVietnameseAccents_(String(value || '')).toLowerCase();
+  if (direct && !isSuspiciousLandPlotNumberValue_(direct, directRaw)) return direct;
+  const candidates = [];
+  const lines = String(source || '').split(/\r?\n/);
+  for (let i = 0; i < lines.length; i++) {
+    const normalized = removeVietnameseAccents_(lines[i]).toLowerCase().replace(/\s+/g, ' ').trim();
+    if (normalized.indexOf('thua dat so') < 0) continue;
+    const windowText = lines.slice(i, Math.min(lines.length, i + 5)).join(' ');
+    const plain = removeVietnameseAccents_(windowText).toLowerCase();
+    const labelMatch = plain.match(/thua\s+dat\s+so\s*[:\s]*([0-9a-z.\/-]{1,12})/i);
+    if (labelMatch) {
+      const candidate = normalizeLandPlotNumberOcr_(labelMatch[1]);
+      if (!isSuspiciousLandPlotNumberValue_(candidate, plain)) candidates.push(candidate);
+    }
+    const beforeMap = plain.match(/thua\s+dat\s+so[\s\S]{0,80}?([0-9ilo.\/-]{1,12})[\s\S]{0,40}?to\s+ban\s+do\s+so/i);
+    if (beforeMap) {
+      const candidate = normalizeLandPlotNumberOcr_(beforeMap[1]);
+      if (!isSuspiciousLandPlotNumberValue_(candidate, plain)) candidates.push(candidate);
+    }
+    for (let j = i + 1; j < Math.min(lines.length, i + 10); j++) {
+      const lineNorm = removeVietnameseAccents_(lines[j]).toLowerCase().replace(/[^a-z0-9.\/-]+/g, ' ').replace(/\s+/g, ' ').trim();
+      if (lineNorm.indexOf('to ban do so') >= 0) break;
+      if (/^[0-9ilo.\/-]{1,12}$/i.test(lineNorm)) {
+        const candidate = normalizeLandPlotNumberOcr_(lineNorm);
+        if (!isSuspiciousLandPlotNumberValue_(candidate, lineNorm)) candidates.push(candidate);
+      }
+    }
+  }
+  const compact = removeVietnameseAccents_(String(source || '')).toLowerCase().replace(/\s+/g, ' ');
+  const compactMatch = compact.match(/thua\s+dat\s+so\s*[:\s]*([0-9ilo.\/-]{1,12})[\s\S]{0,120}?to\s+ban\s+do\s+so/i);
+  if (compactMatch) {
+    const candidate = normalizeLandPlotNumberOcr_(compactMatch[1]);
+    if (!isSuspiciousLandPlotNumberValue_(candidate, compact)) candidates.push(candidate);
+  }
+  for (let c = 0; c < candidates.length; c++) {
+    if (candidates[c] && !isSuspiciousLandPlotNumberValue_(candidates[c], '')) return candidates[c];
+  }
+  return direct;
+}
+
+function normalizeLandPlotNumberOcr_(value) {
+  let text = String(value || '').replace(/\s+/g, '').replace(/[;,:]+$/g, '').trim();
+  if (/^[iIlL][oO0]$/.test(text) || /^1[oO]$/.test(text)) return '10';
+  text = text.replace(/[oO]/g, '0');
+  if (/^[iIlL]\d$/.test(text)) text = '1' + text.slice(1);
+  return text;
+}
+
+function isSuspiciousLandPlotNumberValue_(value, rawContext) {
+  const text = String(value || '').trim();
+  const raw = removeVietnameseAccents_(String(rawContext || '')).toLowerCase().replace(/[^a-z0-9]+/g, ' ').replace(/\s+/g, ' ').trim();
+  if (!text) return true;
+  if (/^1\.?$/.test(text) && (raw.indexOf('1 thua dat') >= 0 || raw.indexOf('1 thira dat') >= 0 || raw.indexOf('thira dat') >= 0)) return true;
+  return !/^[0-9A-Z][0-9A-Z.\/-]{0,12}$/i.test(text);
 }
 
 function extractMapSheetNumberFromIndexedValue_(value) {
@@ -2575,6 +2690,8 @@ function extractRealEstateIssueDateFromPlainText_(text) {
 
 function extractStrictLabeledDate_(value) {
   const plain = removeVietnameseAccents_(String(value || '')).toLowerCase();
+  const splitYear = plain.match(/\bngay[\s.:_-]*(\d{1,2})[\s.:_-]*thang[\s.:_-]*(\d{1,2})[\s.:_-]*nam[\s.:_-]*(\d{2})[\s.:_-]*(\d{2})\b/i);
+  if (splitYear) return normalizeDateParts_(splitYear[1], splitYear[2], splitYear[3] + splitYear[4]);
   const match = plain.match(/\bngay[\s.:_-]*(\d{1,2})[\s.:_-]*thang[\s.:_-]*(\d{1,2})[\s.:_-]*nam[\s.:_-]*(\d{4})\b/i);
   return match ? normalizeDateParts_(match[1], match[2], match[3]) : '';
 }
@@ -2586,6 +2703,7 @@ function isStrictDateValue_(value) {
 
 function shouldReplaceRealEstateIssueDate_(field, candidate) {
   if (!field || !candidate || field.manual_value) return false;
+  if (String(field.source || '').indexOf('AUTO_OCR_LAND_ISSUE_DATE_CROP_CONSENSUS') === 0) return false;
   const current = String(field.final_value || field.ai_value || '').trim();
   if (!current) return true;
   const normalized = normalizeDateValue_(current);

@@ -72,6 +72,7 @@ Crop/OCR policy:
 - Extract registry number only from the region around `So vao so cap GCN/Giay chung nhan`; never infer it from the printed certificate serial.
 - If no trusted page/region is available, leave the affected field blank and add a manual-review warning instead of falling back to whole-image OCR.
 - When the printed issue-date line is clear but handwritten day/month digits are missed by full-page OCR, run a field-specific enlarged crop around that line and write only the certificate `issue_date` field.
+- Important handwritten fields such as certificate issue date and registry number must use field-specific crop OCR when full-page OCR is wrong or ambiguous. Do not rely on full-page OCR for these fields when the crop can be anchored to the printed label/date line.
 
 Review display policy:
 
@@ -95,6 +96,9 @@ Review display policy:
 - Field meaning must come from the actual label printed/read on the certificate, for example `Hình thức sử dụng`, `Mục đích sử dụng`, `Thời hạn sử dụng`, `Diện tích`, or `Nguồn gốc sử dụng`.
 - If another certificate uses a different printed label such as `Loại đất`, preserve that label in the certificate text/review and do not force it into `Mục đích sử dụng` unless a mapping rule has been explicitly agreed.
 - Do not take only the last wrapped line.
+- Multi-line certificate fields must be collected by field boundary, not by visual line count. `Dia chi`, `Dien tich`, `Muc dich su dung`/`Loai dat`, `Thoi han su dung`, and `Nguon goc su dung` may continue across 2 or more OCR lines until the next printed label/section starts.
+- `Hinh thuc su dung` should preserve the certificate/OCR presentation as one value, whether OCR returns one line or multiple lines; do not split or invent subfields.
+- If OCR dislocates a continuation fragment within the same land block, append it only when the fragment semantically belongs to that same field and is not another printed label/section. For `Nguon goc su dung`, valid continuation fragments are general origin phrases such as state allocation/recognition, transfer, collection/non-collection of land-use fee, or `QSDD` wording; do not add house, area, address, or ownership lines.
 - Do not move content between fields.
 - Apply a broad rule only when it is genuinely layout-wide, such as section boundary handling or wrapped-line handling.
 - Keep field-specific repairs scoped to that field. Do not put a fix for one field in a shared cleanup helper if it can change other certificate fields.

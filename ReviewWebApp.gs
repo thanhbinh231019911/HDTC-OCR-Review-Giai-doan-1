@@ -52,6 +52,9 @@ function reviewApi(body) {
   if (action === 'suggestLandRegistryCropFromImage') {
     return suggestLandRegistryCropFromImage(body.caseId, body.token, body.dataUrl);
   }
+  if (action === 'suggestLandIssueDateCropFromImage') {
+    return suggestLandIssueDateCropFromImage(body.caseId, body.token, body.dataUrl);
+  }
   if (action === 'ocrLandRegistryCrop') {
     return ocrLandRegistryCrop(body.caseId, body.token, body.dataUrl);
   }
@@ -73,6 +76,16 @@ function reviewApi(body) {
       body.currentValue,
       body.readings || [],
       body.verificationMode
+    );
+  }
+  if (action === 'saveAutoOcrIssueDateValue') {
+    return saveAutoOcrIssueDateValue(
+      body.caseId,
+      body.token,
+      body.fieldPath,
+      body.newValue,
+      body.currentValue,
+      body.readings || []
     );
   }
   if (action === 'listContractTemplates') {

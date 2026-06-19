@@ -336,6 +336,7 @@
     let generateBusy = false;
     let autoOcrBusy = false;
     let autoRegistryOcrBusy = false;
+    let autoIssueDateOcrBusy = false;
     let autoA4OcrBusy = false;
     let autoOcrDonePaths = {};
     let autoA4OcrDebug = [];
@@ -1289,6 +1290,7 @@
       }
       autoRepairIdentityIssueDatesFromImageCrops();
       autoRepairAssetRegistryNumbersFromImageCrops();
+      autoRepairAssetIssueDatesFromImageCrops();
       autoRepairA4CertificateFieldsFromCrops();
     }
 
@@ -1412,6 +1414,54 @@
     function needsLandRegistryCropVerification_(field) {
       if (!field || field.manual_value) return false;
       return cleanValue(field.source).indexOf('AUTO_OCR_LAND_REGISTRY_ANCHORED_PAGE_CROP_CONSENSUS') !== 0;
+    }
+
+    async function autoRepairAssetIssueDatesFromImageCrops() {
+      if (autoIssueDateOcrBusy || !reviewData) return;
+      autoIssueDateOcrBusy = true;
+      try {
+        const jobs = [];
+        (reviewData.assets || []).forEach(function(asset, index) {
+          const field = asset && asset.real_estate && asset.real_estate.issue_date;
+          if (!needsLandIssueDateCropVerification_(field)) return;
+          const files = uniqueReviewFiles_(getFilesForObject(asset, 'asset').concat(getLandCertificateFilesFromOcr_()));
+          if (!files.length) return;
+          jobs.push({
+            fieldPath: 'assets[' + index + '].real_estate.issue_date',
+            field: field,
+            files: files
+          });
+        });
+        for (const job of jobs) {
+          if (autoOcrDonePaths[job.fieldPath + ':issue_date']) continue;
+          autoOcrDonePaths[job.fieldPath + ':issue_date'] = true;
+          const currentValue = cleanValue(job.field.final_value || job.field.ai_value);
+          const verification = await readLandIssueDateFromAssetFiles_(job.files);
+          if (!verification.issue_date) continue;
+          const saved = await api('saveAutoOcrIssueDateValue', {
+            fieldPath: job.fieldPath,
+            newValue: verification.issue_date,
+            currentValue: currentValue,
+            readings: verification.readings
+          });
+          if (saved && saved.ok) {
+            job.field.ai_value = verification.issue_date;
+            job.field.final_value = verification.issue_date;
+            job.field.source = 'AUTO_OCR_LAND_ISSUE_DATE_CROP_CONSENSUS';
+            job.field.confidence = '0.92';
+            render();
+          }
+        }
+      } catch (err) {
+        console.warn('Auto OCR land issue date failed', err);
+      } finally {
+        autoIssueDateOcrBusy = false;
+      }
+    }
+
+    function needsLandIssueDateCropVerification_(field) {
+      if (!field || field.manual_value) return false;
+      return cleanValue(field.source).indexOf('AUTO_OCR_LAND_ISSUE_DATE_CROP_CONSENSUS') !== 0;
     }
 
     async function autoRepairA4CertificateFieldsFromCrops() {
@@ -1665,6 +1715,92 @@
         if (ocr && ocr.date) return ocr.date;
       }
       return '';
+    }
+
+    async function readLandIssueDateFromAssetFiles_(files) {
+      for (const file of files || []) {
+        if (!file.file_id) continue;
+        let found = null;
+        await forEachRegistryPageImage_(file, async function(pageImage) {
+          const suggestedCrop = await suggestLandIssueDateCropForPageImage_(pageImage.data_url);
+          const crops = await buildLandIssueDateCropCandidates_(pageImage.data_url, suggestedCrop);
+          for (const crop of crops) {
+            const readings = [];
+            for (const colorMode of ['color', 'gray']) {
+              const dataUrl = await cropDataUrlFromImage_(pageImage.data_url, crop, {
+                scale: pageImage.high_resolution ? 1 : 3,
+                colorMode: colorMode,
+                enhance: colorMode === 'color',
+                rotation: crop.rotation || 0
+              });
+              if (!dataUrl) continue;
+              const read = await api('ocrA4LandCertificateCrop', { dataUrl: dataUrl, cropType: 'issue_date' });
+              const date = normalizeReviewDateValue_(read && read.issue_date);
+              if (date) readings.push(date);
+            }
+            if (readings.length === 2 && readings[0] === readings[1]) {
+              found = {
+                issue_date: readings[0],
+                readings: readings
+              };
+              return false;
+            }
+          }
+          return true;
+        });
+        if (found) return found;
+      }
+      return { issue_date: '', readings: [] };
+    }
+
+    async function suggestLandIssueDateCropForPageImage_(dataUrl) {
+      const scaled = await scaleImageForRegistrySuggestion_(dataUrl, 2400);
+      if (!scaled || !scaled.data_url) return null;
+      const result = await api('suggestLandIssueDateCropFromImage', { dataUrl: scaled.data_url });
+      const crop = result && result.crop;
+      if (!result || !result.ok || !crop) return null;
+      return {
+        x: Math.round((crop.x || 0) * scaled.scale_x),
+        y: Math.round((crop.y || 0) * scaled.scale_y),
+        width: Math.round((crop.width || 0) * scaled.scale_x),
+        height: Math.round((crop.height || 0) * scaled.scale_y),
+        reason: crop.reason || 'vision_land_issue_date_line',
+        anchor_text: crop.anchor_text || ''
+      };
+    }
+
+    function buildLandIssueDateCropCandidates_(dataUrl, suggestedBox) {
+      return new Promise(function(resolve) {
+        const img = new Image();
+        img.onload = function() {
+          const w = img.naturalWidth;
+          const h = img.naturalHeight;
+          const out = [];
+          if (suggestedBox) {
+            out.push(suggestedBox);
+            out.push(expandCropBox_(suggestedBox, w, h, 1.0, 1.0, 0.9, 1.1));
+            out.push(expandCropBox_(suggestedBox, w, h, 2.0, 2.0, 1.2, 1.4));
+          }
+          out.push({ x: Math.round(w * 0.16), y: Math.round(h * 0.58), width: Math.round(w * 0.54), height: Math.round(h * 0.12), reason: 'land_issue_date_lower_center' });
+          out.push({ x: Math.round(w * 0.08), y: Math.round(h * 0.54), width: Math.round(w * 0.68), height: Math.round(h * 0.18), reason: 'land_issue_date_lower_wide' });
+          out.push({ x: Math.round(w * 0.26), y: Math.round(h * 0.60), width: Math.round(w * 0.44), height: Math.round(h * 0.10), reason: 'land_issue_date_signature_line' });
+          out.push({ x: Math.round(w * 0.34), y: Math.round(h * 0.56), width: Math.round(w * 0.64), height: Math.round(h * 0.25), reason: 'land_issue_date_a4_wide' });
+          resolve(out.filter(Boolean));
+        };
+        img.onerror = function() { resolve(suggestedBox ? [suggestedBox] : []); };
+        img.src = dataUrl;
+      });
+    }
+
+    function normalizeReviewDateValue_(value) {
+      const text = cleanValue(value);
+      const match = text.match(/^(\d{1,2})[\/.\-](\d{1,2})[\/.\-](\d{4})$/);
+      if (!match) return '';
+      const day = String(Number(match[1])).padStart(2, '0');
+      const month = String(Number(match[2])).padStart(2, '0');
+      const year = String(Number(match[3]));
+      const normalized = day + '/' + month + '/' + year;
+      return isValidReviewDate_(normalized) ? normalized : '';
     }
 
     async function readLandRegistryFromAssetFiles_(files, expectedValue) {

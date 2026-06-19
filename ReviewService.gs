@@ -181,6 +181,33 @@ function suggestLandRegistryCropFromImage(caseId, token, dataUrl) {
   return suggestion ? { ok: true, crop: suggestion } : { ok: false, reason: 'NO_REGISTRY_ANCHOR' };
 }
 
+function suggestLandIssueDateCropFromImage(caseId, token, dataUrl) {
+  assertValidToken_(caseId, token);
+  const apiKey = PropertiesService.getScriptProperties().getProperty(CONFIG.CLOUD_VISION_API_KEY_PROPERTY);
+  if (!apiKey) return { ok: false, reason: 'MISSING_CLOUD_VISION_API_KEY' };
+  const match = String(dataUrl || '').match(/^data:image\/[a-zA-Z0-9.+-]+;base64,(.+)$/);
+  if (!match) return { ok: false, reason: 'INVALID_IMAGE_DATA' };
+  const response = withRetry('Vision land issue date crop suggestion from image', function() {
+    const res = UrlFetchApp.fetch('https://vision.googleapis.com/v1/images:annotate?key=' + encodeURIComponent(apiKey), {
+      method: 'post',
+      contentType: 'application/json',
+      payload: JSON.stringify({
+        requests: [{
+          image: { content: match[1] },
+          features: [{ type: 'DOCUMENT_TEXT_DETECTION' }],
+          imageContext: { languageHints: ['vi', 'en'] }
+        }]
+      }),
+      muteHttpExceptions: true
+    });
+    if (res.getResponseCode() >= 300) throw new Error(res.getContentText());
+    return JSON.parse(res.getContentText());
+  }, 2);
+  const annotation = response.responses && response.responses[0];
+  const suggestion = suggestLandIssueDateCropFromVisionAnnotation_(annotation);
+  return suggestion ? { ok: true, crop: suggestion } : { ok: false, reason: 'NO_ISSUE_DATE_ANCHOR' };
+}
+
 function ocrLandRegistryCrop(caseId, token, dataUrl) {
   assertValidToken_(caseId, token);
   const apiKey = PropertiesService.getScriptProperties().getProperty(CONFIG.CLOUD_VISION_API_KEY_PROPERTY);
@@ -446,6 +473,84 @@ function saveAutoOcrRegistryValue(caseId, token, fieldPath, newValue, currentVal
   };
 }
 
+function saveAutoOcrIssueDateValue(caseId, token, fieldPath, newValue, currentValue, readings) {
+  assertValidToken_(caseId, token);
+  if (!/^assets\[\d+\]\.real_estate\.issue_date$/.test(String(fieldPath || ''))) {
+    throw new Error('Field path is not a land issue date: ' + fieldPath);
+  }
+  if (getLatestFinalData(caseId)) return { ok: false, reason: 'CASE_FINALIZED' };
+  const candidate = normalizeDateValue_(newValue);
+  if (!candidate || !isStrictDateValue_(candidate)) return { ok: false, reason: 'INVALID_ISSUE_DATE' };
+  const consensus = issueDateCropConsensus_(readings || []);
+  if (!consensus.value || consensus.value !== candidate || consensus.count < 2) {
+    return { ok: false, reason: 'NO_ISSUE_DATE_CROP_CONSENSUS' };
+  }
+  const manualOverride = getOverrides(caseId).some(function(item) {
+    return item.field_path === fieldPath && item.edited_by !== 'AUTO_OCR';
+  });
+  if (manualOverride) return { ok: false, reason: 'HAS_MANUAL_OVERRIDE' };
+  let data = getLatestExtractedData(caseId);
+  if (!data) throw new Error('No extracted review data for case ' + caseId);
+  repairReviewDataFromFullOcr_(data, caseId);
+  const field = getByPath(data, fieldPath);
+  if (!field || typeof field !== 'object' || !field.hasOwnProperty('final_value')) {
+    throw new Error('Field path is not editable: ' + fieldPath);
+  }
+  if (field.manual_value) return { ok: false, reason: 'HAS_MANUAL_VALUE' };
+  const storedCurrent = normalizeDateValue_(field.final_value || field.ai_value || '');
+  const expectedCurrent = normalizeDateValue_(currentValue || '');
+  if (expectedCurrent && storedCurrent && expectedCurrent !== storedCurrent) {
+    return { ok: false, reason: 'STALE_ISSUE_DATE_VALUE' };
+  }
+  if (String(field.source || '').indexOf('AUTO_OCR_LAND_ISSUE_DATE_CROP_CONSENSUS') === 0 && storedCurrent === candidate) {
+    return { ok: true, field_path: fieldPath, new_value: candidate, consensus_count: consensus.count };
+  }
+  field.ai_value = candidate;
+  field.final_value = candidate;
+  field.manual_value = '';
+  field.source = 'AUTO_OCR_LAND_ISSUE_DATE_CROP_CONSENSUS';
+  field.confidence = 0.92;
+  field.confirmed = false;
+  field.evidence = 'Anchored high-resolution issue-date crop consensus: color and grayscale';
+  data = validateReviewJson(data);
+  appendSheetRow(SHEETS.EXTRACTED_DATA, {
+    'Case ID': caseId,
+    'JSON Data': data,
+    'Validation Status': data.validation.status,
+    'Missing Fields': data.validation.missing_fields,
+    'Conflicts': data.validation.conflicts,
+    'Warnings': data.validation.warnings,
+    'AI JSON File URL': '',
+    'Created At': nowIso()
+  });
+  logAudit(caseId, 'AUTO_OCR_ISSUE_DATE_SAVED', {
+    field_path: fieldPath,
+    old_value: storedCurrent,
+    new_value: candidate,
+    consensus_count: consensus.count,
+    readings: consensus.readings
+  });
+  return {
+    ok: true,
+    field_path: fieldPath,
+    new_value: candidate,
+    consensus_count: consensus.count
+  };
+}
+
+function issueDateCropConsensus_(readings) {
+  const counts = {};
+  (readings || []).forEach(function(value) {
+    const normalized = normalizeDateValue_(value);
+    if (!normalized || !isStrictDateValue_(normalized)) return;
+    counts[normalized] = (counts[normalized] || 0) + 1;
+  });
+  const ranked = Object.keys(counts).sort(function(a, b) {
+    return counts[b] - counts[a] || a.localeCompare(b);
+  });
+  return ranked.length ? { value: ranked[0], count: counts[ranked[0]], readings: readings } : { value: '', count: 0, readings: readings };
+}
+
 function registryCropConsensus_(readings) {
   const counts = {};
   const normalizedReadings = [];
@@ -596,6 +701,54 @@ function suggestLandRegistryCodeCropFromVisionAnnotation_(annotation) {
         anchor_text: candidate
       };
     }
+  }
+  return null;
+}
+
+function suggestLandIssueDateCropFromVisionAnnotation_(annotation) {
+  const words = collectVisionWords_(annotation);
+  for (let i = 0; i < words.length; i++) {
+    const windowWords = words.slice(i, Math.min(words.length, i + 12));
+    const normalized = windowWords.map(function(word) {
+      return removeVietnameseAccents_(String(word.text || '')).toLowerCase().replace(/[^a-z0-9]+/g, '');
+    }).join(' ');
+    const hasDateLine = /ngay\s+\d{1,2}\s+thang\s+\d{1,2}\s+nam/.test(normalized) ||
+      /hoa\s+binh\s+ngay\s+\d{1,2}\s+thang/.test(normalized) ||
+      /ngay\s+\d{1,2}\s+thang/.test(normalized) && /nam\s+\d{2,4}/.test(normalized);
+    if (!hasDateLine) continue;
+    const local = windowWords.map(function(word) {
+      return removeVietnameseAccents_(String(word.text || '')).toLowerCase().replace(/[^a-z0-9]+/g, '');
+    });
+    let ngayIndex = local.findIndex(function(value) { return value === 'ngay'; });
+    if (ngayIndex < 0) ngayIndex = local.findIndex(function(value) { return value.indexOf('ngay') >= 0; });
+    let namIndex = -1;
+    for (let n = Math.max(0, ngayIndex); n < local.length; n++) {
+      if (local[n] === 'nam' || local[n].indexOf('nam') >= 0) {
+        namIndex = n;
+        break;
+      }
+    }
+    const from = ngayIndex >= 0 ? Math.max(0, ngayIndex - 3) : 0;
+    const to = namIndex >= 0 ? Math.min(windowWords.length, namIndex + 3) : windowWords.length;
+    const dateWords = windowWords.slice(from, Math.max(from + 1, to));
+    const rects = dateWords.map(function(word) { return word.box; });
+    const box = mergeVisionRects_(rects);
+    const pageWidth = words[i].pageWidth;
+    const pageHeight = words[i].pageHeight;
+    const padX = Math.max(12, Math.round(box.height * 3.0));
+    const padY = Math.max(8, Math.round(box.height * 1.2));
+    const x = Math.max(0, Math.round(box.x - padX));
+    const y = Math.max(0, Math.round(box.y - padY));
+    return {
+      x: x,
+      y: y,
+      width: Math.max(8, Math.min(pageWidth - x, Math.round(box.width + padX * 2))),
+      height: Math.max(8, Math.min(pageHeight - y, Math.round(box.height + padY * 2))),
+      page_width: pageWidth,
+      page_height: pageHeight,
+      reason: 'vision_land_issue_date_line',
+      anchor_text: dateWords.map(function(word) { return word.text; }).join(' ')
+    };
   }
   return null;
 }

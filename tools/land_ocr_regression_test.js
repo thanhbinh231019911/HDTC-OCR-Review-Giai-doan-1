@@ -798,6 +798,47 @@ assert.strictEqual(
   oldCertificateReview.assets[0].real_estate.post_issue_changes.final_value,
   'Không rõ, đề nghị kiểm tra'
 );
+const oldCertificateDislocatedOriginText = `
+II. Thửa đất, nhà ở và tài sản khác gắn liền với đất
+1. Thửa đất:
+a) Thửa đất số:
+1. Thira dat:
+d) Hình thức sử dụng: Sử dụng riêng
+đ) Mục đích sử dụng: Đất ở tại đô thị
+e) Thời hạn sử dụng: Lâu dài
+10
+Sở hữu riêng
+89,8m2
+Nhà ở riêng lẻ
+g) Nguồn gốc sử dụng: Nhận chuyển nhượng đất được Công nhận QSDĐ như giao đất có
+b) Địa chỉ: Tổ 15, phường Tấn Thịnh, thành phố Hòa Bình, tỉnh Hòa Bình 110,8m2, (bằng chữ: một trăm mười phẩy tám mét vuông)
+tờ bản đồ số:
+03
+thu tiền sử dụng đất
+Hòa Bình, ngày 19 tháng 7 năm 20.18
+`;
+const dislocatedFields = dataMergeContext.extractRealEstateIndexedLandFields_(oldCertificateDislocatedOriginText);
+assert.strictEqual(dislocatedFields.land_plot_number, '10');
+assert.strictEqual(
+  dislocatedFields.usage_origin,
+  'Nhận chuyển nhượng đất được Công nhận QSDĐ như giao đất có thu tiền sử dụng đất'
+);
+assert.strictEqual(
+  dataMergeContext.extractRealEstateIssueDateFromPlainText_(oldCertificateDislocatedOriginText),
+  '19/07/2018'
+);
+assert.strictEqual(
+  dataMergeContext.shouldReplaceRealEstateIssueDate_(
+    {
+      final_value: '19/07/2018',
+      ai_value: '19/07/2018',
+      manual_value: '',
+      source: 'AUTO_OCR_LAND_ISSUE_DATE_CROP_CONSENSUS'
+    },
+    '19/01/2018'
+  ),
+  false
+);
 assert.strictEqual(
   dataMergeContext.cleanPostIssueChangesCandidate_(
     'IV. Những thay đổi sau khi cấp Giấy chứng nhận\nNội dung thay đổi và cơ sở pháp lý\nChuyển nhượng cho Nguyễn Văn A'
