@@ -141,6 +141,9 @@ Rules:
 - The crop/OCR pass for registry number must remain field-specific: find the registry label region, crop around that line, OCR only that crop, and write only `assets[].real_estate.registry_number`.
 - A registry value that looks structurally valid is not automatically verified. Run focused registry OCR unless the field already records a focused-crop verification source.
 - Replace an existing valid-looking registry value only when at least two focused crop candidates independently return the same complete registry code and no competing code has the same vote count.
+- For multi-page PDFs, render and inspect every PDF page; a Drive thumbnail of page 1 is not evidence for a registry number printed on a later page.
+- Repeated OCR regions derived from the same page annotation are not independent votes. Count a high-resolution focused field crop only when separate color and grayscale passes on that same tight crop agree, or when genuinely different pages/files agree.
+- Prefer tight edge crops around the registry line for rotated certificate spreads. Broad page strips may locate the field but must not outvote a tight crop that contains the handwritten code.
 - Persist focused registry OCR as automated extracted data with an `AUTO_OCR` source. Do not store it as a manual override.
 - Never hard-code a corrected registry code for one case or learn a direct character substitution such as `4 -> 1` from a single example.
 

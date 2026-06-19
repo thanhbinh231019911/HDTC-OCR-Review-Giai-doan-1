@@ -1025,6 +1025,131 @@ assert.strictEqual(
   dataMergeContext.registryCropConsensus_(['CS03417']).value,
   ''
 );
+assert.strictEqual(
+  dataMergeContext.hasRegistryLabelInCropText_('Số vào sô cấp GCN: CS..03417....'),
+  true
+);
+assert.strictEqual(
+  dataMergeContext.hasRegistryLabelInCropText_('Chuyển nhượng theo hồ sơ số CS03417'),
+  false
+);
+assert.deepStrictEqual(
+  JSON.parse(JSON.stringify(dataMergeContext.collectRegistryCharacterEvidence_({
+    pages: [{
+      blocks: [{
+        paragraphs: [{
+          words: [{
+            symbols: [
+              { text: 'C', confidence: 0.9 },
+              { text: 'S', confidence: 0.8 },
+              { text: '0', confidence: 0.7 },
+              { text: '3', confidence: 0.6 },
+              { text: '4', confidence: 0.5 },
+              { text: '1', confidence: 0.8 },
+              { text: '7', confidence: 0.9 }
+            ]
+          }]
+        }]
+      }]
+    }]
+  }))),
+  [{
+    text: 'CS03417',
+    symbols: [
+      { text: 'C', confidence: 0.9 },
+      { text: 'S', confidence: 0.8 },
+      { text: '0', confidence: 0.7 },
+      { text: '3', confidence: 0.6 },
+      { text: '4', confidence: 0.5 },
+      { text: '1', confidence: 0.8 },
+      { text: '7', confidence: 0.9 }
+    ]
+  }]
+);
+const registrySuggestionAnnotation = {
+  fullTextAnnotation: {
+    pages: [{
+      width: 1000,
+      height: 2000,
+      blocks: [{
+        paragraphs: [{
+          words: [
+            ['Số', 100], ['vào', 150], ['sổ', 200], ['cấp', 250], ['GCN', 300], ['CS..03417', 380]
+          ].map(function(item) {
+            return {
+              symbols: item[0].split('').map(function(char) { return { text: char }; }),
+              boundingBox: {
+                vertices: [
+                  { x: item[1], y: 500 },
+                  { x: item[1] + 70, y: 500 },
+                  { x: item[1] + 70, y: 540 },
+                  { x: item[1], y: 540 }
+                ]
+              }
+            };
+          })
+        }]
+      }]
+    }]
+  }
+};
+const registrySuggestion = dataMergeContext.suggestLandRegistryCodeCropFromVisionAnnotation_(registrySuggestionAnnotation);
+assert.strictEqual(registrySuggestion.reason, 'vision_registry_code_focused');
+assert.strictEqual(registrySuggestion.anchor_text, 'CS..03417');
+assert.ok(registrySuggestion.x < 380);
+assert.ok(registrySuggestion.width > 70);
+
+const reviewHtml = fs.readFileSync('Review.html', 'utf8');
+function extractClientFunction(name) {
+  const start = reviewHtml.indexOf('function ' + name + '(');
+  assert.ok(start >= 0, 'Missing client function ' + name);
+  const bodyStart = reviewHtml.indexOf('{', start);
+  let depth = 0;
+  for (let i = bodyStart; i < reviewHtml.length; i++) {
+    if (reviewHtml[i] === '{') depth++;
+    if (reviewHtml[i] === '}') depth--;
+    if (depth === 0) return reviewHtml.slice(start, i + 1);
+  }
+  throw new Error('Unclosed client function ' + name);
+}
+const reviewClientContext = {
+  assert,
+  cleanValue: value => String(value || '').trim()
+};
+vm.createContext(reviewClientContext);
+vm.runInContext([
+  extractClientFunction('clampCropBox_'),
+  extractClientFunction('buildFocusedRegistryCodeBoxes_'),
+  extractClientFunction('normalizeRegistryCropReading_'),
+  extractClientFunction('chooseFocusedRegistryCandidate_')
+].join('\n'), reviewClientContext);
+const focusedBoxes = reviewClientContext.buildFocusedRegistryCodeBoxes_(
+  { x: 116, y: 965, width: 104, height: 346 },
+  4500,
+  6600
+);
+const forwardMinus90 = focusedBoxes.find(item => item.reason === 'vision_registry_vertical_forward_-90_focused');
+assert.ok(forwardMinus90, 'Expected vertical forward -90 focused crop');
+assert.strictEqual(forwardMinus90.rotation, -90);
+assert.ok(forwardMinus90.x >= 25 && forwardMinus90.x <= 35);
+assert.ok(forwardMinus90.y >= 845 && forwardMinus90.y <= 855);
+assert.ok(forwardMinus90.width >= 610 && forwardMinus90.width <= 625);
+assert.ok(forwardMinus90.height >= 790 && forwardMinus90.height <= 810);
+assert.strictEqual(
+  reviewClientContext.chooseFocusedRegistryCandidate_([
+    { value: 'CS03417' },
+    { value: 'CS03447' }
+  ], 'CS03447'),
+  null
+);
+assert.strictEqual(
+  reviewClientContext.chooseFocusedRegistryCandidate_([
+    { value: 'CS0147' },
+    { value: 'CS03417' },
+    { value: 'CS03417' }
+  ], 'CS03447').value,
+  'CS03417'
+);
 
 const ocrServiceContext = {};
 vm.createContext(ocrServiceContext);

@@ -148,7 +148,36 @@ function suggestLandRegistryCrop(caseId, token, fileId) {
     return JSON.parse(res.getContentText());
   }, 2);
   const annotation = response.responses && response.responses[0];
-  const suggestion = suggestLandRegistryCropFromVisionAnnotation_(annotation);
+  const suggestion = suggestLandRegistryCodeCropFromVisionAnnotation_(annotation) ||
+    suggestLandRegistryCropFromVisionAnnotation_(annotation);
+  return suggestion ? { ok: true, crop: suggestion } : { ok: false, reason: 'NO_REGISTRY_ANCHOR' };
+}
+
+function suggestLandRegistryCropFromImage(caseId, token, dataUrl) {
+  assertValidToken_(caseId, token);
+  const apiKey = PropertiesService.getScriptProperties().getProperty(CONFIG.CLOUD_VISION_API_KEY_PROPERTY);
+  if (!apiKey) return { ok: false, reason: 'MISSING_CLOUD_VISION_API_KEY' };
+  const match = String(dataUrl || '').match(/^data:image\/[a-zA-Z0-9.+-]+;base64,(.+)$/);
+  if (!match) return { ok: false, reason: 'INVALID_IMAGE_DATA' };
+  const response = withRetry('Vision land registry crop suggestion from image', function() {
+    const res = UrlFetchApp.fetch('https://vision.googleapis.com/v1/images:annotate?key=' + encodeURIComponent(apiKey), {
+      method: 'post',
+      contentType: 'application/json',
+      payload: JSON.stringify({
+        requests: [{
+          image: { content: match[1] },
+          features: [{ type: 'DOCUMENT_TEXT_DETECTION' }],
+          imageContext: { languageHints: ['vi', 'en'] }
+        }]
+      }),
+      muteHttpExceptions: true
+    });
+    if (res.getResponseCode() >= 300) throw new Error(res.getContentText());
+    return JSON.parse(res.getContentText());
+  }, 2);
+  const annotation = response.responses && response.responses[0];
+  const suggestion = suggestLandRegistryCodeCropFromVisionAnnotation_(annotation) ||
+    suggestLandRegistryCropFromVisionAnnotation_(annotation);
   return suggestion ? { ok: true, crop: suggestion } : { ok: false, reason: 'NO_REGISTRY_ANCHOR' };
 }
 
@@ -177,7 +206,49 @@ function ocrLandRegistryCrop(caseId, token, dataUrl) {
   const annotation = response.responses && response.responses[0] && response.responses[0].fullTextAnnotation;
   const text = annotation && annotation.text || '';
   const registry = extractLandRegistryNumberFromCropText_(text);
-  return { registry_number: registry, raw_text: text, reason: registry ? 'OK' : 'NO_FULL_REGISTRY_NUMBER' };
+  return {
+    registry_number: registry,
+    raw_text: text,
+    has_registry_label: hasRegistryLabelInCropText_(text),
+    character_evidence: collectRegistryCharacterEvidence_(annotation),
+    reason: registry ? 'OK' : 'NO_FULL_REGISTRY_NUMBER'
+  };
+}
+
+function hasRegistryLabelInCropText_(text) {
+  const normalized = removeVietnameseAccents_(String(text || ''))
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  return /so vao so cap (?:gcn|giay chung nhan)/.test(normalized);
+}
+
+function collectRegistryCharacterEvidence_(annotation) {
+  const out = [];
+  const prefixes = /^(?:CS|CT|CN|CH|CL|HX|VP|DC|DL)/i;
+  (annotation && annotation.pages || []).forEach(function(page) {
+    (page.blocks || []).forEach(function(block) {
+      (block.paragraphs || []).forEach(function(paragraph) {
+        (paragraph.words || []).forEach(function(word) {
+          const symbols = word.symbols || [];
+          const text = symbols.map(function(symbol) { return symbol.text || ''; }).join('');
+          const compact = text.replace(/[^0-9A-Z]+/gi, '');
+          if (!prefixes.test(compact) && !/^\d{3,}$/.test(compact)) return;
+          out.push({
+            text: text,
+            symbols: symbols.map(function(symbol) {
+              return {
+                text: symbol.text || '',
+                confidence: Number(symbol.confidence || 0)
+              };
+            })
+          });
+        });
+      });
+    });
+  });
+  return out.slice(0, 8);
 }
 
 function ocrA4LandCertificateCrop(caseId, token, dataUrl, cropType) {
@@ -308,7 +379,7 @@ function saveAutoOcrFieldValue(caseId, token, fieldPath, newValue, source) {
   return { ok: true, field_path: fieldPath, new_value: newValue };
 }
 
-function saveAutoOcrRegistryValue(caseId, token, fieldPath, newValue, currentValue, readings) {
+function saveAutoOcrRegistryValue(caseId, token, fieldPath, newValue, currentValue, readings, verificationMode) {
   assertValidToken_(caseId, token);
   if (!/^assets\[\d+\]\.real_estate\.registry_number$/.test(String(fieldPath || ''))) {
     throw new Error('Field path is not a registry number: ' + fieldPath);
@@ -339,10 +410,15 @@ function saveAutoOcrRegistryValue(caseId, token, fieldPath, newValue, currentVal
   field.ai_value = candidate;
   field.final_value = candidate;
   field.manual_value = '';
-  field.source = 'AUTO_OCR_LAND_REGISTRY_CROP_CONSENSUS';
+  const focusedPageVerification = verificationMode === 'PAGE_FOCUSED' || verificationMode === 'PAGE_ANCHORED';
+  field.source = focusedPageVerification
+    ? 'AUTO_OCR_LAND_REGISTRY_ANCHORED_PAGE_CROP_CONSENSUS'
+    : 'AUTO_OCR_LAND_REGISTRY_CROP_CONSENSUS';
   field.confidence = 0.92;
   field.confirmed = false;
-  field.evidence = 'Focused registry OCR consensus: ' + consensus.count + ' crops';
+  field.evidence = focusedPageVerification
+    ? 'Anchored high-resolution page crop consensus: color and grayscale'
+    : 'Focused registry OCR consensus: ' + consensus.count + ' crops';
   data = validateReviewJson(data);
   appendSheetRow(SHEETS.EXTRACTED_DATA, {
     'Case ID': caseId,
@@ -359,6 +435,7 @@ function saveAutoOcrRegistryValue(caseId, token, fieldPath, newValue, currentVal
     old_value: storedCurrent,
     new_value: candidate,
     consensus_count: consensus.count,
+    verification_mode: focusedPageVerification ? 'PAGE_ANCHORED' : 'LEGACY_CROP',
     readings: consensus.readings
   });
   return {
@@ -480,6 +557,45 @@ function suggestLandRegistryCropFromVisionAnnotation_(annotation) {
       reason: 'land_registry_label',
       anchor_text: windowWords.map(function(word) { return word.text; }).join(' ')
     };
+  }
+  return null;
+}
+
+function suggestLandRegistryCodeCropFromVisionAnnotation_(annotation) {
+  const words = collectVisionWords_(annotation);
+  for (let i = 0; i < words.length; i++) {
+    const windowWords = words.slice(i, Math.min(words.length, i + 12));
+    const normalized = windowWords.slice(0, 7).map(function(word) {
+      return removeVietnameseAccents_(String(word.text || '')).toLowerCase().replace(/[^a-z0-9]+/g, '');
+    }).join(' ');
+    if (!/so\s+vao\s+so\s+cap\s+(?:gcn|giay\s+chung\s+nhan)/.test(normalized)) continue;
+    for (let j = 4; j < windowWords.length; j++) {
+      const candidate = String(windowWords[j].text || '').replace(/\s+/g, '');
+      if (!/^(?:CS|CT|CN|CH|CL|HX|VP|DC|DL)[.\/-]*[0-9A-Z.\/-]{2,24}$/i.test(candidate)) continue;
+      const box = windowWords[j].box;
+      const pageWidth = windowWords[j].pageWidth;
+      const pageHeight = windowWords[j].pageHeight;
+      const padX = Math.max(6, Math.round(box.height * 0.8));
+      const padY = Math.max(6, Math.round(box.height * 0.9));
+      const x = Math.max(0, Math.round(box.x - padX));
+      const y = Math.max(0, Math.round(box.y - padY));
+      return {
+        x: x,
+        y: y,
+        width: Math.max(8, Math.min(pageWidth - x, Math.round(box.width + padX * 2))),
+        height: Math.max(8, Math.min(pageHeight - y, Math.round(box.height + padY * 2))),
+        code_box: {
+          x: Math.round(box.x),
+          y: Math.round(box.y),
+          width: Math.round(box.width),
+          height: Math.round(box.height)
+        },
+        page_width: pageWidth,
+        page_height: pageHeight,
+        reason: 'vision_registry_code_focused',
+        anchor_text: candidate
+      };
+    }
   }
   return null;
 }
@@ -852,6 +968,26 @@ function getCaseOcrText(caseId, token, fileId, fileName) {
     file_id: fileId || '',
     file_name: fileName || '',
     text: ''
+  };
+}
+
+function getCasePdfData(caseId, token, fileId) {
+  assertValidToken_(caseId, token);
+  const data = getLatestFinalData(caseId) || getLatestExtractedData(caseId);
+  if (!data) throw new Error('No review data for case ' + caseId);
+  const allowed = (data.ocr_results || []).some(function(item) {
+    return item.file_id === fileId;
+  });
+  if (!allowed) throw new Error('PDF file is not part of this case');
+  const file = DriveApp.getFileById(fileId);
+  if (!isPdfMime_(file.getMimeType())) throw new Error('File is not a PDF');
+  const blob = file.getBlob();
+  const bytes = blob.getBytes();
+  if (bytes.length > 20 * 1024 * 1024) throw new Error('PDF exceeds the 20 MB review-rendering limit');
+  return {
+    file_name: file.getName(),
+    mime_type: blob.getContentType() || 'application/pdf',
+    base64: Utilities.base64Encode(bytes)
   };
 }
 
