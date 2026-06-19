@@ -615,6 +615,45 @@ assert.strictEqual(
   dataMergeContext.extractOwnerIdentityPairs_('1. Người sử dụng đất:\\nÔng: Nguyễn Văn A, CC: 012345678901\\n2. Thông tin thửa đất:')[0].document_type,
   'CC'
 );
+const noisyOldOwnerCertificateText = `
+[LAND_OCR_PDF_PAGE page=1]
+Người sử dụng đất thay đổi Đế từ TOPT
+Lic the they find they obi CMND 082114972
+theve khard Truny CCCD So 020090096688
+[LAND_OCR_REGION layout=gcn_qsdd_qsh_nha_o_va_tsk_cover score=8 region=full]
+I. Người sử dụng đất, chủ sở hữu nhà ở và tài sản khác gắn liền với đất
+Ông: Trịnh Công Bách
+Năm sinh: 1990, CMND số: 113387328
+Địa chỉ thường trú: Căn hộ số 10, tầng 19, tòa E2
+Bà: Trần Thùy Linh
+Năm sinh: 1994, CMND số: 113565433
+Địa chỉ thường trú: Căn hộ số 10, tầng 19, tòa E2
+Người được cấp Giấy chứng nhận không được sửa chữa, tẩy xóa
+[/LAND_OCR_REGION]
+[LAND_OCR_PDF_PAGE page=2]
+IV. Những thay đổi sau khi cấp Giấy chứng nhận
+`;
+assert.strictEqual(
+  dataMergeContext.extractOwnerCertificateBlock_(noisyOldOwnerCertificateText).indexOf('Người sử dụng đất thay đổi'),
+  -1
+);
+assert.deepStrictEqual(
+  JSON.parse(JSON.stringify(dataMergeContext.extractOwnerIdentityPairs_(noisyOldOwnerCertificateText))),
+  [
+    {
+      name: 'Trịnh Công Bách',
+      document_type: 'CMND',
+      id_number: '113387328',
+      raw_text: 'Ông: Trịnh Công Bách, Năm sinh: 1990, CMND số: 113387328'
+    },
+    {
+      name: 'Trần Thùy Linh',
+      document_type: 'CMND',
+      id_number: '113565433',
+      raw_text: 'Bà: Trần Thùy Linh, Năm sinh: 1994, CMND số: 113565433'
+    }
+  ]
+);
 
 const actualA4Review = {
   validation: { warnings: [] },

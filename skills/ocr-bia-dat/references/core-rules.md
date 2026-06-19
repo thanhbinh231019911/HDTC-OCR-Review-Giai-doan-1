@@ -82,6 +82,8 @@ Review display policy:
 - For new A4 certificates, display `c. Loai dat` as `Loai dat`; do not rename it to `Muc dich su dung` in the certificate-layout review.
 - Keep every printed A4 item `a/b/c/d/d/e` visible in review even when OCR did not read its value. A missing OCR value must appear as a blank printed field, not disappear with its heading.
 - Preserve owner/user lines as printed, including prefixes such as `Ong:`, `Ba:`, `Va vo:` and the exact identity-document label. If the certificate prints `CCCD`, keep `CCCD`; if it prints `CC`, keep `CC`. Do not expand an abbreviation or infer a document type from the number length.
+- When the phrase `Nguoi su dung dat` appears in post-issue-change text, do not treat it as the owner section. Select a section that begins with the printed `I.` or `1.` owner heading and ends before `II.`/`2. Thong tin thua dat` or the certificate warning text.
+- Old certificates may print the owner name on one line and `Nam sinh, CMND/CCCD so` on the next. Join those adjacent lines inside the selected owner section; do not turn `Nam sinh` into an owner name.
 - A blank new-A4 changes table remains blank in review. Do not invent `Khong co`.
 
 ## Field Extraction

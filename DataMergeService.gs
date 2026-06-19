@@ -234,20 +234,23 @@ function repairAssetIssueDateInReviewJson(reviewJson, fullAssetOcrText) {
   return reviewJson;
 }
 
-function repairAssetOwnerIdentityInReviewJson(reviewJson, fullAssetOcrText) {
+function repairAssetOwnerIdentityInReviewJson(reviewJson, fullAssetOcrText, assetTextByFileName) {
   if (!reviewJson) return reviewJson;
   const assetText = fullAssetOcrText || (reviewJson.ocr_results || [])
     .filter(function(item) { return item.group === 'asset'; })
     .map(function(item) { return item.text || item.text_preview || ''; })
     .join('\n');
-  const pairs = extractOwnerIdentityPairs_(assetText);
-  if (!pairs.length) return reviewJson;
-  const summary = buildOwnerIdentitySummary_(pairs);
-  const names = pairs.map(function(pair) { return pair.name; }).join('; ');
-  const documentTypes = pairs.map(function(pair) { return pair.document_type; }).join('; ');
-  const ids = pairs.map(function(pair) { return pair.id_number; }).join('; ');
+  const allowAllAssetTexts = canUseSharedAssetOcr_(reviewJson.assets, { byFileName: assetTextByFileName || {} });
   (reviewJson.assets || []).forEach(function(asset) {
     if (!asset) return;
+    const scopedAssetText = assetOcrTextForRepair_(asset, assetText, assetTextByFileName, allowAllAssetTexts);
+    if (!scopedAssetText) return;
+    const pairs = extractOwnerIdentityPairs_(scopedAssetText);
+    if (!pairs.length) return;
+    const summary = buildOwnerIdentitySummary_(pairs);
+    const names = pairs.map(function(pair) { return pair.name; }).join('; ');
+    const documentTypes = pairs.map(function(pair) { return pair.document_type; }).join('; ');
+    const ids = pairs.map(function(pair) { return pair.id_number; }).join('; ');
     asset.owner_identity_pairs = pairs;
     replaceOwnerIdentityFieldFromCertificate_(asset.owner_identity_summary, summary);
     replaceOwnerIdentityFieldFromCertificate_(asset.owner_name, names);
@@ -2036,24 +2039,60 @@ function cleanupLandAddressCandidate_(value) {
 function extractOwnerIdentityPairs_(text) {
   const pairs = [];
   const ownerBlock = extractOwnerCertificateBlock_(text);
-  const lines = String(ownerBlock || text || '').split(/\n+/);
-  lines.forEach(function(line) {
+  const lines = String(ownerBlock || text || '').replace(/\\r/g, '\r').replace(/\\n/g, '\n').split(/\n+/);
+  lines.forEach(function(line, index) {
     const raw = String(line || '').replace(/\s+/g, ' ').trim();
     const match = raw.match(/\b(CCCD|CC|CMND|Căn\s+cước\s+công\s+dân|Căn\s+cước|Can\s+cuoc\s+cong\s+dan|Can\s+cuoc)\b\s*(?:số|so)?\s*[:.-]?\s*(\d{9}|\d{12})\b/i);
     if (!match) return;
     const ownerText = raw.slice(0, match.index).replace(/[\s,;.-]+$/g, '').trim();
-    const name = removeCertificateOwnerPrefix_(ownerText);
+    let ownerDisplay = extractOwnerDisplayText_(ownerText);
+    if (!ownerDisplay || isOwnerMetadataText_(ownerText)) {
+      for (let previous = index - 1; previous >= Math.max(0, index - 3); previous--) {
+        const previousLine = String(lines[previous] || '').replace(/\s+/g, ' ').trim();
+        ownerDisplay = extractOwnerDisplayText_(previousLine);
+        if (ownerDisplay) break;
+        if (/\b(CCCD|CC|CMND)\b/i.test(previousLine)) break;
+      }
+    }
+    const name = extractOwnerNameFromDisplayText_(ownerDisplay);
     const documentType = preserveCertificateDocumentLabel_(match[1]);
     const id = match[2];
     if (!name || !documentType || !id) return;
+    const identityText = raw.slice(0, match.index + match[0].length).trim();
+    const rawText = ownerDisplay &&
+      normalizeOwnerCertificateLine_(identityText).indexOf(normalizeOwnerCertificateLine_(ownerDisplay)) !== 0
+      ? ownerDisplay + ', ' + identityText
+      : identityText;
     pairs.push({
       name: name,
       document_type: documentType,
       id_number: id,
-      raw_text: raw.slice(0, match.index + match[0].length).trim()
+      raw_text: rawText
     });
   });
   return dedupeOwnerIdentityPairs_(pairs);
+}
+
+function extractOwnerDisplayText_(value) {
+  const raw = String(value || '').replace(/\s+/g, ' ').trim();
+  const matches = Array.from(raw.matchAll(/(?:^|\s)(Ông|Bà|Và\s+vợ|Vợ|Chồng|Ong|Ba|Va\s+vo|Vo|Chong)\s*:\s*([^,;]+)/gi));
+  if (!matches.length) return '';
+  const match = matches[matches.length - 1];
+  return (match[1] + ': ' + match[2]).trim();
+}
+
+function extractOwnerNameFromDisplayText_(value) {
+  const display = String(value || '').replace(/\s+/g, ' ').trim();
+  if (!display) return '';
+  return removeCertificateOwnerPrefix_(display)
+    .replace(/\s+(?:Năm\s+sinh|Nam\s+sinh)\s*:.*$/i, '')
+    .replace(/[\s,;.-]+$/g, '')
+    .trim();
+}
+
+function isOwnerMetadataText_(value) {
+  const normalized = removeVietnameseAccents_(String(value || '')).toLowerCase().replace(/\s+/g, ' ').trim();
+  return /^(?:nam sinh|ngay sinh|dia chi|thuong tru)\b/.test(normalized);
 }
 
 function removeCertificateOwnerPrefix_(value) {
@@ -2088,27 +2127,61 @@ function extractOwnerAddressFromCertificateText_(text) {
 }
 
 function extractOwnerCertificateBlock_(text) {
-  const lines = String(text || '').split(/\n+/);
-  const out = [];
-  let inBlock = false;
+  const lines = String(text || '').replace(/\\r/g, '\r').replace(/\\n/g, '\n').split(/\n+/);
+  const candidates = [];
   for (let i = 0; i < lines.length; i++) {
-    const normalized = removeVietnameseAccents_(lines[i]).toLowerCase();
-    if (!inBlock && (
-      normalized.indexOf('nguoi su dung dat') >= 0 ||
-      normalized.indexOf('chu so huu nha o') >= 0 ||
-      /^\s*i[\s.]/i.test(lines[i])
-    )) {
-      inBlock = true;
+    if (!isOwnerCertificateSectionStart_(lines[i])) continue;
+    const candidateLines = [lines[i]];
+    for (let j = i + 1; j < lines.length && j <= i + 30; j++) {
+      const normalized = normalizeOwnerCertificateLine_(lines[j]);
+      if (isOwnerCertificateSectionStart_(lines[j]) ||
+          /^(?:ii|2)\s+(?:thua dat|thong tin thua dat)\b/.test(normalized) ||
+          normalized.indexOf('thua dat so') === 0 ||
+          normalized.indexOf('nguoi duoc cap giay chung nhan khong duoc') === 0 ||
+          /^\[\/?land_ocr_(?:region|pdf_page)\b/.test(String(lines[j] || '').trim().toLowerCase())) {
+        break;
+      }
+      candidateLines.push(lines[j]);
     }
-    if (inBlock && i > 0 && (
-      /^\s*ii[\s.]/i.test(lines[i]) ||
-      normalized.indexOf('2 thong tin thua dat') >= 0 ||
-      normalized.indexOf('thong tin thua dat') >= 0 ||
-      normalized.indexOf('thua dat so') >= 0
-    )) break;
-    if (inBlock) out.push(lines[i]);
+    const value = candidateLines.join('\n').trim();
+    if (value) candidates.push({ value: value, score: scoreOwnerCertificateBlock_(value), index: i });
   }
-  return out.join('\n');
+  if (!candidates.length) return '';
+  candidates.sort(function(a, b) {
+    return b.score - a.score || b.index - a.index;
+  });
+  return candidates[0].value;
+}
+
+function isOwnerCertificateSectionStart_(line) {
+  const normalized = normalizeOwnerCertificateLine_(line);
+  if (!normalized || normalized.indexOf('nguoi su dung dat thay doi') >= 0) return false;
+  return /^(?:i|1)\s+nguoi su dung dat\b/.test(normalized);
+}
+
+function normalizeOwnerCertificateLine_(line) {
+  return removeVietnameseAccents_(String(line || ''))
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function scoreOwnerCertificateBlock_(value) {
+  const lines = String(value || '').split(/\n+/).map(function(line) {
+    return String(line || '').replace(/\s+/g, ' ').trim();
+  }).filter(Boolean);
+  const normalized = normalizeOwnerCertificateLine_(value);
+  let score = 10;
+  lines.forEach(function(line) {
+    if (extractOwnerDisplayText_(line)) score += 5;
+    if (/\b(?:CCCD|CC|CMND|Căn\s+cước|Can\s+cuoc)\b\s*(?:số|so)?\s*[:.-]?\s*(?:\d{9}|\d{12})\b/i.test(line)) score += 4;
+    if (normalizeOwnerCertificateLine_(line).indexOf('dia chi') === 0) score += 2;
+  });
+  if (normalized.indexOf('nguoi su dung dat thay doi') >= 0) score -= 30;
+  if (normalized.indexOf('noi dung thay doi') >= 0) score -= 20;
+  if (normalized.indexOf('nguoi duoc cap giay chung nhan khong duoc') >= 0) score -= 5;
+  return score;
 }
 
 function ownerCertificateBlockContainsAddress_(block) {
