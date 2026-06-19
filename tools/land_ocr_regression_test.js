@@ -1118,11 +1118,39 @@ const reviewClientContext = {
 };
 vm.createContext(reviewClientContext);
 vm.runInContext([
+  extractClientFunction('removeVietnameseMarks'),
+  extractClientFunction('getLandCertificateFilesFromOcr_'),
   extractClientFunction('clampCropBox_'),
   extractClientFunction('buildFocusedRegistryCodeBoxes_'),
   extractClientFunction('normalizeRegistryCropReading_'),
   extractClientFunction('chooseFocusedRegistryCandidate_')
 ].join('\n'), reviewClientContext);
+reviewClientContext.reviewData = {
+  ocr_results: [
+    {
+      file_name: 'asset__GCN QSDĐ - Bình Nguyễn Thanh.pdf',
+      file_id: 'pdf-file-1',
+      file_type: 'application/pdf',
+      text_preview: ''
+    },
+    {
+      file_name: 'secured_party__GCN QSDĐ - Bình Nguyễn Thanh.pdf',
+      file_id: 'pdf-file-2',
+      file_type: 'application/pdf',
+      text_preview: ''
+    },
+    {
+      file_name: 'obligor__CCCD.pdf',
+      file_id: 'id-file-1',
+      file_type: 'application/pdf',
+      text_preview: ''
+    }
+  ]
+};
+assert.deepStrictEqual(
+  reviewClientContext.getLandCertificateFilesFromOcr_().map(item => item.file_id),
+  ['pdf-file-1', 'pdf-file-2']
+);
 const focusedBoxes = reviewClientContext.buildFocusedRegistryCodeBoxes_(
   { x: 116, y: 965, width: 104, height: 346 },
   4500,

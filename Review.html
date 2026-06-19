@@ -1617,7 +1617,19 @@
 
     function getLandCertificateFilesFromOcr_() {
       return (reviewData.ocr_results || []).filter(function(file) {
-        const text = removeVietnameseMarks(((file && file.file_name) || '') + ' ' + ((file && file.text_preview) || '')).toLowerCase();
+        const fileName = removeVietnameseMarks((file && file.file_name) || '').toLowerCase();
+        const textPreview = removeVietnameseMarks((file && file.text_preview) || '').toLowerCase();
+        const text = fileName + ' ' + textPreview;
+        const fileType = String(file && file.file_type || '').toLowerCase();
+        const looksLikeLandCertificateName =
+          /\bgcn\b/.test(fileName) ||
+          fileName.indexOf('qsdd') >= 0 ||
+          fileName.indexOf('qsd') >= 0 ||
+          fileName.indexOf('bia dat') >= 0 ||
+          fileName.indexOf('so do') >= 0;
+        if (file && file.file_id && fileType === 'application/pdf' && looksLikeLandCertificateName) {
+          return true;
+        }
         return text.indexOf('giay chung nhan') >= 0 ||
           text.indexOf('quyen su dung dat') >= 0 ||
           text.indexOf('thua dat') >= 0 ||
