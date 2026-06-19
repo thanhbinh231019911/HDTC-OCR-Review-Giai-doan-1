@@ -1671,6 +1671,7 @@
       const fallbackVotes = {};
       const expectedRegistry = normalizeRegistryCropReading_(expectedValue);
       const focusedCandidates = [];
+      let immediateFocusedCandidate = null;
       for (const file of files || []) {
         if (!file.file_id) continue;
         await forEachRegistryPageImage_(file, async function(pageImage) {
@@ -1693,11 +1694,16 @@
                 if (registry) focusedReadings.push(registry);
               }
               if (focusedReadings.length === 2 && focusedReadings[0] === focusedReadings[1]) {
-                focusedCandidates.push({
+                const candidate = {
                   value: focusedReadings[0],
                   readings: focusedReadings,
                   page_index: pageImage.page_index
-                });
+                };
+                focusedCandidates.push(candidate);
+                if (chooseFocusedRegistryCandidate_([candidate], expectedRegistry)) {
+                  immediateFocusedCandidate = candidate;
+                  return false;
+                }
               }
               continue;
             }
@@ -1715,6 +1721,13 @@
           }
           return true;
         });
+        if (immediateFocusedCandidate) {
+          return {
+            registry_number: immediateFocusedCandidate.value,
+            readings: immediateFocusedCandidate.readings,
+            verification_mode: 'PAGE_ANCHORED'
+          };
+        }
       }
       const focused = chooseFocusedRegistryCandidate_(focusedCandidates, expectedRegistry);
       if (focused) {
