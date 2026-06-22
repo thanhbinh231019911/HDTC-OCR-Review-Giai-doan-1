@@ -59,6 +59,7 @@ function repairReviewDataFromFullOcr_(data, caseId) {
   repairAssetAreaWordsInReviewJson(data, fullOcr.assetText);
   repairAssetPostIssueChangesInReviewJson(data, fullOcr.assetText, fullOcr.assetTextByFileName);
   repairAssetCertificateNoteInReviewJson(data, fullOcr.assetText);
+  repairAssetAttachedAssetsInReviewJson(data, fullOcr.assetText, fullOcr.assetTextByFileName);
   repairUnsafeLandCertificateFieldsInReviewJson(data, fullOcr.assetText);
   repairAssetOwnerIdentityInReviewJson(data, fullOcr.assetText, fullOcr.assetTextByFileName);
   repairAssetOwnerAddressInReviewJson(data, fullOcr.assetText);
@@ -208,6 +209,33 @@ function suggestLandIssueDateCropFromImage(caseId, token, dataUrl) {
   return suggestion ? { ok: true, crop: suggestion } : { ok: false, reason: 'NO_ISSUE_DATE_ANCHOR' };
 }
 
+function suggestLandCertificateNumberCropFromImage(caseId, token, dataUrl) {
+  assertValidToken_(caseId, token);
+  const apiKey = PropertiesService.getScriptProperties().getProperty(CONFIG.CLOUD_VISION_API_KEY_PROPERTY);
+  if (!apiKey) return { ok: false, reason: 'MISSING_CLOUD_VISION_API_KEY' };
+  const match = String(dataUrl || '').match(/^data:image\/[a-zA-Z0-9.+-]+;base64,(.+)$/);
+  if (!match) return { ok: false, reason: 'INVALID_IMAGE_DATA' };
+  const response = withRetry('Vision land certificate number crop suggestion', function() {
+    const res = UrlFetchApp.fetch('https://vision.googleapis.com/v1/images:annotate?key=' + encodeURIComponent(apiKey), {
+      method: 'post',
+      contentType: 'application/json',
+      payload: JSON.stringify({
+        requests: [{
+          image: { content: match[1] },
+          features: [{ type: 'DOCUMENT_TEXT_DETECTION' }],
+          imageContext: { languageHints: ['vi', 'en'] }
+        }]
+      }),
+      muteHttpExceptions: true
+    });
+    if (res.getResponseCode() >= 300) throw new Error(res.getContentText());
+    return JSON.parse(res.getContentText());
+  }, 2);
+  const annotation = response.responses && response.responses[0];
+  const suggestion = suggestLandCertificateNumberCropFromVisionAnnotation_(annotation);
+  return suggestion ? { ok: true, crop: suggestion } : { ok: false, reason: 'NO_CERTIFICATE_NUMBER_ANCHOR' };
+}
+
 function ocrLandRegistryCrop(caseId, token, dataUrl) {
   assertValidToken_(caseId, token);
   const apiKey = PropertiesService.getScriptProperties().getProperty(CONFIG.CLOUD_VISION_API_KEY_PROPERTY);
@@ -303,12 +331,16 @@ function ocrA4LandCertificateCrop(caseId, token, dataUrl, cropType) {
   const annotation = response.responses && response.responses[0] && response.responses[0].fullTextAnnotation;
   const text = annotation && annotation.text || '';
   const result = {
+    certificate_number: '',
     issue_date: '',
     usage_purpose: '',
     usage_term: '',
     raw_text: text,
     reason: text ? 'OK' : 'NO_TEXT'
   };
+  if (cropType === 'certificate_number') {
+    result.certificate_number = extractLandCertificateNumberFromCropText_(text);
+  }
   if (cropType === 'issue_date' || !cropType) {
     result.issue_date = extractRealEstateIssueDateFromPlainText_(text);
   }
@@ -327,6 +359,75 @@ function ocrA4LandCertificateCrop(caseId, token, dataUrl, cropType) {
     excerpt: text.slice(0, 300)
   });
   return result;
+}
+
+function ocrLandCriticalFieldCropWithAi(caseId, token, dataUrl, cropType) {
+  assertValidToken_(caseId, token);
+  const allowed = ['certificate_number', 'registry_number', 'issue_date'];
+  if (allowed.indexOf(String(cropType || '')) < 0) return { value: '', reason: 'UNSUPPORTED_CROP_TYPE' };
+  if (!/^data:image\/[a-zA-Z0-9.+-]+;base64,/.test(String(dataUrl || ''))) {
+    return { value: '', reason: 'INVALID_IMAGE_DATA' };
+  }
+  const apiKey = PropertiesService.getScriptProperties().getProperty(CONFIG.OPENAI_API_KEY_PROPERTY);
+  if (!apiKey) return { value: '', reason: 'MISSING_OPENAI_API_KEY' };
+  const instructions = {
+    certificate_number: 'Transcribe only the printed certificate serial, usually a short letter prefix followed by 6 to 9 digits. Do not return the registry number.',
+    registry_number: 'Transcribe only the handwritten or printed value after the registry label. Preserve visible isolated punctuation and omit the surrounding printed dotted fill line.',
+    issue_date: 'Transcribe only the complete certificate issue date from the line containing ngay, thang, nam. Return it as DD/MM/YYYY.'
+  };
+  const payload = {
+    model: PropertiesService.getScriptProperties().getProperty('OPENAI_MODEL') || CONFIG.OPENAI_MODEL_DEFAULT,
+    input: [{
+      role: 'user',
+      content: [
+        {
+          type: 'input_text',
+          text: instructions[cropType] + ' Copy exactly from the crop. Do not infer missing characters. If any required character is unreadable, return an empty value.'
+        },
+        { type: 'input_image', image_url: dataUrl }
+      ]
+    }],
+    text: {
+      format: {
+        type: 'json_schema',
+        name: 'land_critical_field_crop',
+        strict: true,
+        schema: {
+          type: 'object',
+          additionalProperties: false,
+          properties: { value: { type: 'string' } },
+          required: ['value']
+        }
+      }
+    }
+  };
+  const response = withRetry('OpenAI land critical field crop ' + cropType, function() {
+    const res = UrlFetchApp.fetch(CONFIG.OPENAI_ENDPOINT, {
+      method: 'post',
+      contentType: 'application/json',
+      headers: { Authorization: 'Bearer ' + apiKey },
+      payload: JSON.stringify(payload),
+      muteHttpExceptions: true
+    });
+    if (res.getResponseCode() >= 300) throw new Error(res.getContentText());
+    return JSON.parse(res.getContentText());
+  }, CONFIG.MAX_API_RETRIES);
+  const parsed = parseOpenAiJsonResponse_(response);
+  let value = String(parsed && parsed.value || '').trim();
+  if (cropType === 'certificate_number') value = normalizeCertificateSerialValue_(value);
+  if (cropType === 'registry_number') value = normalizeRegistryCodeValue_(value);
+  if (cropType === 'issue_date') value = normalizeDateValue_(value);
+  return { value: value, reason: value ? 'OK' : 'UNREADABLE' };
+}
+
+function extractLandCertificateNumberFromCropText_(text) {
+  const compact = String(text || '').replace(/\s+/g, ' ').trim();
+  const candidates = compact.match(/\b[A-ZĐ?]{1,3}\s*[0-9]{6,9}\b/gi) || [];
+  for (let i = 0; i < candidates.length; i++) {
+    const value = normalizeCertificateSerialValue_(candidates[i]);
+    if (value && !isRegistryNumberLike_(value)) return value;
+  }
+  return '';
 }
 
 function extractA4LandFieldsFromFocusedCrop_(text) {
@@ -538,6 +639,82 @@ function saveAutoOcrIssueDateValue(caseId, token, fieldPath, newValue, currentVa
   };
 }
 
+function saveAutoOcrCertificateNumberValue(caseId, token, fieldPath, newValue, currentValue, readings) {
+  assertValidToken_(caseId, token);
+  if (!/^assets\[\d+\]\.real_estate\.certificate_number$/.test(String(fieldPath || ''))) {
+    throw new Error('Field path is not a certificate number: ' + fieldPath);
+  }
+  if (getLatestFinalData(caseId)) return { ok: false, reason: 'CASE_FINALIZED' };
+  const candidate = normalizeCertificateSerialValue_(newValue);
+  const consensus = certificateNumberCropConsensus_(readings || []);
+  if (!candidate || !consensus.value || consensus.value !== candidate || consensus.count < 2) {
+    return { ok: false, reason: 'NO_CERTIFICATE_NUMBER_CROP_CONSENSUS' };
+  }
+  const manualOverride = getOverrides(caseId).some(function(item) {
+    return item.field_path === fieldPath && item.edited_by !== 'AUTO_OCR';
+  });
+  if (manualOverride) return { ok: false, reason: 'HAS_MANUAL_OVERRIDE' };
+  let data = getLatestExtractedData(caseId);
+  if (!data) throw new Error('No extracted review data for case ' + caseId);
+  repairReviewDataFromFullOcr_(data, caseId);
+  const field = getByPath(data, fieldPath);
+  if (!field || typeof field !== 'object' || !field.hasOwnProperty('final_value')) {
+    throw new Error('Field path is not editable: ' + fieldPath);
+  }
+  if (field.manual_value) return { ok: false, reason: 'HAS_MANUAL_VALUE' };
+  const storedCurrent = normalizeCertificateSerialValue_(field.final_value || field.ai_value || '');
+  const expectedCurrent = normalizeCertificateSerialValue_(currentValue || '');
+  if (expectedCurrent && storedCurrent && expectedCurrent !== storedCurrent) {
+    return { ok: false, reason: 'STALE_CERTIFICATE_NUMBER_VALUE' };
+  }
+  field.ai_value = candidate;
+  field.final_value = candidate;
+  field.manual_value = '';
+  field.source = 'AUTO_OCR_LAND_CERTIFICATE_NUMBER_ANCHORED_CROP_CONSENSUS';
+  field.confidence = 0.94;
+  field.confirmed = false;
+  field.evidence = 'Anchored certificate-number crop consensus';
+  data = validateReviewJson(data);
+  appendSheetRow(SHEETS.EXTRACTED_DATA, {
+    'Case ID': caseId,
+    'JSON Data': data,
+    'Validation Status': data.validation.status,
+    'Missing Fields': data.validation.missing_fields,
+    'Conflicts': data.validation.conflicts,
+    'Warnings': data.validation.warnings,
+    'AI JSON File URL': '',
+    'Created At': nowIso()
+  });
+  logAudit(caseId, 'AUTO_OCR_CERTIFICATE_NUMBER_SAVED', {
+    field_path: fieldPath,
+    old_value: storedCurrent,
+    new_value: candidate,
+    readings: consensus.readings
+  });
+  return { ok: true, field_path: fieldPath, new_value: candidate, consensus_count: consensus.count };
+}
+
+function certificateNumberCropConsensus_(readings) {
+  const counts = {};
+  const normalizedReadings = [];
+  (readings || []).forEach(function(value) {
+    const normalized = normalizeCertificateSerialValue_(value);
+    if (!/^[A-ZĐ?]{1,3}[0-9]{6,9}$/i.test(normalized) || isRegistryNumberLike_(normalized)) return;
+    normalizedReadings.push(normalized);
+    counts[normalized] = (counts[normalized] || 0) + 1;
+  });
+  const ranked = Object.keys(counts).sort(function(a, b) {
+    return counts[b] - counts[a] || a.localeCompare(b);
+  });
+  if (!ranked.length) return { value: '', count: 0, readings: normalizedReadings };
+  const top = ranked[0];
+  const runnerUpCount = ranked.length > 1 ? counts[ranked[1]] : 0;
+  if (counts[top] < 2 || counts[top] === runnerUpCount) {
+    return { value: '', count: counts[top], readings: normalizedReadings };
+  }
+  return { value: top, count: counts[top], readings: normalizedReadings };
+}
+
 function issueDateCropConsensus_(readings) {
   const counts = {};
   (readings || []).forEach(function(value) {
@@ -638,6 +815,43 @@ function suggestNewIdentityIssueDateCropFromVisionAnnotation_(annotation) {
   return null;
 }
 
+function suggestLandCertificateNumberCropFromVisionAnnotation_(annotation) {
+  const words = collectVisionWords_(annotation);
+  const matches = [];
+  for (let i = 0; i < words.length; i++) {
+    for (let count = 1; count <= 3 && i + count <= words.length; count++) {
+      const group = words.slice(i, i + count);
+      const compact = group.map(function(word) { return String(word.text || ''); }).join('').replace(/[^0-9A-ZĐ?]/gi, '');
+      if (!/^[A-ZĐ?]{1,3}[0-9]{6,9}$/i.test(compact) || isRegistryNumberLike_(compact)) continue;
+      const box = mergeVisionRects_(group.map(function(word) { return word.box; }));
+      const pageWidth = words[i].pageWidth;
+      const pageHeight = words[i].pageHeight;
+      if (!box || box.y < pageHeight * 0.45) continue;
+      matches.push({ value: compact, box: box, pageWidth: pageWidth, pageHeight: pageHeight });
+    }
+  }
+  if (!matches.length) return null;
+  matches.sort(function(a, b) {
+    return b.box.y - a.box.y || a.box.x - b.box.x || b.value.length - a.value.length;
+  });
+  const match = matches[0];
+  const box = match.box;
+  const padX = Math.max(10, Math.round(box.height * 1.2));
+  const padY = Math.max(8, Math.round(box.height * 1.0));
+  const x = Math.max(0, Math.round(box.x - padX));
+  const y = Math.max(0, Math.round(box.y - padY));
+  return {
+    x: x,
+    y: y,
+    width: Math.max(8, Math.min(match.pageWidth - x, Math.round(box.width + padX * 2))),
+    height: Math.max(8, Math.min(match.pageHeight - y, Math.round(box.height + padY * 2))),
+    page_width: match.pageWidth,
+    page_height: match.pageHeight,
+    reason: 'vision_certificate_number_focused',
+    anchor_text: match.value
+  };
+}
+
 function suggestLandRegistryCropFromVisionAnnotation_(annotation) {
   const words = collectVisionWords_(annotation);
   for (let i = 0; i < words.length; i++) {
@@ -675,11 +889,25 @@ function suggestLandRegistryCodeCropFromVisionAnnotation_(annotation) {
     }).join(' ');
     if (!/so\s+vao\s+so\s+cap\s+(?:gcn|giay\s+chung\s+nhan)/.test(normalized)) continue;
     for (let j = 4; j < windowWords.length; j++) {
-      const candidate = String(windowWords[j].text || '').replace(/\s+/g, '');
-      if (!/^(?:CS|CT|CN|CH|CL|HX|VP|DC|DL)[.\/-]*[0-9A-Z.\/-]{2,24}$/i.test(candidate)) continue;
-      const box = windowWords[j].box;
-      const pageWidth = windowWords[j].pageWidth;
-      const pageHeight = windowWords[j].pageHeight;
+      let matched = null;
+      for (let count = 1; count <= 4 && j + count <= windowWords.length; count++) {
+        const group = windowWords.slice(j, j + count);
+        const candidate = group.map(function(word) { return String(word.text || ''); }).join('').replace(/\s+/g, '');
+        if (!/^(?:CS|CT|CN|CH|CL|HX|VP|DC|DL)[.\/-]*[0-9A-Z.\/-]{2,24}$/i.test(candidate) ||
+            !/\d/.test(candidate.slice(2))) continue;
+        const groupBox = mergeVisionRects_(group.map(function(word) { return word.box; }));
+        const firstBox = group[0].box;
+        const lastBox = group[group.length - 1].box;
+        const baselineTolerance = Math.max(firstBox.height, lastBox.height) * 1.5;
+        if (Math.abs(firstBox.y - lastBox.y) > baselineTolerance) continue;
+        matched = { candidate: candidate, box: groupBox, word: group[0] };
+        break;
+      }
+      if (!matched) continue;
+      const candidate = matched.candidate;
+      const box = matched.box;
+      const pageWidth = matched.word.pageWidth;
+      const pageHeight = matched.word.pageHeight;
       const padX = Math.max(6, Math.round(box.height * 0.8));
       const padY = Math.max(6, Math.round(box.height * 0.9));
       const x = Math.max(0, Math.round(box.x - padX));

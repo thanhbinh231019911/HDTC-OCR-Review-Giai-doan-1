@@ -22,6 +22,9 @@ function reviewApi(body) {
   if (action === 'getReview') {
     return getReviewPayload(body.caseId, body.token);
   }
+  if (action === 'resendLabReviewEmail') {
+    return resendLabReviewEmail(body.caseId, body.token);
+  }
   if (action === 'saveOverride') {
     return saveManualOverride(body.caseId, body.token, body.fieldPath, body.newValue, body.reason);
   }
@@ -55,11 +58,17 @@ function reviewApi(body) {
   if (action === 'suggestLandIssueDateCropFromImage') {
     return suggestLandIssueDateCropFromImage(body.caseId, body.token, body.dataUrl);
   }
+  if (action === 'suggestLandCertificateNumberCropFromImage') {
+    return suggestLandCertificateNumberCropFromImage(body.caseId, body.token, body.dataUrl);
+  }
   if (action === 'ocrLandRegistryCrop') {
     return ocrLandRegistryCrop(body.caseId, body.token, body.dataUrl);
   }
   if (action === 'ocrA4LandCertificateCrop') {
     return ocrA4LandCertificateCrop(body.caseId, body.token, body.dataUrl, body.cropType);
+  }
+  if (action === 'ocrLandCriticalFieldCropWithAi') {
+    return ocrLandCriticalFieldCropWithAi(body.caseId, body.token, body.dataUrl, body.cropType);
   }
   if (action === 'extractA4LandCertificateFieldsFromStoredOcr') {
     return extractA4LandCertificateFieldsFromStoredOcr(body.caseId, body.token, body.fileId, body.fileName);
@@ -80,6 +89,16 @@ function reviewApi(body) {
   }
   if (action === 'saveAutoOcrIssueDateValue') {
     return saveAutoOcrIssueDateValue(
+      body.caseId,
+      body.token,
+      body.fieldPath,
+      body.newValue,
+      body.currentValue,
+      body.readings || []
+    );
+  }
+  if (action === 'saveAutoOcrCertificateNumberValue') {
+    return saveAutoOcrCertificateNumberValue(
       body.caseId,
       body.token,
       body.fieldPath,

@@ -500,6 +500,32 @@ const productionA4FullRegionFields = dataMergeContext.extractRealEstateIndexedLa
 assert.strictEqual(productionA4FullRegionFields._quality.reason, 'vision_region_full');
 assert.strictEqual(productionA4FullRegionFields.usage_purpose, 'Dat o tai nong thon: 400,0 m2; Dat trong cay lau nam: 1041,9 m2');
 assert.strictEqual(productionA4FullRegionFields.usage_term, 'Dat o tai nong thon: Lâu dài; Dat trong cay lau nam: Den thang 10/2045');
+assert.strictEqual(
+  dataMergeContext.classifyLandCertificatePageText_('4. Sơ đồ thửa đất, tài sản gắn liền với đất\n5. Ghi chú: Không\n6. Những thay đổi sau khi cấp Giấy chứng nhận\nNội dung thay đổi và cơ sở pháp lý').layout,
+  'gcn_qsdd_qsh_tsglvd_page_2'
+);
+
+const labeledA4AttachedAssetText = `
+GIẤY CHỨNG NHẬN QUYỀN SỬ DỤNG ĐẤT, QUYỀN SỞ HỮU TÀI SẢN GẮN LIỀN VỚI ĐẤT
+1. Người sử dụng đất, chủ sở hữu tài sản gắn liền với đất:
+Bà: Đỗ Hồng Minh, CCCD: 017173000973
+Và chồng: Đỗ Thanh Tuân, CCCD: 001070022821
+2. Thông tin thửa đất:
+a. Thửa đất số: 798; tờ bản đồ số: 7
+3. Thông tin tài sản gắn liền với đất:
+a. Tên tài sản: Nhà ở riêng lẻ
+c. Hình thức sở hữu: Sở hữu chung
+b. Diện tích sử dụng: 226 m2
+d. Thời hạn sở hữu: -/-
+Lạc Thủy, ngày 11 tháng 6 năm 2025
+`;
+const labeledAttached = dataMergeContext.extractNewA4AttachedAssetFields_(labeledA4AttachedAssetText);
+assert.strictEqual(labeledAttached.name, 'Nhà ở riêng lẻ');
+assert(/^226 m/.test(labeledAttached.area));
+assert.strictEqual(labeledAttached.ownership_form, 'Sở hữu chung');
+assert.strictEqual(labeledAttached.ownership_term, '-/-');
+const husbandPair = dataMergeContext.extractOwnerIdentityPairs_(labeledA4AttachedAssetText)[1];
+assert.strictEqual(husbandPair.raw_text, 'Và chồng: Đỗ Thanh Tuân, CCCD: 001070022821');
 
 const newA4PdfText = `
 [LAND_OCR_REGION layout=gcn_qsdd_qsh_tsglvd_page_1 score=11 region=full]
@@ -1140,6 +1166,73 @@ assert.strictEqual(registrySuggestion.anchor_text, 'CS..03417');
 assert.ok(registrySuggestion.x < 380);
 assert.ok(registrySuggestion.width > 70);
 
+const splitRegistrySuggestionAnnotation = {
+  fullTextAnnotation: {
+    pages: [{
+      width: 905,
+      height: 1280,
+      blocks: [{
+        paragraphs: [{
+          words: [
+            ['Số', 70], ['vào', 115], ['sổ', 160], ['cấp', 205], ['Giấy', 250],
+            ['chứng', 300], ['nhận', 355], ['CN', 410], ['Q.344', 455]
+          ].map(function(item) {
+            return {
+              symbols: item[0].split('').map(function(char) { return { text: char }; }),
+              boundingBox: {
+                vertices: [
+                  { x: item[1], y: 1160 },
+                  { x: item[1] + 55, y: 1160 },
+                  { x: item[1] + 55, y: 1195 },
+                  { x: item[1], y: 1195 }
+                ]
+              }
+            };
+          })
+        }]
+      }]
+    }]
+  }
+};
+const splitRegistrySuggestion = dataMergeContext.suggestLandRegistryCodeCropFromVisionAnnotation_(splitRegistrySuggestionAnnotation);
+assert.strictEqual(splitRegistrySuggestion.anchor_text, 'CNQ.344');
+assert.ok(splitRegistrySuggestion.code_box.width > 55);
+
+const certificateSuggestionAnnotation = {
+  fullTextAnnotation: {
+    pages: [{
+      width: 1000,
+      height: 1400,
+      blocks: [{
+        paragraphs: [{
+          words: [
+            ['AA', 70, 1240], ['02439787', 130, 1240]
+          ].map(function(item) {
+            return {
+              symbols: item[0].split('').map(function(char) { return { text: char }; }),
+              boundingBox: {
+                vertices: [
+                  { x: item[1], y: item[2] },
+                  { x: item[1] + 110, y: item[2] },
+                  { x: item[1] + 110, y: item[2] + 45 },
+                  { x: item[1], y: item[2] + 45 }
+                ]
+              }
+            };
+          })
+        }]
+      }]
+    }]
+  }
+};
+const certificateSuggestion = dataMergeContext.suggestLandCertificateNumberCropFromVisionAnnotation_(certificateSuggestionAnnotation);
+assert.strictEqual(certificateSuggestion.anchor_text, 'AA02439787');
+assert.strictEqual(dataMergeContext.extractLandCertificateNumberFromCropText_('AA 02439787\nThong tin chi tiet'), 'AA02439787');
+assert.deepStrictEqual(
+  JSON.parse(JSON.stringify(dataMergeContext.certificateNumberCropConsensus_(['AA02439787', 'AA 02439787', 'CN.0.3441']))),
+  { value: 'AA02439787', count: 2, readings: ['AA02439787', 'AA02439787'] }
+);
+
 const reviewHtml = fs.readFileSync('Review.html', 'utf8');
 function extractClientFunction(name) {
   const start = reviewHtml.indexOf('function ' + name + '(');
@@ -1213,6 +1306,12 @@ assert.strictEqual(
 );
 assert.strictEqual(
   reviewClientContext.chooseFocusedRegistryCandidate_([
+    { value: 'CN.0.3441', crop_reason: 'vision_registry_horizontal_forward_focused' }
+  ], 'CNQ344').value,
+  'CN.0.3441'
+);
+assert.strictEqual(
+  reviewClientContext.chooseFocusedRegistryCandidate_([
     { value: 'CS0147' },
     { value: 'CS03417' },
     { value: 'CS03417' }
@@ -1280,6 +1379,10 @@ assert.strictEqual(
 assert.ok(
   fs.readFileSync('FormHandler.gs', 'utf8').includes('detectOcrLabConfigFromNamedValues_(e && e.namedValues)'),
   'Production form handler must skip spreadsheet-mirrored OCR lab submissions'
+);
+assert.ok(
+  fs.readFileSync('LabTraining.gs', 'utf8').includes('sendReviewEmail(caseId, recipient, reviewUrl)'),
+  'OCR lab handler must send the generated review URL to the submitted email'
 );
 assert.deepStrictEqual(
   JSON.parse(JSON.stringify(ocrServiceContext.visionBoundingRectForRegions_({

@@ -2,7 +2,7 @@ const OCR_LAB_TRAINING = {
   CCCD: {
     skill: 'ocr-cccd-can-cuoc',
     title: 'LAB OCR CCCD Can cuoc',
-    description: 'Form rut gon de train OCR CCCD/Can cuoc. Khong tao hop dong, khong gui email.',
+    description: 'Form rut gon de train OCR CCCD/Can cuoc. Khong tao hop dong; gui link Review qua email.',
     propertyPrefix: 'LAB_CCCD',
     uploadField: 'Upload anh CCCD/Can cuoc',
     handler: 'onLabCccdSubmit',
@@ -11,7 +11,7 @@ const OCR_LAB_TRAINING = {
   LAND: {
     skill: 'ocr-bia-dat',
     title: 'LAB OCR Bia dat',
-    description: 'Form rut gon de train OCR bia dat/giay chung nhan. Khong tao hop dong, khong gui email.',
+    description: 'Form rut gon de train OCR bia dat/giay chung nhan. Khong tao hop dong; gui link Review qua email.',
     propertyPrefix: 'LAB_LAND',
     uploadField: 'Upload anh bia dat/giay chung nhan',
     handler: 'onLabLandSubmit',
@@ -217,7 +217,7 @@ function replaceOcrLabFormItems_(form, labConfig) {
   }
   form.addTextItem()
     .setTitle(OCR_LAB_TRAINING.REVIEW_EMAIL_FIELD)
-    .setRequired(false);
+    .setRequired(true);
   addOcrLabUploadOrLinkItem_(form, labConfig);
 }
 
@@ -317,7 +317,20 @@ function processOcrLabTrainingSubmit_(labConfig, e) {
       reviewFile: reviewFile,
       error: ''
     });
-    updateCase(caseId, { 'Status': CASE_STATUS.REVIEW_SENT, 'Email Sent At': '' });
+    let emailSentAt = '';
+    const recipient = normalizeRecipientEmail_(reviewEmail);
+    if (recipient) {
+      try {
+        sendReviewEmail(caseId, recipient, reviewUrl);
+        emailSentAt = nowIso();
+        logAudit(caseId, 'LAB_REVIEW_EMAIL_SENT', { to: recipient });
+      } catch (emailErr) {
+        logAudit(caseId, 'LAB_REVIEW_EMAIL_FAILED', { to: recipient, error: String(emailErr && emailErr.message ? emailErr.message : emailErr) });
+      }
+    } else {
+      logAudit(caseId, 'LAB_REVIEW_EMAIL_SKIPPED', { reason: 'MISSING_OR_INVALID_EMAIL' });
+    }
+    updateCase(caseId, { 'Status': CASE_STATUS.REVIEW_SENT, 'Email Sent At': emailSentAt });
     logAudit(caseId, 'LAB_TRAINING_DONE', { review_file_url: reviewFile.url, review_url: reviewUrl }, reviewEmail);
     return reviewJson;
   } catch (err) {
@@ -339,6 +352,23 @@ function processOcrLabTrainingSubmit_(labConfig, e) {
     logCaseError(caseId, err, 'processOcrLabTrainingSubmit_' + labConfig.skill);
     throw err;
   }
+}
+
+function resendLabReviewEmail(caseId, token) {
+  assertValidToken_(caseId, token);
+  if (String(caseId || '').indexOf('LAB-') !== 0) return { ok: false, reason: 'NOT_LAB_CASE' };
+  const data = getLatestFinalData(caseId) || getLatestExtractedData(caseId);
+  if (!data) return { ok: false, reason: 'NO_REVIEW_DATA' };
+  const emailField = data.contract_info && data.contract_info.review_email;
+  const email = normalizeRecipientEmail_(emailField && (emailField.final_value || emailField.form_value || emailField.ai_value));
+  const reviewUrl = data.review && data.review.review_url;
+  if (!email) return { ok: false, reason: 'MISSING_OR_INVALID_EMAIL' };
+  if (!reviewUrl) return { ok: false, reason: 'MISSING_REVIEW_URL' };
+  sendReviewEmail(caseId, email, reviewUrl);
+  const sentAt = nowIso();
+  updateCase(caseId, { 'Status': CASE_STATUS.REVIEW_SENT, 'Email Sent At': sentAt });
+  logAudit(caseId, 'LAB_REVIEW_EMAIL_RESENT', { to: email, sent_at: sentAt });
+  return { ok: true, to: email, sent_at: sentAt };
 }
 
 function resolveOcrLabConfigFromNamedValues_(preferredConfig, namedValues) {

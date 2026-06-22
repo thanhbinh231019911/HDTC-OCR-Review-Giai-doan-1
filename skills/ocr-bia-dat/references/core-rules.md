@@ -73,6 +73,8 @@ Crop/OCR policy:
 - If no trusted page/region is available, leave the affected field blank and add a manual-review warning instead of falling back to whole-image OCR.
 - When the printed issue-date line is clear but handwritten day/month digits are missed by full-page OCR, run a field-specific enlarged crop around that line and write only the certificate `issue_date` field.
 - Important handwritten fields such as certificate issue date and registry number must use field-specific crop OCR when full-page OCR is wrong or ambiguous. Do not rely on full-page OCR for these fields when the crop can be anchored to the printed label/date line.
+- Treat certificate serial, registry number, and issue date as three independent critical-field pipelines. Locate each field from its own visual anchor on every candidate page; never use the current stored value's length or characters to reject a complete anchored crop result.
+- For handwritten dates on colored security backgrounds, try color-aware ink separation before declaring the field unreadable. A vision-model fallback may transcribe the focused crop only; require agreement from two crop renderings and never ask it to infer missing digits.
 
 Review display policy:
 
@@ -83,6 +85,8 @@ Review display policy:
 - For new A4 certificates, display `c. Loai dat` as `Loai dat`; do not rename it to `Muc dich su dung` in the certificate-layout review.
 - Keep every printed A4 item `a/b/c/d/d/e` visible in review even when OCR did not read its value. A missing OCR value must appear as a blank printed field, not disappear with its heading.
 - Preserve owner/user lines as printed, including prefixes such as `Ong:`, `Ba:`, `Va vo:` and the exact identity-document label. If the certificate prints `CCCD`, keep `CCCD`; if it prints `CC`, keep `CC`. Do not expand an abbreviation or infer a document type from the number length.
+- Prefer trusted raw owner-section lines for certificate review. Structured owner fields may support contract generation, but must not rewrite or infer relationship prefixes in the certificate view. Preserve forms such as `Va chong:` and `Va vo:` only when printed.
+- For new A4 section `3. Thong tin tai san gan lien voi dat`, preserve and display every printed label separately: `a. Ten tai san`, `b. Dien tich su dung`, `c. Hinh thuc so huu`, `d. Thoi han so huu`. Extract by label meaning rather than OCR line order, and keep `-/-` when printed.
 - When the phrase `Nguoi su dung dat` appears in post-issue-change text, do not treat it as the owner section. Select a section that begins with the printed `I.` or `1.` owner heading and ends before `II.`/`2. Thong tin thua dat` or the certificate warning text.
 - Old certificates may print the owner name on one line and `Nam sinh, CMND/CCCD so` on the next. Join those adjacent lines inside the selected owner section; do not turn `Nam sinh` into an owner name.
 - A blank new-A4 changes table remains blank in review. Do not invent `Khong co`.
