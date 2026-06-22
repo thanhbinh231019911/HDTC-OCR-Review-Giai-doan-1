@@ -273,6 +273,11 @@ function repairAssetAttachedAssetsInReviewJson(reviewJson, fullAssetOcrText, ass
     const scopedAssetText = assetOcrTextForRepair_(asset, assetText, assetTextByFileName, allowAllAssetTexts);
     if (!scopedAssetText || !isNewA4LandCertificateText_(scopedAssetText)) return;
     const fields = extractNewA4AttachedAssetFields_(scopedAssetText);
+    if (fields.state === 'absent') {
+      setA4AttachedAssetsAbsent_(re);
+      return;
+    }
+    if (fields.state !== 'detailed') return;
     re.attached_asset_name = ensureRealEstateReviewField_(re.attached_asset_name, 'Tên tài sản');
     re.attached_asset_area = ensureRealEstateReviewField_(re.attached_asset_area, 'Diện tích sử dụng');
     re.attached_asset_ownership_form = ensureRealEstateReviewField_(re.attached_asset_ownership_form, 'Hình thức sở hữu');
@@ -289,6 +294,29 @@ function repairAssetAttachedAssetsInReviewJson(reviewJson, fullAssetOcrText, ass
     }
   });
   return reviewJson;
+}
+
+function setA4AttachedAssetsAbsent_(realEstate) {
+  if (!realEstate) return;
+  if (realEstate.attached_assets && !realEstate.attached_assets.manual_value) {
+    realEstate.attached_assets.ai_value = '-/-';
+    realEstate.attached_assets.final_value = '-/-';
+    realEstate.attached_assets.source = 'OCR_INDEXED_ASSET_TEXT';
+    realEstate.attached_assets.confidence = Math.max(Number(realEstate.attached_assets.confidence || 0), 0.9);
+  }
+  [
+    'attached_asset_name',
+    'attached_asset_area',
+    'attached_asset_ownership_form',
+    'attached_asset_ownership_term'
+  ].forEach(function(key) {
+    const field = realEstate[key];
+    if (!field || field.manual_value) return;
+    field.ai_value = '';
+    field.final_value = '';
+    field.source = 'OCR_INDEXED_ASSET_TEXT';
+    field.confidence = Math.max(Number(field.confidence || 0), 0.9);
+  });
 }
 
 function ensureRealEstateReviewField_(field, label) {
@@ -821,6 +849,42 @@ function normalizeRealEstateUsageTerm_(value) {
   return correctUsageTermOcrTypos_(raw);
 }
 
+function normalizeLandTypeAreaUnits_(value) {
+  return String(value || '')
+    .replace(/(\d+(?:[,.]\d+)?)\s*m(?:\s*(?:2|\u00b2))?(?![A-Za-z0-9])/gi, '$1 m\u00b2')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function repairA4UsageTermAndFormBoundary_(usageTerm, usageForm) {
+  let term = normalizeRealEstateUsageTerm_(usageTerm);
+  let form = normalizeRealEstateUsageForm_(usageForm);
+  if (!term || !form) return { usage_term: term, usage_form: form };
+  const normalizedTerm = removeVietnameseAccents_(term).toLowerCase().replace(/\s+/g, ' ').trim();
+  if (!/\bden(?:\s+ngay)?$/.test(normalizedTerm)) {
+    return { usage_term: term, usage_form: form };
+  }
+  const datePattern = /(?:^|\s)((?:ng\u00e0y\s+)?\d{1,2}\s*[\/.\-]\s*\d{1,2}\s*[\/.\-]\s*\d{4})(?=$|[\s;,.])/i;
+  const match = form.match(datePattern);
+  if (!match) return { usage_term: term, usage_form: form };
+  const before = form.slice(0, match.index).trim();
+  const after = form.slice(match.index + match[0].length).trim();
+  const normalizedForm = removeVietnameseAccents_(before).toLowerCase().replace(/\s+/g, ' ').trim();
+  if (!/^su dung\b/.test(normalizedForm) || after) {
+    return { usage_term: term, usage_form: form };
+  }
+  const dateFragment = match[1].replace(/\s*([\/.\-])\s*/g, '$1').trim();
+  if (!/^ng\u00e0y\b/i.test(dateFragment)) {
+    term += ' ng\u00e0y ' + dateFragment;
+  } else {
+    term += ' ' + dateFragment;
+  }
+  return {
+    usage_term: normalizeRealEstateUsageTerm_(term),
+    usage_form: normalizeRealEstateUsageForm_(before)
+  };
+}
+
 function correctUsageTermOcrTypos_(value) {
   return String(value || '')
     .replace(/(^|[^A-Za-z\u00c0-\u1ef9])(L\u00e2u)\s+\u0111\u00e0i(?=$|[^A-Za-z\u00c0-\u1ef9])/g, '$1L\u00e2u d\u00e0i')
@@ -1305,16 +1369,22 @@ function extractNewA4RealEstateLandFields_(source, selected) {
     usage_term: findSemanticLandFieldValue_(landSection, ['thoi han su dung']),
     attached_assets: findSemanticLandFieldValue_(source, ['thong tin tai san gan lien voi dat'])
   };
+  const repairedUsage = repairA4UsageTermAndFormBoundary_(
+    cleanupIndexedCertificateValue_(semantic.usage_term || ''),
+    cleanupIndexedCertificateValue_(semantic.usage_form || '')
+  );
   return {
     land_plot_number: extractLandPlotNumberFromIndexedValue_(semantic.land_plot_number || ''),
     map_sheet_number: extractMapSheetNumberFromIndexedValue_(semantic.map_sheet_number || semantic.land_plot_number || ''),
     land_address: cleanupLandAddressCertificateValue_(semantic.land_address || ''),
     area: normalizeRealEstateAreaValue_(cleanupIndexedCertificateValue_(semantic.area || '')) || extractRealEstateArea_(source),
-    usage_form: normalizeRealEstateUsageForm_(cleanupIndexedCertificateValue_(semantic.usage_form || '')),
-    usage_purpose: cleanupIndexedCertificateValue_(semantic.land_type || ''),
-    usage_term: normalizeRealEstateUsageTerm_(cleanupIndexedCertificateValue_(semantic.usage_term || '')),
+    usage_form: repairedUsage.usage_form,
+    usage_purpose: normalizeLandTypeAreaUnits_(cleanupIndexedCertificateValue_(semantic.land_type || '')),
+    usage_term: repairedUsage.usage_term,
     usage_origin: '',
-    attached_assets: attached.summary || cleanupIndexedCertificateValue_(semantic.attached_assets || ''),
+    attached_assets: attached.state === 'absent'
+      ? '-/-'
+      : (attached.summary || cleanupIndexedCertificateValue_(semantic.attached_assets || '')),
     attached_asset_name: attached.name,
     attached_asset_area: attached.area,
     attached_asset_ownership_form: attached.ownership_form,
@@ -1325,7 +1395,10 @@ function extractNewA4RealEstateLandFields_(source, selected) {
 
 function extractNewA4AttachedAssetFields_(source) {
   const section = extractNewA4AttachedAssetSection_(source);
-  if (!section) return { name: '', area: '', ownership_form: '', ownership_term: '', summary: '' };
+  if (!section) return { name: '', area: '', ownership_form: '', ownership_term: '', summary: '', state: 'unknown' };
+  if (isAbsentNewA4AttachedAssetSection_(section)) {
+    return { name: '', area: '', ownership_form: '', ownership_term: '', summary: '', state: 'absent' };
+  }
   const result = {
     name: cleanupNewA4AttachedValue_(findSemanticCertificateFieldRawValue_(section, ['ten tai san'])),
     area: normalizeRealEstateAreaValue_(cleanupNewA4AttachedValue_(findSemanticCertificateFieldRawValue_(section, ['dien tich su dung']))),
@@ -1338,7 +1411,17 @@ function extractNewA4AttachedAssetFields_(source) {
   if (result.ownership_form) parts.push('Hình thức sở hữu: ' + result.ownership_form);
   if (result.ownership_term) parts.push('Thời hạn sở hữu: ' + result.ownership_term);
   result.summary = parts.join('; ');
+  result.state = parts.length ? 'detailed' : 'unknown';
   return result;
+}
+
+function isAbsentNewA4AttachedAssetSection_(section) {
+  const raw = normalizeCertificatePunctuationSpacing_(section).replace(/\s+/g, ' ').trim();
+  if (!raw) return false;
+  const beforeNextSection = raw
+    .replace(/\s+(?:4\s*[\).:]?\s*s(?:\u01a1|\u01a1\u0301|o)\s*\u0111(?:\u1ed3|\u00f4|o)|5\s*[\).:]?\s*ghi\s*ch\u00fa|6\s*[\).:]?\s*nh\u1eefng\s+thay\s+\u0111\u1ed5i)\b.*$/i, '')
+    .trim();
+  return /^[:;,.]?\s*-+\s*\/?\s*-+\s*[:;,.]?$/.test(beforeNextSection);
 }
 
 function findSemanticCertificateFieldRawValue_(source, normalizedAliases) {
@@ -1374,7 +1457,16 @@ function extractNewA4AttachedAssetSection_(source) {
   for (let i = 0; i < lines.length; i++) {
     const normalizedLine = removeVietnameseAccents_(lines[i]).toLowerCase().replace(/[^a-z0-9]+/g, ' ').replace(/\s+/g, ' ').trim();
     if (!inSection) {
-      if (/^3 thong tin tai san gan lien voi dat\b/.test(normalizedLine)) inSection = true;
+      if (/^3 thong tin tai san gan lien voi dat\b/.test(normalizedLine)) {
+        inSection = true;
+        const originalNormalized = removeVietnameseAccents_(lines[i]).toLowerCase();
+        const heading = 'thong tin tai san gan lien voi dat';
+        const headingIndex = originalNormalized.indexOf(heading);
+        const remainder = headingIndex >= 0
+          ? lines[i].slice(headingIndex + heading.length).replace(/^[\s:;,.]+/, '').trim()
+          : '';
+        if (remainder) sectionLines.push(remainder);
+      }
       continue;
     }
     if (/^4 so do\b/.test(normalizedLine) ||
@@ -1389,7 +1481,7 @@ function extractNewA4AttachedAssetSection_(source) {
   if (!startMatch) return '';
   const start = startMatch.index + startMatch[0].length;
   const tail = normalized.slice(start);
-  const endMatch = tail.match(/(?:^|\s)(?:4\s*[\).:]?\s*so\s+do|[a-z\s]+ngay\s+[^\s]+\s+thang|chi\s+nhanh\s+van\s+phong\s+dang\s+ky)/);
+  const endMatch = tail.match(/(?:^|\s)(?:4\s*[\).:]?\s*so\s+do|[a-z][a-z\s]{1,60},?\s+ngay\s+(?:\.|\d)|chi\s+nhanh\s+van\s+phong\s+dang\s+ky)/);
   const end = endMatch ? start + endMatch.index : compact.length;
   return compact.slice(start, end > start ? end : compact.length).trim();
 }
@@ -1412,10 +1504,14 @@ function selectBestLandPlotText_(text) {
   best.score = scoreLandPlotTextCandidate_(best.text);
   candidates.forEach(function(candidate) {
     const score = scoreLandPlotTextCandidate_(candidate.text);
+    const preferNewA4Candidate = score === best.score &&
+      candidate.layout === 'gcn_qsdd_qsh_tsglvd_page_1' &&
+      normalizeCertificateIndexLine_(candidate.text).indexOf('2 thong tin thua dat') >= 0 &&
+      best.layout !== 'gcn_qsdd_qsh_tsglvd_page_1';
     const preferNewA4FullRegion = score === best.score &&
       candidate.layout === 'gcn_qsdd_qsh_tsglvd_page_1' &&
       candidate.reason === 'vision_region_full';
-    if (score > best.score || preferNewA4FullRegion) {
+    if (score > best.score || preferNewA4Candidate || preferNewA4FullRegion) {
       best = {
         text: candidate.text,
         score: score,

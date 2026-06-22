@@ -498,7 +498,7 @@ vm.runInContext(fs.readFileSync('DataMergeService.gs', 'utf8'), dataMergeContext
 vm.runInContext(fs.readFileSync('ReviewService.gs', 'utf8'), dataMergeContext);
 const productionA4FullRegionFields = dataMergeContext.extractRealEstateIndexedLandFields_(newA4FullAndLeftRegions);
 assert.strictEqual(productionA4FullRegionFields._quality.reason, 'vision_region_full');
-assert.strictEqual(productionA4FullRegionFields.usage_purpose, 'Dat o tai nong thon: 400,0 m2; Dat trong cay lau nam: 1041,9 m2');
+assert.strictEqual(productionA4FullRegionFields.usage_purpose, 'Dat o tai nong thon: 400,0 m²; Dat trong cay lau nam: 1041,9 m²');
 assert.strictEqual(productionA4FullRegionFields.usage_term, 'Dat o tai nong thon: Lâu dài; Dat trong cay lau nam: Den thang 10/2045');
 assert.strictEqual(
   dataMergeContext.classifyLandCertificatePageText_('4. Sơ đồ thửa đất, tài sản gắn liền với đất\n5. Ghi chú: Không\n6. Những thay đổi sau khi cấp Giấy chứng nhận\nNội dung thay đổi và cơ sở pháp lý').layout,
@@ -524,6 +524,7 @@ assert.strictEqual(labeledAttached.name, 'Nhà ở riêng lẻ');
 assert(/^226 m/.test(labeledAttached.area));
 assert.strictEqual(labeledAttached.ownership_form, 'Sở hữu chung');
 assert.strictEqual(labeledAttached.ownership_term, '-/-');
+assert.strictEqual(labeledAttached.state, 'detailed');
 const husbandPair = dataMergeContext.extractOwnerIdentityPairs_(labeledA4AttachedAssetText)[1];
 assert.strictEqual(husbandPair.raw_text, 'Và chồng: Đỗ Thanh Tuân, CCCD: 001070022821');
 
@@ -558,7 +559,7 @@ const a4PdfFields = dataMergeContext.extractRealEstateIndexedLandFields_(newA4Pd
 assert.strictEqual(a4PdfFields.land_plot_number, '100');
 assert.strictEqual(a4PdfFields.map_sheet_number, '40');
 assert(/^1441,9 m/.test(a4PdfFields.area));
-assert.strictEqual(a4PdfFields.usage_purpose, 'Dat o tai nong thon: 400,0 m2; Dat trong cay lau nam: 1041,9 m2');
+assert.strictEqual(a4PdfFields.usage_purpose, 'Dat o tai nong thon: 400,0 m²; Dat trong cay lau nam: 1041,9 m²');
 assert.strictEqual(a4PdfFields.usage_term, 'Dat o tai nong thon: L\u00e2u d\u00e0i; Dat trong cay lau nam: Den thang 10/2045');
 assert.strictEqual(a4PdfFields.usage_form, 'Su dung chung cua vo va chong');
 assert.strictEqual(a4PdfFields.land_address, 'Xom Giua, xa Lien Son, tinh Phu Tho');
@@ -620,7 +621,7 @@ const actualA4Fields = dataMergeContext.extractRealEstateIndexedLandFields_(actu
 assert.strictEqual(dataMergeContext.extractRealEstateCertificateNumber_(actualA4HouseCertificateText), 'AA02378604');
 assert.strictEqual(dataMergeContext.extractRealEstateRegistryNumber_(actualA4HouseCertificateText), 'CN5429');
 assert.strictEqual(dataMergeContext.extractRealEstateIssueDate_(actualA4HouseCertificateText), '04/07/2025');
-assert.strictEqual(actualA4Fields.usage_purpose, 'Đất ở tại nông thôn: 400,0 m2; Đất trồng cây lâu năm: 1041,9 m2');
+assert.strictEqual(actualA4Fields.usage_purpose, 'Đất ở tại nông thôn: 400,0 m²; Đất trồng cây lâu năm: 1041,9 m²');
 assert.strictEqual(actualA4Fields.usage_term, 'Đất ở tại nông thôn: Lâu dài; Đất trồng cây lâu năm: Đến tháng 10/2045');
 const actualOwnerPairs = dataMergeContext.extractOwnerIdentityPairs_(actualA4HouseCertificateText);
 assert.deepStrictEqual(JSON.parse(JSON.stringify(actualOwnerPairs)), [
@@ -709,7 +710,7 @@ assert.strictEqual(actualA4Review.assets[0].real_estate.registry_number.final_va
 assert.strictEqual(actualA4Review.assets[0].real_estate.issue_date.final_value, '04/07/2025');
 assert.strictEqual(actualA4Review.assets[0].owner_identity_summary.final_value, 'Ông: Nguyễn Viết Trọng, CCCD: 017065002419; Và vợ: Lê Thị Huế, CCCD: 001166034340');
 assert.strictEqual(actualA4Review.assets[0].owner_id_document_type.final_value, 'CCCD; CCCD');
-assert.strictEqual(actualA4Review.assets[0].real_estate.usage_purpose.final_value, 'Đất ở tại nông thôn: 400,0 m2; Đất trồng cây lâu năm: 1041,9 m2');
+assert.strictEqual(actualA4Review.assets[0].real_estate.usage_purpose.final_value, 'Đất ở tại nông thôn: 400,0 m²; Đất trồng cây lâu năm: 1041,9 m²');
 assert.strictEqual(actualA4Review.assets[0].real_estate.usage_term.final_value, 'Đất ở tại nông thôn: Lâu dài; Đất trồng cây lâu năm: Đến tháng 10/2045');
 assert.strictEqual(actualA4Review.assets[0].real_estate.post_issue_changes.final_value, '');
 assert.deepStrictEqual(
@@ -719,8 +720,9 @@ assert.deepStrictEqual(
     'đ. Hình thức sử dụng: Sử dụng chung của vợ và chồng'
   ))),
   {
-    usage_purpose: 'Đất ở tại nông thôn: 400,0 m2; Đất trồng cây lâu năm: 1041,9 m2',
-    usage_term: 'Đất ở tại nông thôn: Lâu dài; Đất trồng cây lâu năm: Đến tháng 10/2045'
+    usage_purpose: 'Đất ở tại nông thôn: 400,0 m²; Đất trồng cây lâu năm: 1041,9 m²',
+    usage_term: 'Đất ở tại nông thôn: Lâu dài; Đất trồng cây lâu năm: Đến tháng 10/2045',
+    usage_form: 'Sử dụng chung của vợ và chồng'
   }
 );
 dataMergeContext.getCaseOcrText = function() {
@@ -730,8 +732,50 @@ dataMergeContext.logAudit = function() {};
 const storedA4Fields = dataMergeContext.extractA4LandCertificateFieldsFromStoredOcr('CASE', 'TOKEN', 'pdf1', 'So do nha.pdf');
 assert.strictEqual(storedA4Fields.reason, 'OK');
 assert.strictEqual(storedA4Fields.issue_date, '04/07/2025');
-assert.strictEqual(storedA4Fields.usage_purpose, 'Đất ở tại nông thôn: 400,0 m2; Đất trồng cây lâu năm: 1041,9 m2');
+assert.strictEqual(storedA4Fields.usage_purpose, 'Đất ở tại nông thôn: 400,0 m²; Đất trồng cây lâu năm: 1041,9 m²');
 assert.strictEqual(storedA4Fields.usage_term, 'Đất ở tại nông thôn: Lâu dài; Đất trồng cây lâu năm: Đến tháng 10/2045');
+const dislocatedA4TermText = `
+GIẤY CHỨNG NHẬN
+QUYỀN SỬ DỤNG ĐẤT, QUYỀN SỞ HỮU TÀI SẢN GẮN LIỀN VỚI ĐẤT
+2. Thông tin thửa đất:
+a. Thửa đất số: 124 ; tờ bản đồ số: 27
+b. Diện tích: 367,4m2
+c. Loại đất: Đất ở tại nông thôn: 344,6m; Đất trồng cây lâu năm: 22,8m
+d. Thời hạn sử dụng: Đất ở tại nông thôn: Lâu dài; Đất trồng cây lâu năm: Đến đ. Hình thức sử dụng: Sử dụng riêng
+ngày 10/10/2045 e. Địa chỉ: Thôn Quyền Chương, xã Thanh Cao, huyện Lương Sơn, tỉnh Hòa Bình
+3. Thông tin tài sản gắn liền với đất: --
+Lương Sơn, ngày 17 tháng 6 năm 2025
+`;
+const dislocatedA4Fields = dataMergeContext.extractRealEstateIndexedLandFields_(dislocatedA4TermText);
+assert.strictEqual(
+  dislocatedA4Fields.usage_purpose,
+  'Đất ở tại nông thôn: 344,6 m²; Đất trồng cây lâu năm: 22,8 m²'
+);
+assert.strictEqual(
+  dislocatedA4Fields.usage_term,
+  'Đất ở tại nông thôn: Lâu dài; Đất trồng cây lâu năm: Đến ngày 10/10/2045'
+);
+assert.strictEqual(dislocatedA4Fields.usage_form, 'Sử dụng riêng');
+assert.strictEqual(dislocatedA4Fields.attached_assets, '-/-');
+assert.strictEqual(
+  dataMergeContext.extractNewA4AttachedAssetFields_(dislocatedA4TermText).state,
+  'absent'
+);
+const absentAttachedReview = {
+  assets: [{
+    real_estate: {
+      attached_assets: { ai_value: 'garbage signature text', manual_value: '', final_value: 'garbage signature text' },
+      attached_asset_name: { ai_value: 'Nhà ở riêng lẻ', manual_value: '', final_value: 'Nhà ở riêng lẻ' },
+      attached_asset_area: { ai_value: '226 m²', manual_value: '', final_value: '226 m²' },
+      attached_asset_ownership_form: { ai_value: 'Sở hữu chung', manual_value: '', final_value: 'Sở hữu chung' },
+      attached_asset_ownership_term: { ai_value: '-/-', manual_value: '', final_value: '-/-' }
+    }
+  }]
+};
+dataMergeContext.repairAssetAttachedAssetsInReviewJson(absentAttachedReview, dislocatedA4TermText);
+assert.strictEqual(absentAttachedReview.assets[0].real_estate.attached_assets.final_value, '-/-');
+assert.strictEqual(absentAttachedReview.assets[0].real_estate.attached_asset_name.final_value, '');
+assert.strictEqual(absentAttachedReview.assets[0].real_estate.attached_asset_area.final_value, '');
 assert.strictEqual(dataMergeContext.cleanupIndexedCertificateValue_('Xóm Gừa , xã Liên Sơn , tỉnh Phú Thọ'), 'Xóm Gừa, xã Liên Sơn, tỉnh Phú Thọ');
 const addressSpacingReview = {
   assets: [{
@@ -1252,13 +1296,41 @@ const reviewClientContext = {
 };
 vm.createContext(reviewClientContext);
 vm.runInContext([
+  extractClientFunction('fixCommonMojibake'),
+  extractClientFunction('cleanValue'),
+  extractClientFunction('valueOf'),
   extractClientFunction('removeVietnameseMarks'),
+  extractClientFunction('a4AttachedAssetSectionState'),
   extractClientFunction('getLandCertificateFilesFromOcr_'),
   extractClientFunction('clampCropBox_'),
   extractClientFunction('buildFocusedRegistryCodeBoxes_'),
   extractClientFunction('normalizeRegistryCropReading_'),
+  extractClientFunction('registrySameCropConsensus_'),
   extractClientFunction('chooseFocusedRegistryCandidate_')
 ].join('\n'), reviewClientContext);
+assert.strictEqual(
+  reviewClientContext.a4AttachedAssetSectionState(
+    {
+      attached_assets: { final_value: '-/-' },
+      attached_asset_name: { final_value: '' },
+      attached_asset_area: { final_value: '' },
+      attached_asset_ownership_form: { final_value: '' },
+      attached_asset_ownership_term: { final_value: '' }
+    },
+    dislocatedA4TermText
+  ),
+  'absent'
+);
+assert.strictEqual(
+  reviewClientContext.a4AttachedAssetSectionState(
+    {
+      attached_assets: { final_value: 'Tên tài sản: Nhà ở riêng lẻ' },
+      attached_asset_name: { final_value: 'Nhà ở riêng lẻ' }
+    },
+    labeledA4AttachedAssetText
+  ),
+  'detailed'
+);
 reviewClientContext.reviewData = {
   ocr_results: [
     {
@@ -1297,6 +1369,23 @@ assert.ok(forwardMinus90.x >= 25 && forwardMinus90.x <= 35);
 assert.ok(forwardMinus90.y >= 845 && forwardMinus90.y <= 855);
 assert.ok(forwardMinus90.width >= 610 && forwardMinus90.width <= 625);
 assert.ok(forwardMinus90.height >= 790 && forwardMinus90.height <= 810);
+const horizontalFocusedBoxes = reviewClientContext.buildFocusedRegistryCodeBoxes_(
+  { x: 700, y: 6100, width: 520, height: 90 },
+  4500,
+  6600
+);
+assert.ok(
+  horizontalFocusedBoxes.some(item => item.reason === 'vision_registry_horizontal_forward_tight_focused'),
+  'Expected horizontal tight registry crop'
+);
+assert.strictEqual(
+  reviewClientContext.registrySameCropConsensus_(['CN5024', 'CN5024', 'CN5O24']),
+  'CN5024'
+);
+assert.strictEqual(
+  reviewClientContext.registrySameCropConsensus_(['CN5024', 'CN5029']),
+  ''
+);
 assert.strictEqual(
   reviewClientContext.chooseFocusedRegistryCandidate_([
     { value: 'CS03417' },

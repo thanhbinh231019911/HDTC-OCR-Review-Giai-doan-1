@@ -714,11 +714,18 @@
         pushA4CertificateLine(lines, 'd. ' + t('Thoi han su dung'), valueOf(re.usage_term));
         pushA4CertificateLine(lines, '\u0111. ' + t('Hinh thuc su dung'), valueOf(re.usage_form));
         pushA4CertificateLine(lines, 'e. ' + t('Dia chi'), oneLineCertificateValue(valueOf(re.land_address)));
-        lines.push('<div class="asset-doc-line"><strong>3. ' + t('Thong tin tai san gan lien voi dat') + ':</strong></div>');
-        pushA4CertificateLine(lines, 'a. ' + t('Ten tai san'), valueOf(re.attached_asset_name));
-        pushA4CertificateLine(lines, 'b. ' + t('Dien tich su dung'), normalizeAreaForDisplay(valueOf(re.attached_asset_area)));
-        pushA4CertificateLine(lines, 'c. ' + t('Hinh thuc so huu'), valueOf(re.attached_asset_ownership_form));
-        pushA4CertificateLine(lines, 'd. ' + t('Thoi han so huu'), valueOf(re.attached_asset_ownership_term));
+        const attachedState = a4AttachedAssetSectionState(re, ocrText);
+        if (attachedState === 'absent') {
+          lines.push('<div class="asset-doc-line"><strong>3. ' + t('Thong tin tai san gan lien voi dat') + ':</strong> -/-</div>');
+        } else {
+          lines.push('<div class="asset-doc-line"><strong>3. ' + t('Thong tin tai san gan lien voi dat') + ':</strong></div>');
+          if (attachedState === 'detailed') {
+            pushA4CertificateLine(lines, 'a. ' + t('Ten tai san'), valueOf(re.attached_asset_name));
+            pushA4CertificateLine(lines, 'b. ' + t('Dien tich su dung'), normalizeAreaForDisplay(valueOf(re.attached_asset_area)));
+            pushA4CertificateLine(lines, 'c. ' + t('Hinh thuc so huu'), valueOf(re.attached_asset_ownership_form));
+            pushA4CertificateLine(lines, 'd. ' + t('Thoi han so huu'), valueOf(re.attached_asset_ownership_term));
+          }
+        }
         lines.push('<div class="asset-doc-line"><strong>4. ' + t('So do thua dat, tai san gan lien voi dat') + ':</strong></div>');
         lines.push('<div class="asset-doc-line"><strong>5. ' + t('Ghi chu') + ':</strong> ' + escapeHtml(a4CertificateNoteDisplayValue(valueOf(re.certificate_note), ocrText)) + '</div>');
         lines.push('<div class="asset-doc-line"><strong>6. ' + t('Nhung thay doi sau khi cap Giay chung nhan') + ':</strong></div>');
@@ -1960,7 +1967,7 @@
           const focusedCrops = crops.filter(crop => crop.reason.indexOf('_focused') >= 0);
           for (const crop of focusedCrops) {
             const focusedReadings = [];
-            for (const colorMode of ['color', 'gray']) {
+            for (const colorMode of ['color', 'blue_ink', 'gray']) {
               const cropDataUrl = await cropDataUrlFromImage_(pageImage.data_url, crop, {
                 scale: pageImage.high_resolution ? 1 : 3,
                 colorMode: colorMode,
@@ -1971,9 +1978,29 @@
               const registry = normalizeRegistryCropReading_(ocr && ocr.registry_number);
               if (registry) focusedReadings.push(registry);
             }
-            if (focusedReadings.length === 2 && focusedReadings[0] === focusedReadings[1]) {
+            let consensusValue = registrySameCropConsensus_(focusedReadings);
+            if (!consensusValue && /_tight(?:_|$)/.test(String(crop.reason || ''))) {
+              const aiReadings = [];
+              for (const colorMode of ['color', 'blue_ink']) {
+                const cropDataUrl = await cropDataUrlFromImage_(pageImage.data_url, crop, {
+                  scale: pageImage.high_resolution ? 1 : 3,
+                  colorMode: colorMode,
+                  rotation: crop.rotation || 0
+                });
+                if (!cropDataUrl) continue;
+                const ai = await api('ocrLandCriticalFieldCropWithAi', {
+                  dataUrl: cropDataUrl,
+                  cropType: 'registry_number'
+                });
+                const registry = normalizeRegistryCropReading_(ai && ai.value);
+                if (registry) aiReadings.push(registry);
+              }
+              consensusValue = registrySameCropConsensus_(aiReadings);
+              if (consensusValue) focusedReadings.push(...aiReadings);
+            }
+            if (consensusValue) {
               const candidate = {
-                value: focusedReadings[0],
+                value: consensusValue,
                 readings: focusedReadings,
                 page_index: pageImage.page_index,
                 crop_reason: crop.reason || ''
@@ -2029,6 +2056,19 @@
         return { registry_number: '', readings: readings };
       }
       return { registry_number: top, readings: readings };
+    }
+
+    function registrySameCropConsensus_(readings) {
+      const counts = {};
+      (readings || []).map(normalizeRegistryCropReading_).filter(Boolean).forEach(function(value) {
+        counts[value] = (counts[value] || 0) + 1;
+      });
+      const ranked = Object.keys(counts).sort(function(a, b) {
+        return counts[b] - counts[a] || b.length - a.length || a.localeCompare(b);
+      });
+      if (!ranked.length || counts[ranked[0]] < 2) return '';
+      if (ranked.length > 1 && counts[ranked[0]] === counts[ranked[1]]) return '';
+      return ranked[0];
     }
 
     function chooseFocusedRegistryCandidate_(candidates, expectedRegistry) {
@@ -2211,12 +2251,28 @@
         });
       } else {
         boxes.push(clampCropBox_({
+          x: x - width * 0.12,
+          y: y - height * 0.55,
+          width: width * 1.55,
+          height: height * 2.10,
+          rotation: 0,
+          reason: 'vision_registry_horizontal_forward_tight_focused'
+        }, pageWidth, pageHeight));
+        boxes.push(clampCropBox_({
           x: x - width * 0.33,
           y: y - height * 0.82,
           width: width * 2.31,
           height: height * 5.95,
           rotation: 0,
           reason: 'vision_registry_horizontal_forward_focused'
+        }, pageWidth, pageHeight));
+        boxes.push(clampCropBox_({
+          x: x - width * 0.43,
+          y: y - height * 1.55,
+          width: width * 1.55,
+          height: height * 2.10,
+          rotation: 180,
+          reason: 'vision_registry_horizontal_reverse_tight_focused'
         }, pageWidth, pageHeight));
         boxes.push(clampCropBox_({
           x: x - width * 0.98,
@@ -2482,6 +2538,33 @@
         .replace(/KhÃ´ng rÃµ, Ä‘á» nghá»‹ sá»­a thá»§ cÃ´ng/g, 'Kh\u00f4ng r\u00f5, \u0111\u1ec1 ngh\u1ecb s\u1eeda th\u1ee7 c\u00f4ng')
         .replace(/KhÃ´ng cÃ³/g, 'Kh\u00f4ng c\u00f3')
         .replace(/KhÃ´ng Ä‘á»c rÃµ/g, 'Kh\u00f4ng \u0111\u1ecdc r\u00f5');
+    }
+
+    function a4AttachedAssetSectionState(realEstate, ocrText) {
+      const re = realEstate || {};
+      const childValues = [
+        valueOf(re.attached_asset_name),
+        valueOf(re.attached_asset_area),
+        valueOf(re.attached_asset_ownership_form),
+        valueOf(re.attached_asset_ownership_term)
+      ].filter(Boolean);
+      if (childValues.length) return 'detailed';
+      const summary = cleanValue(valueOf(re.attached_assets));
+      if (/^-+\s*\/?\s*-+$/.test(summary)) return 'absent';
+      const source = String(ocrText || '').replace(/\r?\n+/g, ' ').replace(/\s+/g, ' ');
+      const normalized = removeVietnameseMarks(source).toLowerCase();
+      const heading = normalized.match(/(?:^|\s)3\s*[\).:]?\s*thong\s+tin\s+tai\s+san\s+gan\s+lien\s+voi\s+dat/);
+      if (!heading) return 'unknown';
+      const start = heading.index + heading[0].length;
+      const tail = source.slice(start);
+      const normalizedTail = normalized.slice(start);
+      const endMatch = normalizedTail.match(/(?:^|\s)(?:4\s*[\).:]?\s*so\s+do|5\s*[\).:]?\s*ghi\s+chu|6\s*[\).:]?\s*nhung\s+thay\s+doi|[a-z\s]+ngay\s+\d{1,2}\s+thang)/);
+      const section = tail.slice(0, endMatch ? endMatch.index : tail.length).trim();
+      if (/^[:;,.]?\s*-+\s*\/?\s*-+\s*[:;,.]?$/.test(section)) return 'absent';
+      const normalizedSection = removeVietnameseMarks(section).toLowerCase();
+      return /\b(?:ten tai san|dien tich su dung|hinh thuc so huu|thoi han so huu)\b/.test(normalizedSection)
+        ? 'detailed'
+        : 'unknown';
     }
 
     function flattenFields(obj, path) {

@@ -432,9 +432,14 @@ function extractLandCertificateNumberFromCropText_(text) {
 
 function extractA4LandFieldsFromFocusedCrop_(text) {
   const source = String(text || '');
+  const repairedUsage = repairA4UsageTermAndFormBoundary_(
+    cleanupIndexedCertificateValue_(findSemanticLandFieldValue_(source, ['thoi han su dung'])),
+    cleanupIndexedCertificateValue_(findSemanticLandFieldValue_(source, ['hinh thuc su dung']))
+  );
   return {
-    usage_purpose: cleanupIndexedCertificateValue_(findSemanticLandFieldValue_(source, ['loai dat'])),
-    usage_term: normalizeRealEstateUsageTerm_(cleanupIndexedCertificateValue_(findSemanticLandFieldValue_(source, ['thoi han su dung'])))
+    usage_purpose: normalizeLandTypeAreaUnits_(cleanupIndexedCertificateValue_(findSemanticLandFieldValue_(source, ['loai dat']))),
+    usage_term: repairedUsage.usage_term,
+    usage_form: repairedUsage.usage_form
   };
 }
 

@@ -83,10 +83,10 @@ Review display policy:
 - Do not render the old `I/II/1/a-g/2-6/IV` layout for `gcn_qsdd_qsh_tsglvd`.
 - Do not create an owner/user address when the printed `1. Nguoi su dung...` section has only name and ID number. The `e. Dia chi` item under `2. Thong tin thua dat` is land address only.
 - For new A4 certificates, display `c. Loai dat` as `Loai dat`; do not rename it to `Muc dich su dung` in the certificate-layout review.
-- Keep every printed A4 item `a/b/c/d/d/e` visible in review even when OCR did not read its value. A missing OCR value must appear as a blank printed field, not disappear with its heading.
+- Keep every printed A4 land item `a/b/c/d/d/e` under section `2. Thong tin thua dat` visible in review even when OCR did not read its value. A missing OCR value must appear as a blank printed field, not disappear with its heading.
 - Preserve owner/user lines as printed, including prefixes such as `Ong:`, `Ba:`, `Va vo:` and the exact identity-document label. If the certificate prints `CCCD`, keep `CCCD`; if it prints `CC`, keep `CC`. Do not expand an abbreviation or infer a document type from the number length.
 - Prefer trusted raw owner-section lines for certificate review. Structured owner fields may support contract generation, but must not rewrite or infer relationship prefixes in the certificate view. Preserve forms such as `Va chong:` and `Va vo:` only when printed.
-- For new A4 section `3. Thong tin tai san gan lien voi dat`, preserve and display every printed label separately: `a. Ten tai san`, `b. Dien tich su dung`, `c. Hinh thuc so huu`, `d. Thoi han so huu`. Extract by label meaning rather than OCR line order, and keep `-/-` when printed.
+- For new A4 section `3. Thong tin tai san gan lien voi dat`, first classify the section as `absent`, `detailed`, or `unknown`. When the certificate prints `-/-`, display only the section heading and `-/-`; do not invent child labels. When child labels are printed, preserve and display them separately: `a. Ten tai san`, `b. Dien tich su dung`, `c. Hinh thuc so huu`, `d. Thoi han so huu`. Extract by label meaning rather than OCR line order.
 - When the phrase `Nguoi su dung dat` appears in post-issue-change text, do not treat it as the owner section. Select a section that begins with the printed `I.` or `1.` owner heading and ends before `II.`/`2. Thong tin thua dat` or the certificate warning text.
 - Old certificates may print the owner name on one line and `Nam sinh, CMND/CCCD so` on the next. Join those adjacent lines inside the selected owner section; do not turn `Nam sinh` into an owner name.
 - A blank new-A4 changes table remains blank in review. Do not invent `Khong co`.
@@ -127,6 +127,8 @@ Recognize at least these labels:
 - `3. Thong tin tai san gan lien voi dat`
 
 When the schema does not have a separate `land_type` field, map `Loai dat` into the existing land-use purpose/description field without inventing wording. Preserve compound values such as `Dat o tai nong thon: 400,0 m2; Dat trong cay lau nam: 1041,9 m2`.
+Quantities written after land types are areas. Within `Loai dat` only, normalize OCR forms such as `344,6m`, `344,6m2`, or `344,6m²` to `344,6 m²`. Do not apply this unit repair to unrelated fields.
+If OCR moves a trailing date from an incomplete `Thoi han su dung` value into `Hinh thuc su dung`, move it back only when all evidence agrees: the term ends with an incomplete cue such as `Den`, the form begins with a real `Su dung...` value, and the only trailing fragment is a complete date. Do not move arbitrary words or dates between otherwise complete fields.
 
 ## Registry Number
 
@@ -151,6 +153,7 @@ Rules:
 - Replace an existing valid-looking registry value only when at least two focused crop candidates independently return the same complete registry code and no competing code has the same vote count.
 - For multi-page PDFs, render and inspect every PDF page; a Drive thumbnail of page 1 is not evidence for a registry number printed on a later page.
 - Repeated OCR regions derived from the same page annotation are not independent votes. Count a high-resolution focused field crop only when separate color and grayscale passes on that same tight crop agree, or when genuinely different pages/files agree.
+- For blue handwritten registry values, also create a blue-ink-separated rendering. Accept a same-crop result only when at least two independent renderings agree; if ordinary OCR remains blank, a vision-model fallback may read the tight crop in color and blue-ink renderings, but both readings must agree.
 - Prefer tight edge crops around the registry line for rotated certificate spreads. Broad page strips may locate the field but must not outvote a tight crop that contains the handwritten code.
 - Evaluate all focused crops for the page before accepting a registry value. Never stop at the first color/grayscale agreement when a tighter crop of the handwritten line is still available.
 - Persist focused registry OCR as automated extracted data with an `AUTO_OCR` source. Do not store it as a manual override.
