@@ -1219,6 +1219,21 @@ assert.strictEqual(
   ], 'CS03447').value,
   'CS03417'
 );
+assert.strictEqual(
+  reviewClientContext.chooseFocusedRegistryCandidate_([
+    { value: 'CS0282D', crop_reason: 'vision_registry_vertical_forward_-90_focused' },
+    { value: 'CS0282D', crop_reason: 'vision_registry_vertical_forward_90_focused' },
+    { value: 'CS02820', crop_reason: 'vision_registry_vertical_forward_tight_-90_focused' }
+  ], 'CS0282D').value,
+  'CS02820'
+);
+assert.strictEqual(
+  reviewClientContext.chooseFocusedRegistryCandidate_([
+    { value: 'CS02820', crop_reason: 'vision_registry_vertical_forward_tight_-90_focused' },
+    { value: 'CS0282D', crop_reason: 'vision_registry_vertical_forward_tight_90_focused' }
+  ], 'CS0282D'),
+  null
+);
 
 const ocrServiceContext = {};
 vm.createContext(ocrServiceContext);

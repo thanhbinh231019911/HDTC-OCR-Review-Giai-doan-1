@@ -1814,35 +1814,38 @@
           const suggestedCrop = pageImage.suggested_crop ||
             await suggestRegistryCropForPageImage_(pageImage.data_url);
           const crops = await buildLandRegistryCropCandidates_(pageImage.data_url, suggestedCrop);
-          for (const crop of crops) {
-            const focused = crop.reason.indexOf('_focused') >= 0;
-            if (focused) {
-              const focusedReadings = [];
-              for (const colorMode of ['color', 'gray']) {
-                const cropDataUrl = await cropDataUrlFromImage_(pageImage.data_url, crop, {
-                  scale: pageImage.high_resolution ? 1 : 3,
-                  colorMode: colorMode,
-                  rotation: crop.rotation || 0
-                });
-                if (!cropDataUrl) continue;
-                const ocr = await api('ocrLandRegistryCrop', { dataUrl: cropDataUrl });
-                const registry = normalizeRegistryCropReading_(ocr && ocr.registry_number);
-                if (registry) focusedReadings.push(registry);
-              }
-              if (focusedReadings.length === 2 && focusedReadings[0] === focusedReadings[1]) {
-                const candidate = {
-                  value: focusedReadings[0],
-                  readings: focusedReadings,
-                  page_index: pageImage.page_index
-                };
-                focusedCandidates.push(candidate);
-                if (chooseFocusedRegistryCandidate_([candidate], expectedRegistry)) {
-                  immediateFocusedCandidate = candidate;
-                  return false;
-                }
-              }
-              continue;
+          const pageFocusedCandidates = [];
+          const focusedCrops = crops.filter(crop => crop.reason.indexOf('_focused') >= 0);
+          for (const crop of focusedCrops) {
+            const focusedReadings = [];
+            for (const colorMode of ['color', 'gray']) {
+              const cropDataUrl = await cropDataUrlFromImage_(pageImage.data_url, crop, {
+                scale: pageImage.high_resolution ? 1 : 3,
+                colorMode: colorMode,
+                rotation: crop.rotation || 0
+              });
+              if (!cropDataUrl) continue;
+              const ocr = await api('ocrLandRegistryCrop', { dataUrl: cropDataUrl });
+              const registry = normalizeRegistryCropReading_(ocr && ocr.registry_number);
+              if (registry) focusedReadings.push(registry);
             }
+            if (focusedReadings.length === 2 && focusedReadings[0] === focusedReadings[1]) {
+              const candidate = {
+                value: focusedReadings[0],
+                readings: focusedReadings,
+                page_index: pageImage.page_index,
+                crop_reason: crop.reason || ''
+              };
+              pageFocusedCandidates.push(candidate);
+              focusedCandidates.push(candidate);
+            }
+          }
+          const pageFocused = chooseFocusedRegistryCandidate_(pageFocusedCandidates, expectedRegistry);
+          if (pageFocused) {
+            immediateFocusedCandidate = pageFocused;
+            return false;
+          }
+          for (const crop of crops.filter(crop => crop.reason.indexOf('_focused') < 0)) {
             const cropDataUrl = await cropDataUrlFromImage_(pageImage.data_url, crop, {
               scale: pageImage.high_resolution ? 1 : 3,
               enhance: true,
@@ -1897,15 +1900,19 @@
         return true;
       });
       if (!filtered.length) return null;
+      const tight = filtered.filter(function(candidate) {
+        return /_tight(?:_|$)/.test(String(candidate.crop_reason || ''));
+      });
+      const rankedCandidates = tight.length ? tight : filtered;
       const counts = {};
-      filtered.forEach(function(candidate) {
+      rankedCandidates.forEach(function(candidate) {
         counts[candidate.value] = (counts[candidate.value] || 0) + 1;
       });
       const ranked = Object.keys(counts).sort(function(a, b) {
         return counts[b] - counts[a] || b.length - a.length || a.localeCompare(b);
       });
       if (ranked.length > 1 && counts[ranked[0]] === counts[ranked[1]]) return null;
-      return filtered.find(candidate => candidate.value === ranked[0]) || null;
+      return rankedCandidates.find(candidate => candidate.value === ranked[0]) || null;
     }
 
     async function suggestRegistryCropForPageImage_(dataUrl) {

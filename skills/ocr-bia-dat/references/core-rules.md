@@ -148,6 +148,7 @@ Rules:
 - For multi-page PDFs, render and inspect every PDF page; a Drive thumbnail of page 1 is not evidence for a registry number printed on a later page.
 - Repeated OCR regions derived from the same page annotation are not independent votes. Count a high-resolution focused field crop only when separate color and grayscale passes on that same tight crop agree, or when genuinely different pages/files agree.
 - Prefer tight edge crops around the registry line for rotated certificate spreads. Broad page strips may locate the field but must not outvote a tight crop that contains the handwritten code.
+- Evaluate all focused crops for the page before accepting a registry value. Never stop at the first color/grayscale agreement when a tighter crop of the handwritten line is still available.
 - Persist focused registry OCR as automated extracted data with an `AUTO_OCR` source. Do not store it as a manual override.
 - Never hard-code a corrected registry code for one case or learn a direct character substitution such as `4 -> 1` from a single example.
 
