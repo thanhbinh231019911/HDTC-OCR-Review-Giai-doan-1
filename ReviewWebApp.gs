@@ -61,6 +61,9 @@ function reviewApi(body) {
   if (action === 'suggestLandCertificateNumberCropFromImage') {
     return suggestLandCertificateNumberCropFromImage(body.caseId, body.token, body.dataUrl);
   }
+  if (action === 'analyzeLandPageImage') {
+    return analyzeLandPageImage(body.caseId, body.token, body.dataUrl);
+  }
   if (action === 'ocrLandRegistryCrop') {
     return ocrLandRegistryCrop(body.caseId, body.token, body.dataUrl);
   }
@@ -75,6 +78,16 @@ function reviewApi(body) {
   }
   if (action === 'saveAutoOcrFieldValue') {
     return saveAutoOcrFieldValue(body.caseId, body.token, body.fieldPath, body.newValue, body.source);
+  }
+  if (action === 'saveAutoOcrA4LandFieldValue') {
+    return saveAutoOcrA4LandFieldValue(
+      body.caseId,
+      body.token,
+      body.fieldPath,
+      body.newValue,
+      body.currentValue,
+      body.source
+    );
   }
   if (action === 'saveAutoOcrRegistryValue') {
     return saveAutoOcrRegistryValue(

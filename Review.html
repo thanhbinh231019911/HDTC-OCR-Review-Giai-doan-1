@@ -341,6 +341,7 @@
     let autoA4OcrBusy = false;
     let autoOcrDonePaths = {};
     let autoA4OcrDebug = [];
+    let landPageGeometryCache = {};
 
     function vi(key) {
       const map = {
@@ -1438,7 +1439,7 @@
           ];
           for (const crop of crops) {
             const readings = [];
-            for (const colorMode of ['color', 'gray']) {
+            for (const colorMode of criticalFieldColorModes_()) {
               const dataUrl = await cropDataUrlFromImage_(pageImage.data_url, crop, {
                 scale: pageImage.high_resolution ? 1 : 3,
                 colorMode: colorMode
@@ -1448,8 +1449,9 @@
               const value = normalizeCertificateNumberCropReading_(read && read.certificate_number);
               if (value) readings.push(value);
             }
-            if (readings.length === 2 && readings[0] === readings[1]) {
-              found = { certificate_number: readings[0], readings: readings };
+            const consensusCertificateNumber = sameCropValueConsensus_(readings);
+            if (consensusCertificateNumber) {
+              found = { certificate_number: consensusCertificateNumber, readings: readings };
               return false;
             }
           }
@@ -1514,7 +1516,7 @@
             job.field.ai_value = verification.registry_number;
             job.field.final_value = verification.registry_number;
             job.field.source = verification.verification_mode === 'PAGE_ANCHORED'
-              ? 'AUTO_OCR_LAND_REGISTRY_ANCHORED_PAGE_CROP_CONSENSUS'
+              ? 'AUTO_OCR_LAND_REGISTRY_ANCHORED_PAGE_CROP_CONSENSUS_V2'
               : 'AUTO_OCR_LAND_REGISTRY_CROP_CONSENSUS';
             job.field.confidence = '0.92';
             render();
@@ -1529,7 +1531,7 @@
 
     function needsLandRegistryCropVerification_(field) {
       if (!field || field.manual_value) return false;
-      return cleanValue(field.source).indexOf('AUTO_OCR_LAND_REGISTRY_ANCHORED_PAGE_CROP_CONSENSUS') !== 0;
+      return cleanValue(field.source).indexOf('AUTO_OCR_LAND_REGISTRY_ANCHORED_PAGE_CROP_CONSENSUS_V2') !== 0;
     }
 
     async function autoRepairAssetIssueDatesFromImageCrops() {
@@ -1563,7 +1565,7 @@
           if (saved && saved.ok) {
             job.field.ai_value = verification.issue_date;
             job.field.final_value = verification.issue_date;
-            job.field.source = 'AUTO_OCR_LAND_ISSUE_DATE_CROP_CONSENSUS';
+            job.field.source = 'AUTO_OCR_LAND_ISSUE_DATE_CROP_CONSENSUS_V2';
             job.field.confidence = '0.92';
             render();
           }
@@ -1577,7 +1579,7 @@
 
     function needsLandIssueDateCropVerification_(field) {
       if (!field || field.manual_value) return false;
-      return cleanValue(field.source).indexOf('AUTO_OCR_LAND_ISSUE_DATE_CROP_CONSENSUS') !== 0;
+      return cleanValue(field.source).indexOf('AUTO_OCR_LAND_ISSUE_DATE_CROP_CONSENSUS_V2') !== 0;
     }
 
     async function autoRepairA4CertificateFieldsFromCrops() {
@@ -1591,41 +1593,42 @@
           if (!isNewA4AssetCertificate(asset, getAssetOcrText())) continue;
           const jobs = [
             {
-              key: 'issue_date',
-              path: 'assets[' + index + '].real_estate.issue_date',
-              field: re.issue_date,
-              missing: isMissingAutoOcrField_(re.issue_date),
-              source: 'AUTO_OCR_A4_ISSUE_DATE_CROP'
-            },
-            {
               key: 'usage_purpose',
               path: 'assets[' + index + '].real_estate.usage_purpose',
               field: re.usage_purpose,
-              missing: isMissingA4CertificateTextField_(re.usage_purpose),
-              source: 'AUTO_OCR_A4_LAND_CROP'
+              missing: needsA4GeometryFieldVerification_(re.usage_purpose),
+              source: 'AUTO_OCR_A4_GEOMETRY_CROP'
             },
             {
               key: 'usage_term',
               path: 'assets[' + index + '].real_estate.usage_term',
               field: re.usage_term,
-              missing: isMissingA4CertificateTextField_(re.usage_term),
-              source: 'AUTO_OCR_A4_LAND_CROP'
+              missing: needsA4GeometryFieldVerification_(re.usage_term),
+              source: 'AUTO_OCR_A4_GEOMETRY_CROP'
+            },
+            {
+              key: 'usage_form',
+              path: 'assets[' + index + '].real_estate.usage_form',
+              field: re.usage_form,
+              missing: needsA4GeometryFieldVerification_(re.usage_form),
+              source: 'AUTO_OCR_A4_GEOMETRY_CROP'
             }
           ].filter(job => job.missing && !autoOcrDonePaths[job.path]);
           if (!jobs.length) continue;
           jobs.forEach(job => { autoOcrDonePaths[job.path] = true; });
           const files = uniqueReviewFiles_(getFilesForObject(asset, 'asset').concat(getLandCertificateFilesFromOcr_()));
           const result = await readA4CertificateFieldsFromFiles_(files, {
-            issueDate: jobs.some(job => job.key === 'issue_date'),
-            landFields: jobs.some(job => job.key !== 'issue_date')
+            issueDate: false,
+            landFields: true
           });
           for (const job of jobs) {
             const newValue = cleanValue(result && result[job.key]);
             if (!newValue) continue;
             const source = result && result._sources && result._sources[job.key] || job.source;
-            const saved = await api('saveAutoOcrFieldValue', {
+            const saved = await api('saveAutoOcrA4LandFieldValue', {
               fieldPath: job.path,
               newValue: newValue,
+              currentValue: cleanValue(job.field && (job.field.final_value || job.field.ai_value)),
               source: source
             });
             if (!saved || !saved.ok) continue;
@@ -1649,8 +1652,13 @@
       return !cleanValue(field.final_value || field.ai_value);
     }
 
+    function needsA4GeometryFieldVerification_(field) {
+      if (!field || field.manual_value) return false;
+      return cleanValue(field.source).indexOf('AUTO_OCR_A4_GEOMETRY_CROP') !== 0;
+    }
+
     async function readA4CertificateFieldsFromFiles_(files, needs) {
-      const out = { issue_date: '', usage_purpose: '', usage_term: '', _sources: {} };
+      const out = { issue_date: '', usage_purpose: '', usage_term: '', usage_form: '', _sources: {} };
       const ordered = (files || []).slice().sort((a, b) => {
         const aPdf = String(a.file_type || '').toLowerCase() === 'application/pdf' ? 0 : 1;
         const bPdf = String(b.file_type || '').toLowerCase() === 'application/pdf' ? 0 : 1;
@@ -1672,23 +1680,13 @@
             usagePurpose: Boolean(read && read.usage_purpose),
             usageTerm: Boolean(read && read.usage_term)
           });
-          if (needs.landFields) {
-            if (!out.usage_purpose && cleanValue(read && read.usage_purpose)) {
-              out.usage_purpose = cleanValue(read && read.usage_purpose);
-              out._sources.usage_purpose = 'AUTO_OCR_A4_STORED_TEXT';
-            }
-            if (!out.usage_term && cleanValue(read && read.usage_term)) {
-              out.usage_term = cleanValue(read && read.usage_term);
-              out._sources.usage_term = 'AUTO_OCR_A4_STORED_TEXT';
-            }
-          }
           if (needs.issueDate) {
             if (!out.issue_date && cleanValue(read && read.issue_date)) {
               out.issue_date = cleanValue(read && read.issue_date);
               out._sources.issue_date = 'AUTO_OCR_A4_STORED_TEXT';
             }
           }
-          if ((!needs.landFields || out.usage_purpose && out.usage_term) && (!needs.issueDate || out.issue_date)) return out;
+          if (!needs.landFields && (!needs.issueDate || out.issue_date)) return out;
         } catch (err) {
           autoA4OcrDebug.push({
             stage: 'stored_ocr_error',
@@ -1697,6 +1695,47 @@
           });
           console.warn('A4 stored OCR extraction failed', file && file.file_name, err);
         }
+      }
+      if (needs.landFields) {
+        for (const file of ordered) {
+          if (!file.file_id) continue;
+          await forEachRegistryPageImage_(file, async function(pageImage) {
+            const boxes = await buildA4CertificateCropCandidates_(pageImage.data_url);
+            for (const box of boxes.land) {
+              const readings = [];
+              for (const colorMode of ['color', 'adaptive_bw']) {
+                const dataUrl = await cropDataUrlFromImage_(pageImage.data_url, box, {
+                  scale: pageImage.high_resolution ? 1 : 3,
+                  colorMode: colorMode
+                });
+                if (!dataUrl) continue;
+                const read = await api('ocrA4LandCertificateCrop', { dataUrl: dataUrl, cropType: 'land_fields' });
+                readings.push(read || {});
+              }
+              const agreed = chooseA4GeometryFieldConsensus_(readings);
+              autoA4OcrDebug.push({
+                stage: 'land_geometry_crop',
+                file: file.file_name || file.file_id || '',
+                page: pageImage.page_index,
+                region: pageImage.page_region || 'full',
+                reason: box.reason,
+                usagePurpose: Boolean(agreed.usage_purpose),
+                usageTerm: Boolean(agreed.usage_term),
+                usageForm: Boolean(agreed.usage_form)
+              });
+              ['usage_purpose', 'usage_term', 'usage_form'].forEach(function(key) {
+                if (!out[key] && cleanValue(agreed[key])) {
+                  out[key] = cleanValue(agreed[key]);
+                  out._sources[key] = 'AUTO_OCR_A4_GEOMETRY_CROP';
+                }
+              });
+              if (out.usage_purpose && out.usage_term && out.usage_form) break;
+            }
+            return !(out.usage_purpose && out.usage_term && out.usage_form);
+          });
+          if (out.usage_purpose && out.usage_term && out.usage_form) break;
+        }
+        return out;
       }
       for (const file of ordered) {
         if (!file.file_id) continue;
@@ -1757,6 +1796,40 @@
         if ((!needs.landFields || out.usage_purpose && out.usage_term) && (!needs.issueDate || out.issue_date)) break;
       }
       return out;
+    }
+
+    function chooseA4GeometryFieldConsensus_(readings) {
+      const out = {};
+      ['usage_purpose', 'usage_term', 'usage_form'].forEach(function(key) {
+        const values = (readings || []).map(function(read) {
+          return cleanValue(read && read[key]);
+        }).filter(Boolean);
+        out[key] = sameCropTextConsensus_(values);
+      });
+      return out;
+    }
+
+    function sameCropTextConsensus_(values) {
+      const groups = {};
+      (values || []).filter(Boolean).forEach(function(value) {
+        const key = removeVietnameseMarks(value).toLowerCase()
+          .replace(/\s+([,.;:])/g, '$1')
+          .replace(/\s+/g, ' ')
+          .trim();
+        if (!key) return;
+        groups[key] = groups[key] || [];
+        groups[key].push(value);
+      });
+      const ranked = Object.keys(groups).sort(function(a, b) {
+        return groups[b].length - groups[a].length || b.length - a.length;
+      });
+      if (!ranked.length || groups[ranked[0]].length < 2) return '';
+      if (ranked.length > 1 && groups[ranked[0]].length === groups[ranked[1]].length) return '';
+      return groups[ranked[0]].sort(function(a, b) {
+        const aMarks = (a.match(/[^\x00-\x7F]/g) || []).length;
+        const bMarks = (b.match(/[^\x00-\x7F]/g) || []).length;
+        return bMarks - aMarks || b.length - a.length;
+      })[0];
     }
 
     function rawOwnerCertificateLines_(asset) {
@@ -1855,7 +1928,7 @@
           const crops = await buildLandIssueDateCropCandidates_(pageImage.data_url, suggestedCrop);
           for (const crop of crops) {
             const readings = [];
-            for (const colorMode of ['color', 'gray']) {
+            for (const colorMode of criticalFieldColorModes_()) {
               const dataUrl = await cropDataUrlFromImage_(pageImage.data_url, crop, {
                 scale: pageImage.high_resolution ? 1 : 3,
                 colorMode: colorMode,
@@ -1867,9 +1940,10 @@
               const date = normalizeReviewDateValue_(read && read.issue_date);
               if (date) readings.push(date);
             }
-            if (readings.length === 2 && readings[0] === readings[1]) {
+            const consensusDate = sameCropValueConsensus_(readings);
+            if (consensusDate) {
               found = {
-                issue_date: readings[0],
+                issue_date: consensusDate,
                 readings: readings
               };
               return false;
@@ -1880,7 +1954,7 @@
           });
           if (aiCrop) {
             const aiReadings = [];
-            for (const colorMode of ['color', 'green_channel']) {
+            for (const colorMode of ['color', 'adaptive_bw', 'chroma_ink']) {
               const dataUrl = await cropDataUrlFromImage_(pageImage.data_url, aiCrop, {
                 scale: pageImage.high_resolution ? 1 : 3,
                 colorMode: colorMode
@@ -1890,8 +1964,9 @@
               const date = normalizeReviewDateValue_(read && read.value);
               if (date) aiReadings.push(date);
             }
-            if (aiReadings.length === 2 && aiReadings[0] === aiReadings[1]) {
-              found = { issue_date: aiReadings[0], readings: aiReadings };
+            const aiConsensusDate = sameCropValueConsensus_(aiReadings);
+            if (aiConsensusDate) {
+              found = { issue_date: aiConsensusDate, readings: aiReadings };
               return false;
             }
           }
@@ -1967,7 +2042,7 @@
           const focusedCrops = crops.filter(crop => crop.reason.indexOf('_focused') >= 0);
           for (const crop of focusedCrops) {
             const focusedReadings = [];
-            for (const colorMode of ['color', 'blue_ink', 'gray']) {
+            for (const colorMode of criticalFieldColorModes_()) {
               const cropDataUrl = await cropDataUrlFromImage_(pageImage.data_url, crop, {
                 scale: pageImage.high_resolution ? 1 : 3,
                 colorMode: colorMode,
@@ -1981,7 +2056,7 @@
             let consensusValue = registrySameCropConsensus_(focusedReadings);
             if (!consensusValue && /_tight(?:_|$)/.test(String(crop.reason || ''))) {
               const aiReadings = [];
-              for (const colorMode of ['color', 'blue_ink']) {
+              for (const colorMode of ['color', 'adaptive_bw', 'chroma_ink']) {
                 const cropDataUrl = await cropDataUrlFromImage_(pageImage.data_url, crop, {
                   scale: pageImage.high_resolution ? 1 : 3,
                   colorMode: colorMode,
@@ -2071,6 +2146,24 @@
       return ranked[0];
     }
 
+    function sameCropValueConsensus_(readings) {
+      const counts = {};
+      (readings || []).filter(Boolean).forEach(function(value) {
+        const key = String(value);
+        counts[key] = (counts[key] || 0) + 1;
+      });
+      const ranked = Object.keys(counts).sort(function(a, b) {
+        return counts[b] - counts[a] || a.localeCompare(b);
+      });
+      if (!ranked.length || counts[ranked[0]] < 2) return '';
+      if (ranked.length > 1 && counts[ranked[0]] === counts[ranked[1]]) return '';
+      return ranked[0];
+    }
+
+    function criticalFieldColorModes_() {
+      return ['color', 'adaptive_bw', 'chroma_ink', 'gray'];
+    }
+
     function chooseFocusedRegistryCandidate_(candidates, expectedRegistry) {
       const filtered = (candidates || []).filter(function(candidate) {
         const value = normalizeRegistryCropReading_(candidate && candidate.value);
@@ -2106,6 +2199,12 @@
         height: Math.round((crop.height || 0) * scaled.scale_y),
         reason: crop.code_box ? 'vision_registry_code_anchor' : (crop.reason || 'vision_registry_crop'),
         anchor_text: crop.anchor_text || '',
+        label_box: crop.label_box ? {
+          x: Math.round((crop.label_box.x || 0) * scaled.scale_x),
+          y: Math.round((crop.label_box.y || 0) * scaled.scale_y),
+          width: Math.round((crop.label_box.width || 0) * scaled.scale_x),
+          height: Math.round((crop.label_box.height || 0) * scaled.scale_y)
+        } : null,
         code_box: crop.code_box ? {
           x: Math.round((crop.code_box.x || 0) * scaled.scale_x),
           y: Math.round((crop.code_box.y || 0) * scaled.scale_y),
@@ -2152,11 +2251,20 @@
         const preview = imageCache[file.file_id] || await api('getCaseImagePreview', { fileId: file.file_id });
         imageCache[file.file_id] = preview;
         if (!preview || !preview.is_image || !preview.data_url) return;
-        await callback({
-          data_url: preview.data_url,
-          page_index: 1,
-          high_resolution: false
-        });
+        const candidates = await buildNormalizedLandPageCandidates_(
+          preview.data_url,
+          Number(file.orientation_degrees || 0),
+          file.file_id + ':1'
+        );
+        for (const candidate of candidates) {
+          const keepGoing = await callback({
+            data_url: candidate.data_url,
+            page_index: 1,
+            page_region: candidate.region,
+            high_resolution: false
+          });
+          if (keepGoing === false) return;
+        }
         return;
       }
       if (!window.pdfjsLib) return;
@@ -2174,15 +2282,92 @@
         canvas.width = Math.round(viewport.width);
         canvas.height = Math.round(viewport.height);
         await page.render({ canvasContext: canvas.getContext('2d'), viewport: viewport }).promise;
-        const keepGoing = await callback({
-          data_url: canvas.toDataURL('image/jpeg', 0.96),
-          page_index: pageIndex,
-          high_resolution: true
-        });
+        const candidates = await buildNormalizedLandPageCandidates_(
+          canvas.toDataURL('image/jpeg', 0.96),
+          0,
+          file.file_id + ':' + pageIndex
+        );
+        let keepGoing = true;
+        for (const candidate of candidates) {
+          keepGoing = await callback({
+            data_url: candidate.data_url,
+            page_index: pageIndex,
+            page_region: candidate.region,
+            high_resolution: true
+          });
+          if (keepGoing === false) break;
+        }
         canvas.width = 1;
         canvas.height = 1;
         if (keepGoing === false) return;
       }
+    }
+
+    async function buildNormalizedLandPageCandidates_(dataUrl, knownRotation, cacheKey) {
+      const scaled = await scaleImageForRegistrySuggestion_(dataUrl, 2400);
+      let analysis = landPageGeometryCache[cacheKey] || null;
+      if (!analysis && scaled && scaled.data_url) {
+        try {
+          analysis = await api('analyzeLandPageImage', { dataUrl: scaled.data_url });
+          landPageGeometryCache[cacheKey] = analysis || {};
+        } catch (err) {
+          analysis = {};
+        }
+      }
+      const detectedRotation = Number(analysis && analysis.rotation || 0);
+      const rotation = analysis && analysis.reason === 'OK'
+        ? detectedRotation
+        : Number(knownRotation || 0);
+      const normalizedDataUrl = await rotateFullImageDataUrl_(dataUrl, rotation);
+      const out = [{ data_url: normalizedDataUrl || dataUrl, region: 'full' }];
+      if (analysis && analysis.split_candidate) {
+        const halves = await splitFacingPageDataUrls_(normalizedDataUrl || dataUrl);
+        out.push(...halves);
+      }
+      return out;
+    }
+
+    function rotateFullImageDataUrl_(dataUrl, rotation) {
+      return new Promise(function(resolve) {
+        const img = new Image();
+        img.onload = function() {
+          const canvas = document.createElement('canvas');
+          canvas.width = img.naturalWidth;
+          canvas.height = img.naturalHeight;
+          canvas.getContext('2d').drawImage(img, 0, 0);
+          resolve(rotateCanvasForOcr_(canvas, rotation).toDataURL('image/png'));
+        };
+        img.onerror = function() { resolve(dataUrl); };
+        img.src = dataUrl;
+      });
+    }
+
+    function splitFacingPageDataUrls_(dataUrl) {
+      return new Promise(function(resolve) {
+        const img = new Image();
+        img.onload = function() {
+          if (img.naturalWidth <= img.naturalHeight * 1.22) return resolve([]);
+          const overlap = Math.round(img.naturalWidth * 0.025);
+          const half = Math.round(img.naturalWidth / 2);
+          const specs = [
+            { x: 0, width: Math.min(img.naturalWidth, half + overlap), region: 'left' },
+            { x: Math.max(0, half - overlap), width: img.naturalWidth - Math.max(0, half - overlap), region: 'right' }
+          ];
+          resolve(specs.map(function(spec) {
+            const canvas = document.createElement('canvas');
+            canvas.width = spec.width;
+            canvas.height = img.naturalHeight;
+            canvas.getContext('2d').drawImage(
+              img,
+              spec.x, 0, spec.width, img.naturalHeight,
+              0, 0, canvas.width, canvas.height
+            );
+            return { data_url: canvas.toDataURL('image/png'), region: spec.region };
+          }));
+        };
+        img.onerror = function() { resolve([]); };
+        img.src = dataUrl;
+      });
     }
 
     function base64ToUint8Array_(value) {
@@ -2202,6 +2387,9 @@
           if (suggestedBox) {
             if (suggestedBox.code_box) {
               out.push(...buildFocusedRegistryCodeBoxes_(suggestedBox.code_box, w, h));
+            }
+            if (suggestedBox.label_box) {
+              out.push(...buildFocusedRegistryLabelBoxes_(suggestedBox.label_box, w, h));
             }
             out.push(suggestedBox);
             out.push(expandCropBox_(suggestedBox, w, h, 0.35, 1.1, 0.35, 0.9));
@@ -2286,6 +2474,33 @@
       return boxes.filter(box => box && box.width >= 8 && box.height >= 8);
     }
 
+    function buildFocusedRegistryLabelBoxes_(box, pageWidth, pageHeight) {
+      const x = Number(box.x || 0);
+      const y = Number(box.y || 0);
+      const width = Math.max(1, Number(box.width || 0));
+      const height = Math.max(1, Number(box.height || 0));
+      return [
+        clampCropBox_({
+          x: x + width * 0.72,
+          y: y - height * 0.8,
+          width: Math.max(width * 1.9, pageWidth * 0.32),
+          height: height * 2.8,
+          rotation: 0,
+          reason: 'vision_registry_label_forward_tight_focused'
+        }, pageWidth, pageHeight),
+        clampCropBox_({
+          x: x + width * 0.45,
+          y: y - height * 1.15,
+          width: Math.max(width * 2.5, pageWidth * 0.42),
+          height: height * 3.5,
+          rotation: 0,
+          reason: 'vision_registry_label_forward_wide_focused'
+        }, pageWidth, pageHeight)
+      ].filter(function(candidate) {
+        return candidate && candidate.width >= 8 && candidate.height >= 8;
+      });
+    }
+
     function clampCropBox_(box, pageWidth, pageHeight) {
       const x = Math.max(0, Math.round(box.x || 0));
       const y = Math.max(0, Math.round(box.y || 0));
@@ -2328,6 +2543,8 @@
           ctx.drawImage(img, x, y, w, h, 0, 0, canvas.width, canvas.height);
           if (options.colorMode === 'gray') grayscaleOcrCanvas_(ctx, canvas.width, canvas.height);
           else if (options.colorMode === 'blue_ink') blueInkOcrCanvas_(ctx, canvas.width, canvas.height);
+          else if (options.colorMode === 'adaptive_bw') adaptiveBlackWhiteOcrCanvas_(ctx, canvas.width, canvas.height);
+          else if (options.colorMode === 'chroma_ink') chromaInkOcrCanvas_(ctx, canvas.width, canvas.height);
           else if (options.colorMode === 'green_channel') greenChannelOcrCanvas_(ctx, canvas.width, canvas.height);
           else if (options.enhance) enhanceOcrCanvas_(ctx, canvas.width, canvas.height);
           const rotatedCanvas = rotateCanvasForOcr_(canvas, Number(options.rotation || 0));
@@ -2401,6 +2618,67 @@
       const data = imgData.data;
       for (let i = 0; i < data.length; i += 4) {
         const value = Math.max(0, Math.min(255, (data[i + 1] - 112) * 1.7 + 128));
+        data[i] = value;
+        data[i + 1] = value;
+        data[i + 2] = value;
+      }
+      ctx.putImageData(imgData, 0, 0);
+    }
+
+    function adaptiveBlackWhiteOcrCanvas_(ctx, width, height) {
+      const imgData = ctx.getImageData(0, 0, width, height);
+      const data = imgData.data;
+      const histogram = new Array(256).fill(0);
+      for (let i = 0; i < data.length; i += 4) {
+        const gray = Math.max(0, Math.min(255, Math.round(data[i] * 0.299 + data[i + 1] * 0.587 + data[i + 2] * 0.114)));
+        histogram[gray]++;
+      }
+      const total = Math.max(1, width * height);
+      let sum = 0;
+      for (let i = 0; i < 256; i++) sum += i * histogram[i];
+      let sumBackground = 0;
+      let weightBackground = 0;
+      let bestVariance = -1;
+      let threshold = 145;
+      for (let i = 0; i < 256; i++) {
+        weightBackground += histogram[i];
+        if (!weightBackground) continue;
+        const weightForeground = total - weightBackground;
+        if (!weightForeground) break;
+        sumBackground += i * histogram[i];
+        const meanBackground = sumBackground / weightBackground;
+        const meanForeground = (sum - sumBackground) / weightForeground;
+        const variance = weightBackground * weightForeground * Math.pow(meanBackground - meanForeground, 2);
+        if (variance > bestVariance) {
+          bestVariance = variance;
+          threshold = i;
+        }
+      }
+      threshold = Math.max(90, Math.min(205, threshold + 18));
+      for (let i = 0; i < data.length; i += 4) {
+        const gray = data[i] * 0.299 + data[i + 1] * 0.587 + data[i + 2] * 0.114;
+        const value = gray <= threshold ? 0 : 255;
+        data[i] = value;
+        data[i + 1] = value;
+        data[i + 2] = value;
+      }
+      ctx.putImageData(imgData, 0, 0);
+    }
+
+    function chromaInkOcrCanvas_(ctx, width, height) {
+      const imgData = ctx.getImageData(0, 0, width, height);
+      const data = imgData.data;
+      for (let i = 0; i < data.length; i += 4) {
+        const red = data[i];
+        const green = data[i + 1];
+        const blue = data[i + 2];
+        const darkest = Math.min(red, green, blue);
+        const lightest = Math.max(red, green, blue);
+        const chroma = lightest - darkest;
+        const gray = red * 0.299 + green * 0.587 + blue * 0.114;
+        const darkInk = gray < 150 ? Math.max(0, gray * 0.55) : 255;
+        const coloredInk = chroma > 18 ? Math.max(0, 255 - chroma * 4.5) : 255;
+        const value = Math.min(darkInk, coloredInk);
         data[i] = value;
         data[i + 1] = value;
         data[i + 2] = value;

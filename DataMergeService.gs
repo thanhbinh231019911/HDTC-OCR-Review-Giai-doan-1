@@ -719,7 +719,7 @@ function repairAssetUsagePurposeInReviewJson(reviewJson, fullAssetOcrText) {
   (reviewJson.assets || []).forEach(function(asset) {
     const field = asset && asset.real_estate && asset.real_estate.usage_purpose;
     if (!field || !field.hasOwnProperty('final_value') || field.manual_value) return;
-    if (!shouldReplaceSimpleOcrField_(field, usagePurpose)) return;
+    if (!shouldReplaceUsagePurpose_(field, usagePurpose)) return;
     field.ai_value = usagePurpose;
     field.final_value = usagePurpose;
     field.source = 'OCR_INDEXED_ASSET_TEXT';
@@ -824,6 +824,7 @@ function shouldReplaceUsageTerm_(field, candidate) {
   const currentNorm = removeVietnameseAccents_(current).toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
   const candidateNorm = removeVietnameseAccents_(candidate).toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
   if (!currentNorm || !candidateNorm || currentNorm === candidateNorm) return current !== candidate;
+  if (candidateNorm.indexOf(currentNorm) === 0 && candidate.length > current.length) return true;
   if (currentNorm.indexOf(candidateNorm) >= 0 && current.length > candidate.length + 8) return true;
   return hasOtherLandFieldLabel_(currentNorm);
 }
@@ -854,35 +855,6 @@ function normalizeLandTypeAreaUnits_(value) {
     .replace(/(\d+(?:[,.]\d+)?)\s*m(?:\s*(?:2|\u00b2))?(?![A-Za-z0-9])/gi, '$1 m\u00b2')
     .replace(/\s+/g, ' ')
     .trim();
-}
-
-function repairA4UsageTermAndFormBoundary_(usageTerm, usageForm) {
-  let term = normalizeRealEstateUsageTerm_(usageTerm);
-  let form = normalizeRealEstateUsageForm_(usageForm);
-  if (!term || !form) return { usage_term: term, usage_form: form };
-  const normalizedTerm = removeVietnameseAccents_(term).toLowerCase().replace(/\s+/g, ' ').trim();
-  if (!/\bden(?:\s+ngay)?$/.test(normalizedTerm)) {
-    return { usage_term: term, usage_form: form };
-  }
-  const datePattern = /(?:^|\s)((?:ng\u00e0y\s+)?\d{1,2}\s*[\/.\-]\s*\d{1,2}\s*[\/.\-]\s*\d{4})(?=$|[\s;,.])/i;
-  const match = form.match(datePattern);
-  if (!match) return { usage_term: term, usage_form: form };
-  const before = form.slice(0, match.index).trim();
-  const after = form.slice(match.index + match[0].length).trim();
-  const normalizedForm = removeVietnameseAccents_(before).toLowerCase().replace(/\s+/g, ' ').trim();
-  if (!/^su dung\b/.test(normalizedForm) || after) {
-    return { usage_term: term, usage_form: form };
-  }
-  const dateFragment = match[1].replace(/\s*([\/.\-])\s*/g, '$1').trim();
-  if (!/^ng\u00e0y\b/i.test(dateFragment)) {
-    term += ' ng\u00e0y ' + dateFragment;
-  } else {
-    term += ' ' + dateFragment;
-  }
-  return {
-    usage_term: normalizeRealEstateUsageTerm_(term),
-    usage_form: normalizeRealEstateUsageForm_(before)
-  };
 }
 
 function correctUsageTermOcrTypos_(value) {
@@ -1369,18 +1341,14 @@ function extractNewA4RealEstateLandFields_(source, selected) {
     usage_term: findSemanticLandFieldValue_(landSection, ['thoi han su dung']),
     attached_assets: findSemanticLandFieldValue_(source, ['thong tin tai san gan lien voi dat'])
   };
-  const repairedUsage = repairA4UsageTermAndFormBoundary_(
-    cleanupIndexedCertificateValue_(semantic.usage_term || ''),
-    cleanupIndexedCertificateValue_(semantic.usage_form || '')
-  );
   return {
     land_plot_number: extractLandPlotNumberFromIndexedValue_(semantic.land_plot_number || ''),
     map_sheet_number: extractMapSheetNumberFromIndexedValue_(semantic.map_sheet_number || semantic.land_plot_number || ''),
     land_address: cleanupLandAddressCertificateValue_(semantic.land_address || ''),
     area: normalizeRealEstateAreaValue_(cleanupIndexedCertificateValue_(semantic.area || '')) || extractRealEstateArea_(source),
-    usage_form: repairedUsage.usage_form,
+    usage_form: normalizeRealEstateUsageForm_(cleanupIndexedCertificateValue_(semantic.usage_form || '')),
     usage_purpose: normalizeLandTypeAreaUnits_(cleanupIndexedCertificateValue_(semantic.land_type || '')),
-    usage_term: repairedUsage.usage_term,
+    usage_term: normalizeRealEstateUsageTerm_(cleanupIndexedCertificateValue_(semantic.usage_term || '')),
     usage_origin: '',
     attached_assets: attached.state === 'absent'
       ? '-/-'
@@ -2069,6 +2037,18 @@ function shouldReplaceSimpleOcrField_(field, candidate) {
   if (currentNorm === candidateNorm && current !== candidate) return true;
   if (currentNorm.indexOf(candidateNorm) >= 0 && current.length > candidate.length + 12) return true;
   return false;
+}
+
+function shouldReplaceUsagePurpose_(field, candidate) {
+  if (shouldReplaceSimpleOcrField_(field, candidate)) return true;
+  if (!field || !candidate || field.manual_value) return false;
+  const current = String(field.final_value || field.ai_value || '').trim();
+  if (!current) return true;
+  const currentNorm = removeVietnameseAccents_(normalizeLandTypeAreaUnits_(current))
+    .toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+  const candidateNorm = removeVietnameseAccents_(normalizeLandTypeAreaUnits_(candidate))
+    .toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+  return Boolean(currentNorm && currentNorm === candidateNorm && current !== candidate);
 }
 
 function shouldReplaceUsageOrigin_(field, candidate) {

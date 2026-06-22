@@ -352,13 +352,17 @@ function buildLandCertificateRegionTextFromVisionAnnotation_(annotation) {
 
 function collectVisionTextBlocksForRegions_(annotation) {
   const out = [];
+  const displayRotation = estimateVisionDisplayRotation_(annotation);
   const pages = annotation && annotation.pages || [];
   pages.forEach(function(page, pageIndex) {
-    const pageWidth = Number(page.width || 0);
-    const pageHeight = Number(page.height || 0);
+    const rawPageWidth = Number(page.width || 0);
+    const rawPageHeight = Number(page.height || 0);
+    const pageWidth = displayRotation === 90 || displayRotation === 270 ? rawPageHeight : rawPageWidth;
+    const pageHeight = displayRotation === 90 || displayRotation === 270 ? rawPageWidth : rawPageHeight;
     (page.blocks || []).forEach(function(block) {
       const text = collectVisionBlockText_(block);
-      const box = visionBoundingRectForRegions_(block.boundingBox, pageWidth, pageHeight);
+      const rawBox = visionBoundingRectForRegions_(block.boundingBox, rawPageWidth, rawPageHeight);
+      const box = normalizeVisionRectForRotation_(rawBox, rawPageWidth, rawPageHeight, displayRotation);
       if (!text || !box) return;
       out.push({
         text: text,
@@ -372,6 +376,36 @@ function collectVisionTextBlocksForRegions_(annotation) {
     });
   });
   return out;
+}
+
+function normalizeVisionRectForRotation_(box, pageWidth, pageHeight, rotation) {
+  if (!box) return null;
+  const normalized = normalizeQuarterTurn_(rotation || 0);
+  if (normalized === 90) {
+    return {
+      x: pageHeight - (box.y + box.height),
+      y: box.x,
+      width: box.height,
+      height: box.width
+    };
+  }
+  if (normalized === 180) {
+    return {
+      x: pageWidth - (box.x + box.width),
+      y: pageHeight - (box.y + box.height),
+      width: box.width,
+      height: box.height
+    };
+  }
+  if (normalized === 270) {
+    return {
+      x: box.y,
+      y: pageWidth - (box.x + box.width),
+      width: box.height,
+      height: box.width
+    };
+  }
+  return box;
 }
 
 function collectVisionBlockText_(block) {

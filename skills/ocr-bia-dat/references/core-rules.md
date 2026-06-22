@@ -57,6 +57,7 @@ Classify page/layout classes within those generations:
 - `gcn_qsdd_qsh_tsglvd_page_1`, `gcn_qsdd_qsh_tsglvd_page_2`
 
 For images that show two pages at once, create left/right page candidates after orientation normalization. For single-page images, keep the full page candidate. Classify by OCR markers, not by filename or upload order.
+Normalize every uploaded image and every rendered PDF page to its dominant text orientation before creating field crops. Always keep the normalized full-page candidate. Add overlapping left/right candidates only when the normalized page is wide and OCR geometry indicates a possible two-page spread; never replace the full-page candidate with a blind split.
 
 For scanned PDFs, do not use a single Drive OCR text blob as the authoritative source for certificate fields. Render or submit each PDF page to Cloud Vision as page-level OCR, create the same page/region candidates as image uploads, then classify and extract from those regions. A clear scanned PDF must be treated as page images, not as unstructured full-document text.
 When repairing A4 review fields after the review page loads, first try the stored full OCR text for land-certificate files. If the asset has no directly linked files, fall back to OCR results whose text/name clearly contains land-certificate markers. Only then run field-specific image crops.
@@ -71,10 +72,10 @@ Crop/OCR policy:
 - Extract post-issue changes only from `gcn_qsdd_change`, `gcn_qsdd_qsh_nha_o_va_tsk_change`, or `gcn_qsdd_qsh_tsglvd_page_2`.
 - Extract registry number only from the region around `So vao so cap GCN/Giay chung nhan`; never infer it from the printed certificate serial.
 - If no trusted page/region is available, leave the affected field blank and add a manual-review warning instead of falling back to whole-image OCR.
-- When the printed issue-date line is clear but handwritten day/month digits are missed by full-page OCR, run a field-specific enlarged crop around that line and write only the certificate `issue_date` field.
-- Important handwritten fields such as certificate issue date and registry number must use field-specific crop OCR when full-page OCR is wrong or ambiguous. Do not rely on full-page OCR for these fields when the crop can be anchored to the printed label/date line.
+- For every certificate case, run field-specific enlarged crops for certificate issue date and registry number, whether the current value is blank, printed, or handwritten. Full-page OCR may locate the field but must not be the final authority for these two fields.
+- Locate the issue-date crop from the full printed line containing `ngay ... thang ... nam ...`. Locate the registry crop from the complete `So vao so cap GCN/Giay chung nhan` label and extend through the remaining fill line. A code token is not required before creating the registry crop.
 - Treat certificate serial, registry number, and issue date as three independent critical-field pipelines. Locate each field from its own visual anchor on every candidate page; never use the current stored value's length or characters to reject a complete anchored crop result.
-- For handwritten dates on colored security backgrounds, try color-aware ink separation before declaring the field unreadable. A vision-model fallback may transcribe the focused crop only; require agreement from two crop renderings and never ask it to infer missing digits.
+- Render every critical-field crop at enlarged resolution in multiple general forms: original color, grayscale, adaptive black/white, and color-chroma ink separation. Do not assume blue ink; the handwriting may be black, blue, red, or another color. Accept a value only when at least two renderings agree. A vision-model fallback may transcribe the focused crop only and must not infer missing characters.
 
 Review display policy:
 
@@ -128,7 +129,7 @@ Recognize at least these labels:
 
 When the schema does not have a separate `land_type` field, map `Loai dat` into the existing land-use purpose/description field without inventing wording. Preserve compound values such as `Dat o tai nong thon: 400,0 m2; Dat trong cay lau nam: 1041,9 m2`.
 Quantities written after land types are areas. Within `Loai dat` only, normalize OCR forms such as `344,6m`, `344,6m2`, or `344,6m²` to `344,6 m²`. Do not apply this unit repair to unrelated fields.
-If OCR moves a trailing date from an incomplete `Thoi han su dung` value into `Hinh thuc su dung`, move it back only when all evidence agrees: the term ends with an incomplete cue such as `Den`, the form begins with a real `Su dung...` value, and the only trailing fragment is a complete date. Do not move arbitrary words or dates between otherwise complete fields.
+For the A4 land section, reconstruct visual lines from OCR word coordinates after cropping and zooming. Sort words by line position and then from left to right; extract each field as ordinary printed text from its label to the next printed label. Do not move dates or phrases between `Thoi han su dung` and `Hinh thuc su dung` using semantic repair rules.
 
 ## Registry Number
 
@@ -153,7 +154,7 @@ Rules:
 - Replace an existing valid-looking registry value only when at least two focused crop candidates independently return the same complete registry code and no competing code has the same vote count.
 - For multi-page PDFs, render and inspect every PDF page; a Drive thumbnail of page 1 is not evidence for a registry number printed on a later page.
 - Repeated OCR regions derived from the same page annotation are not independent votes. Count a high-resolution focused field crop only when separate color and grayscale passes on that same tight crop agree, or when genuinely different pages/files agree.
-- For blue handwritten registry values, also create a blue-ink-separated rendering. Accept a same-crop result only when at least two independent renderings agree; if ordinary OCR remains blank, a vision-model fallback may read the tight crop in color and blue-ink renderings, but both readings must agree.
+- Use general color-chroma separation rather than a blue-only rule so handwritten values in different ink colors remain detectable.
 - Prefer tight edge crops around the registry line for rotated certificate spreads. Broad page strips may locate the field but must not outvote a tight crop that contains the handwritten code.
 - Evaluate all focused crops for the page before accepting a registry value. Never stop at the first color/grayscale agreement when a tighter crop of the handwritten line is still available.
 - Persist focused registry OCR as automated extracted data with an `AUTO_OCR` source. Do not store it as a manual override.

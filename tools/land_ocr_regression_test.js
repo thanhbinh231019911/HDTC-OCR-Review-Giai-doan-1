@@ -753,9 +753,99 @@ assert.strictEqual(
 );
 assert.strictEqual(
   dislocatedA4Fields.usage_term,
+  'Đất ở tại nông thôn: Lâu dài; Đất trồng cây lâu năm: Đến'
+);
+assert.strictEqual(dislocatedA4Fields.usage_form, 'Sử dụng riêng ngày 10/10/2045');
+function visionAnnotationFromVisualLines(lines) {
+  return {
+    pages: [{
+      width: 1800,
+      height: 1000,
+      blocks: [{
+        paragraphs: lines.map(function(line, lineIndex) {
+          let x = 40;
+          return {
+            words: line.split(/\s+/).map(function(token) {
+              const width = Math.max(24, token.length * 13);
+              const word = {
+                symbols: token.split('').map(function(char) { return { text: char }; }),
+                boundingBox: {
+                  vertices: [
+                    { x: x, y: 70 + lineIndex * 55 },
+                    { x: x + width, y: 70 + lineIndex * 55 },
+                    { x: x + width, y: 105 + lineIndex * 55 },
+                    { x: x, y: 105 + lineIndex * 55 }
+                  ]
+                }
+              };
+              x += width + 16;
+              return word;
+            })
+          };
+        })
+      }]
+    }]
+  };
+}
+const visualA4Annotation = visionAnnotationFromVisualLines([
+  '2. Thông tin thửa đất:',
+  'a. Thửa đất số: 124 ; tờ bản đồ số: 27',
+  'b. Diện tích: 367,4m2',
+  'c. Loại đất: Đất ở tại nông thôn: 344,6m; Đất trồng cây lâu năm: 22,8m',
+  'd. Thời hạn sử dụng: Đất ở tại nông thôn: Lâu dài; Đất trồng cây lâu năm: Đến ngày 10/10/2045',
+  'đ. Hình thức sử dụng: Sử dụng riêng',
+  'e. Địa chỉ: Thôn Quyền Chương, xã Thanh Cao, huyện Lương Sơn, tỉnh Hòa Bình',
+  '3. Thông tin tài sản gắn liền với đất: --'
+]);
+const visualA4Text = dataMergeContext.buildVisionGeometryText_(visualA4Annotation);
+const visualA4Fields = dataMergeContext.extractA4LandFieldsFromFocusedCrop_(visualA4Text);
+assert.strictEqual(
+  visualA4Fields.usage_purpose,
+  'Đất ở tại nông thôn: 344,6 m²; Đất trồng cây lâu năm: 22,8 m²'
+);
+assert.strictEqual(
+  visualA4Fields.usage_term,
   'Đất ở tại nông thôn: Lâu dài; Đất trồng cây lâu năm: Đến ngày 10/10/2045'
 );
-assert.strictEqual(dislocatedA4Fields.usage_form, 'Sử dụng riêng');
+assert.strictEqual(visualA4Fields.usage_form, 'Sử dụng riêng');
+assert.strictEqual(
+  dataMergeContext.shouldReplaceUsagePurpose_(
+    { final_value: 'Đất ở tại nông thôn: 344,6m', manual_value: '' },
+    'Đất ở tại nông thôn: 344,6 m²'
+  ),
+  true
+);
+assert.strictEqual(
+  dataMergeContext.shouldReplaceUsageTerm_(
+    { final_value: 'Đất trồng cây lâu năm: Đến', manual_value: '' },
+    'Đất trồng cây lâu năm: Đến ngày 10/10/2045'
+  ),
+  true
+);
+const facingPageAnnotation = {
+  pages: [{
+    width: 2000,
+    height: 1200,
+    blocks: [{
+      paragraphs: [{
+        words: Array.from({ length: 12 }, function(_, index) {
+          const x = 80 + index * 55;
+          return {
+            symbols: [{ text: 'L' + index }],
+            boundingBox: { vertices: [{ x, y: 100 }, { x: x + 40, y: 100 }, { x: x + 40, y: 130 }, { x, y: 130 }] }
+          };
+        }).concat(Array.from({ length: 12 }, function(_, index) {
+          const x = 1250 + index * 55;
+          return {
+            symbols: [{ text: 'R' + index }],
+            boundingBox: { vertices: [{ x, y: 100 }, { x: x + 40, y: 100 }, { x: x + 40, y: 130 }, { x, y: 130 }] }
+          };
+        }))
+      }]
+    }]
+  }]
+};
+assert.strictEqual(dataMergeContext.isLikelyFacingPageSpread_(facingPageAnnotation, 0), true);
 assert.strictEqual(dislocatedA4Fields.attached_assets, '-/-');
 assert.strictEqual(
   dataMergeContext.extractNewA4AttachedAssetFields_(dislocatedA4TermText).state,
@@ -776,6 +866,67 @@ dataMergeContext.repairAssetAttachedAssetsInReviewJson(absentAttachedReview, dis
 assert.strictEqual(absentAttachedReview.assets[0].real_estate.attached_assets.final_value, '-/-');
 assert.strictEqual(absentAttachedReview.assets[0].real_estate.attached_asset_name.final_value, '');
 assert.strictEqual(absentAttachedReview.assets[0].real_estate.attached_asset_area.final_value, '');
+const a4ExistingValueReview = {
+  validation: { status: 'PENDING', missing_fields: [], conflicts: [], warnings: [] },
+  assets: [{
+    real_estate: {
+      usage_purpose: {
+        ai_value: 'Đất ở tại nông thôn: 344,6m; Đất trồng cây lâu năm: 22,8m',
+        manual_value: '',
+        final_value: 'Đất ở tại nông thôn: 344,6m; Đất trồng cây lâu năm: 22,8m'
+      },
+      usage_term: {
+        ai_value: 'Đất ở tại nông thôn: Lâu dài; Đất trồng cây lâu năm: Đến',
+        manual_value: '',
+        final_value: 'Đất ở tại nông thôn: Lâu dài; Đất trồng cây lâu năm: Đến'
+      }
+    }
+  }]
+};
+dataMergeContext.assertValidToken_ = function() {};
+dataMergeContext.getLatestFinalData = function() { return null; };
+dataMergeContext.getOverrides = function() { return []; };
+dataMergeContext.getLatestExtractedData = function() { return a4ExistingValueReview; };
+dataMergeContext.repairReviewDataFromFullOcr_ = function(data) { return data; };
+dataMergeContext.validateReviewJson = function(data) { return data; };
+dataMergeContext.getByPath = function(root, path) {
+  return String(path || '').split('.').reduce(function(current, part) {
+    if (!current) return null;
+    const match = part.match(/^(.+)\[(\d+)\]$/);
+    return match ? (current[match[1]] || [])[Number(match[2])] : current[part];
+  }, root);
+};
+dataMergeContext.appendSheetRow = function() {};
+dataMergeContext.logAudit = function() {};
+dataMergeContext.nowIso = function() { return '2026-06-22T00:00:00.000Z'; };
+dataMergeContext.SHEETS = { EXTRACTED_DATA: 'EXTRACTED_DATA' };
+assert.strictEqual(
+  dataMergeContext.saveAutoOcrA4LandFieldValue(
+    'CASE',
+    'TOKEN',
+    'assets[0].real_estate.usage_purpose',
+    visualA4Fields.usage_purpose,
+    a4ExistingValueReview.assets[0].real_estate.usage_purpose.final_value,
+    'AUTO_OCR_A4_GEOMETRY_CROP'
+  ).ok,
+  true
+);
+assert.strictEqual(
+  a4ExistingValueReview.assets[0].real_estate.usage_purpose.final_value,
+  'Đất ở tại nông thôn: 344,6 m²; Đất trồng cây lâu năm: 22,8 m²'
+);
+assert.strictEqual(
+  dataMergeContext.saveAutoOcrA4LandFieldValue(
+    'CASE',
+    'TOKEN',
+    'assets[0].real_estate.usage_term',
+    visualA4Fields.usage_term,
+    a4ExistingValueReview.assets[0].real_estate.usage_term.final_value,
+    'AUTO_OCR_A4_GEOMETRY_CROP'
+  ).ok,
+  true
+);
+assert.strictEqual(a4ExistingValueReview.assets[0].real_estate.usage_term.final_value, visualA4Fields.usage_term);
 assert.strictEqual(dataMergeContext.cleanupIndexedCertificateValue_('Xóm Gừa , xã Liên Sơn , tỉnh Phú Thọ'), 'Xóm Gừa, xã Liên Sơn, tỉnh Phú Thọ');
 const addressSpacingReview = {
   assets: [{
@@ -1209,6 +1360,36 @@ assert.strictEqual(registrySuggestion.reason, 'vision_registry_code_focused');
 assert.strictEqual(registrySuggestion.anchor_text, 'CS..03417');
 assert.ok(registrySuggestion.x < 380);
 assert.ok(registrySuggestion.width > 70);
+const registryLabelOnlyAnnotation = {
+  fullTextAnnotation: {
+    pages: [{
+      width: 1200,
+      height: 1800,
+      blocks: [{
+        paragraphs: [{
+          words: [
+            ['Số', 80], ['vào', 145], ['sổ', 210], ['cấp', 275], ['Giấy', 340], ['chứng', 425], ['nhận', 525]
+          ].map(function(item) {
+            return {
+              symbols: item[0].split('').map(function(char) { return { text: char }; }),
+              boundingBox: {
+                vertices: [
+                  { x: item[1], y: 1600 },
+                  { x: item[1] + 72, y: 1600 },
+                  { x: item[1] + 72, y: 1640 },
+                  { x: item[1], y: 1640 }
+                ]
+              }
+            };
+          })
+        }]
+      }]
+    }]
+  }
+};
+const registryLabelOnlySuggestion = dataMergeContext.suggestLandRegistryCropFromVisionAnnotation_(registryLabelOnlyAnnotation);
+assert.strictEqual(registryLabelOnlySuggestion.reason, 'land_registry_label');
+assert.ok(registryLabelOnlySuggestion.label_box.width > 200);
 
 const splitRegistrySuggestionAnnotation = {
   fullTextAnnotation: {
@@ -1304,8 +1485,11 @@ vm.runInContext([
   extractClientFunction('getLandCertificateFilesFromOcr_'),
   extractClientFunction('clampCropBox_'),
   extractClientFunction('buildFocusedRegistryCodeBoxes_'),
+  extractClientFunction('buildFocusedRegistryLabelBoxes_'),
   extractClientFunction('normalizeRegistryCropReading_'),
   extractClientFunction('registrySameCropConsensus_'),
+  extractClientFunction('sameCropValueConsensus_'),
+  extractClientFunction('sameCropTextConsensus_'),
   extractClientFunction('chooseFocusedRegistryCandidate_')
 ].join('\n'), reviewClientContext);
 assert.strictEqual(
@@ -1378,6 +1562,22 @@ assert.ok(
   horizontalFocusedBoxes.some(item => item.reason === 'vision_registry_horizontal_forward_tight_focused'),
   'Expected horizontal tight registry crop'
 );
+const labelFocusedBoxes = reviewClientContext.buildFocusedRegistryLabelBoxes_(
+  { x: 80, y: 1600, width: 520, height: 40 },
+  1200,
+  1800
+);
+assert.ok(
+  labelFocusedBoxes.some(item => item.reason === 'vision_registry_label_forward_tight_focused'),
+  'Expected a focused registry crop from the printed label even without a code token'
+);
+assert.strictEqual(
+  reviewClientContext.sameCropTextConsensus_([
+    'Đất ở tại nông thôn: 344,6 m²',
+    'Dat o tai nong thon: 344,6 m²'
+  ]),
+  'Đất ở tại nông thôn: 344,6 m²'
+);
 assert.strictEqual(
   reviewClientContext.registrySameCropConsensus_(['CN5024', 'CN5024', 'CN5O24']),
   'CN5024'
@@ -1426,6 +1626,15 @@ assert.strictEqual(
 const ocrServiceContext = {};
 vm.createContext(ocrServiceContext);
 vm.runInContext(fs.readFileSync('OCRService.gs', 'utf8'), ocrServiceContext);
+assert.deepStrictEqual(
+  JSON.parse(JSON.stringify(ocrServiceContext.normalizeVisionRectForRotation_(
+    { x: 100, y: 200, width: 300, height: 50 },
+    1000,
+    2000,
+    90
+  ))),
+  { x: 1750, y: 100, width: 50, height: 300 }
+);
 assert.strictEqual(
   ocrServiceContext.extractCloudVisionPdfAnnotations_({
     responses: [{

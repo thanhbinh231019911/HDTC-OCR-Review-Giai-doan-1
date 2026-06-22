@@ -329,12 +329,14 @@ function ocrA4LandCertificateCrop(caseId, token, dataUrl, cropType) {
     return JSON.parse(res.getContentText());
   }, 2);
   const annotation = response.responses && response.responses[0] && response.responses[0].fullTextAnnotation;
-  const text = annotation && annotation.text || '';
+  const geometryText = buildVisionGeometryText_(annotation);
+  const text = geometryText || annotation && annotation.text || '';
   const result = {
     certificate_number: '',
     issue_date: '',
     usage_purpose: '',
     usage_term: '',
+    usage_form: '',
     raw_text: text,
     reason: text ? 'OK' : 'NO_TEXT'
   };
@@ -348,6 +350,7 @@ function ocrA4LandCertificateCrop(caseId, token, dataUrl, cropType) {
     const fields = extractA4LandFieldsFromFocusedCrop_(text);
     result.usage_purpose = fields.usage_purpose || '';
     result.usage_term = fields.usage_term || '';
+    result.usage_form = fields.usage_form || '';
   }
   logA4AutoOcrDebug_(caseId, 'AUTO_OCR_A4_CROP_RESULT', {
     crop_type: cropType || '',
@@ -355,6 +358,7 @@ function ocrA4LandCertificateCrop(caseId, token, dataUrl, cropType) {
     issue_date_found: Boolean(result.issue_date),
     usage_purpose_found: Boolean(result.usage_purpose),
     usage_term_found: Boolean(result.usage_term),
+    usage_form_found: Boolean(result.usage_form),
     reason: result.reason,
     excerpt: text.slice(0, 300)
   });
@@ -432,15 +436,77 @@ function extractLandCertificateNumberFromCropText_(text) {
 
 function extractA4LandFieldsFromFocusedCrop_(text) {
   const source = String(text || '');
-  const repairedUsage = repairA4UsageTermAndFormBoundary_(
-    cleanupIndexedCertificateValue_(findSemanticLandFieldValue_(source, ['thoi han su dung'])),
-    cleanupIndexedCertificateValue_(findSemanticLandFieldValue_(source, ['hinh thuc su dung']))
-  );
   return {
     usage_purpose: normalizeLandTypeAreaUnits_(cleanupIndexedCertificateValue_(findSemanticLandFieldValue_(source, ['loai dat']))),
-    usage_term: repairedUsage.usage_term,
-    usage_form: repairedUsage.usage_form
+    usage_term: normalizeRealEstateUsageTerm_(cleanupIndexedCertificateValue_(findSemanticLandFieldValue_(source, ['thoi han su dung']))),
+    usage_form: normalizeRealEstateUsageForm_(cleanupIndexedCertificateValue_(findSemanticLandFieldValue_(source, ['hinh thuc su dung'])))
   };
+}
+
+function analyzeLandPageImage(caseId, token, dataUrl) {
+  assertValidToken_(caseId, token);
+  const apiKey = PropertiesService.getScriptProperties().getProperty(CONFIG.CLOUD_VISION_API_KEY_PROPERTY);
+  if (!apiKey) return { rotation: 0, split_candidate: false, reason: 'MISSING_CLOUD_VISION_API_KEY' };
+  const match = String(dataUrl || '').match(/^data:image\/[a-zA-Z0-9.+-]+;base64,(.+)$/);
+  if (!match) return { rotation: 0, split_candidate: false, reason: 'INVALID_IMAGE_DATA' };
+  const response = withRetry('Vision analyze land page geometry', function() {
+    const res = UrlFetchApp.fetch('https://vision.googleapis.com/v1/images:annotate?key=' + encodeURIComponent(apiKey), {
+      method: 'post',
+      contentType: 'application/json',
+      payload: JSON.stringify({
+        requests: [{
+          image: { content: match[1] },
+          features: [{ type: 'DOCUMENT_TEXT_DETECTION' }],
+          imageContext: { languageHints: ['vi', 'en'] }
+        }]
+      }),
+      muteHttpExceptions: true
+    });
+    if (res.getResponseCode() >= 300) throw new Error(res.getContentText());
+    return JSON.parse(res.getContentText());
+  }, 2);
+  const annotation = response.responses && response.responses[0] && response.responses[0].fullTextAnnotation;
+  const rotation = typeof estimateVisionDisplayRotation_ === 'function'
+    ? estimateVisionDisplayRotation_(annotation)
+    : 0;
+  const page = annotation && annotation.pages && annotation.pages[0];
+  const rawWidth = Number(page && page.width || 0);
+  const rawHeight = Number(page && page.height || 0);
+  const normalizedWidth = rotation === 90 || rotation === 270 ? rawHeight : rawWidth;
+  const normalizedHeight = rotation === 90 || rotation === 270 ? rawWidth : rawHeight;
+  const wordCount = collectVisionWords_(annotation).length;
+  return {
+    rotation: rotation,
+    split_candidate: isLikelyFacingPageSpread_(annotation, rotation),
+    page_width: normalizedWidth,
+    page_height: normalizedHeight,
+    word_count: wordCount,
+    reason: annotation ? 'OK' : 'NO_TEXT'
+  };
+}
+
+function isLikelyFacingPageSpread_(annotation, rotation) {
+  const words = collectVisionWords_(annotation);
+  if (words.length < 20) return false;
+  const page = annotation && annotation.pages && annotation.pages[0];
+  const rawWidth = Number(page && page.width || 0);
+  const rawHeight = Number(page && page.height || 0);
+  const normalizedWidth = rotation === 90 || rotation === 270 ? rawHeight : rawWidth;
+  const normalizedHeight = rotation === 90 || rotation === 270 ? rawWidth : rawHeight;
+  if (!normalizedWidth || normalizedWidth <= normalizedHeight * 1.22) return false;
+  let left = 0;
+  let right = 0;
+  let gutter = 0;
+  words.forEach(function(word) {
+    const box = typeof normalizeVisionRectForRotation_ === 'function'
+      ? normalizeVisionRectForRotation_(word.box, rawWidth, rawHeight, rotation)
+      : word.box;
+    const centerX = box.x + box.width / 2;
+    if (centerX < normalizedWidth * 0.46) left++;
+    else if (centerX > normalizedWidth * 0.54) right++;
+    else gutter++;
+  });
+  return left >= 8 && right >= 8 && gutter <= Math.max(4, Math.round(words.length * 0.14));
 }
 
 function extractA4LandCertificateFieldsFromStoredOcr(caseId, token, fileId, fileName) {
@@ -512,6 +578,56 @@ function saveAutoOcrFieldValue(caseId, token, fieldPath, newValue, source) {
   return { ok: true, field_path: fieldPath, new_value: newValue };
 }
 
+function saveAutoOcrA4LandFieldValue(caseId, token, fieldPath, newValue, currentValue, source) {
+  assertValidToken_(caseId, token);
+  const pathMatch = String(fieldPath || '').match(/^assets\[\d+\]\.real_estate\.(usage_purpose|usage_term|usage_form)$/);
+  if (!pathMatch) throw new Error('Field path is not an A4 land text field: ' + fieldPath);
+  if (getLatestFinalData(caseId)) return { ok: false, reason: 'CASE_FINALIZED' };
+  const fieldKey = pathMatch[1];
+  if (fieldKey === 'usage_purpose') newValue = normalizeLandTypeAreaUnits_(cleanupIndexedCertificateValue_(newValue));
+  if (fieldKey === 'usage_term') newValue = normalizeRealEstateUsageTerm_(cleanupIndexedCertificateValue_(newValue));
+  if (fieldKey === 'usage_form') newValue = normalizeRealEstateUsageForm_(cleanupIndexedCertificateValue_(newValue));
+  if (!newValue) return { ok: false, reason: 'EMPTY_VALUE' };
+  const manualOverride = getOverrides(caseId).some(function(item) {
+    return item.field_path === fieldPath && item.edited_by !== 'AUTO_OCR';
+  });
+  if (manualOverride) return { ok: false, reason: 'HAS_MANUAL_OVERRIDE' };
+  let data = getLatestExtractedData(caseId);
+  if (!data) throw new Error('No extracted review data for case ' + caseId);
+  repairReviewDataFromFullOcr_(data, caseId);
+  const field = getByPath(data, fieldPath);
+  if (!field || typeof field !== 'object' || !field.hasOwnProperty('final_value')) {
+    throw new Error('Field path is not editable: ' + fieldPath);
+  }
+  if (field.manual_value) return { ok: false, reason: 'HAS_MANUAL_VALUE' };
+  const storedCurrent = String(field.final_value || field.ai_value || '').trim();
+  field.ai_value = newValue;
+  field.final_value = newValue;
+  field.manual_value = '';
+  field.source = source || 'AUTO_OCR_A4_GEOMETRY_CROP';
+  field.confidence = 0.92;
+  field.confirmed = false;
+  field.evidence = 'High-resolution crop reconstructed from OCR word coordinates';
+  data = validateReviewJson(data);
+  appendSheetRow(SHEETS.EXTRACTED_DATA, {
+    'Case ID': caseId,
+    'JSON Data': data,
+    'Validation Status': data.validation.status,
+    'Missing Fields': data.validation.missing_fields,
+    'Conflicts': data.validation.conflicts,
+    'Warnings': data.validation.warnings,
+    'AI JSON File URL': '',
+    'Created At': nowIso()
+  });
+  logAudit(caseId, 'AUTO_OCR_A4_LAND_FIELD_SAVED', {
+    field_path: fieldPath,
+    old_value: storedCurrent,
+    new_value: newValue,
+    source: field.source
+  });
+  return { ok: true, field_path: fieldPath, new_value: newValue };
+}
+
 function saveAutoOcrRegistryValue(caseId, token, fieldPath, newValue, currentValue, readings, verificationMode) {
   assertValidToken_(caseId, token);
   if (!/^assets\[\d+\]\.real_estate\.registry_number$/.test(String(fieldPath || ''))) {
@@ -545,12 +661,12 @@ function saveAutoOcrRegistryValue(caseId, token, fieldPath, newValue, currentVal
   field.manual_value = '';
   const focusedPageVerification = verificationMode === 'PAGE_FOCUSED' || verificationMode === 'PAGE_ANCHORED';
   field.source = focusedPageVerification
-    ? 'AUTO_OCR_LAND_REGISTRY_ANCHORED_PAGE_CROP_CONSENSUS'
+    ? 'AUTO_OCR_LAND_REGISTRY_ANCHORED_PAGE_CROP_CONSENSUS_V2'
     : 'AUTO_OCR_LAND_REGISTRY_CROP_CONSENSUS';
   field.confidence = 0.92;
   field.confirmed = false;
   field.evidence = focusedPageVerification
-    ? 'Anchored high-resolution page crop consensus: color and grayscale'
+    ? 'Normalized high-resolution page crop consensus across multiple color renderings'
     : 'Focused registry OCR consensus: ' + consensus.count + ' crops';
   data = validateReviewJson(data);
   appendSheetRow(SHEETS.EXTRACTED_DATA, {
@@ -608,16 +724,16 @@ function saveAutoOcrIssueDateValue(caseId, token, fieldPath, newValue, currentVa
   if (expectedCurrent && storedCurrent && expectedCurrent !== storedCurrent) {
     return { ok: false, reason: 'STALE_ISSUE_DATE_VALUE' };
   }
-  if (String(field.source || '').indexOf('AUTO_OCR_LAND_ISSUE_DATE_CROP_CONSENSUS') === 0 && storedCurrent === candidate) {
+  if (String(field.source || '').indexOf('AUTO_OCR_LAND_ISSUE_DATE_CROP_CONSENSUS_V2') === 0 && storedCurrent === candidate) {
     return { ok: true, field_path: fieldPath, new_value: candidate, consensus_count: consensus.count };
   }
   field.ai_value = candidate;
   field.final_value = candidate;
   field.manual_value = '';
-  field.source = 'AUTO_OCR_LAND_ISSUE_DATE_CROP_CONSENSUS';
+  field.source = 'AUTO_OCR_LAND_ISSUE_DATE_CROP_CONSENSUS_V2';
   field.confidence = 0.92;
   field.confirmed = false;
-  field.evidence = 'Anchored high-resolution issue-date crop consensus: color and grayscale';
+  field.evidence = 'Normalized high-resolution issue-date crop consensus across multiple color renderings';
   data = validateReviewJson(data);
   appendSheetRow(SHEETS.EXTRACTED_DATA, {
     'Case ID': caseId,
@@ -878,6 +994,14 @@ function suggestLandRegistryCropFromVisionAnnotation_(annotation) {
       y: y,
       width: width,
       height: height,
+      label_box: {
+        x: Math.round(labelBox.x),
+        y: Math.round(labelBox.y),
+        width: Math.round(labelBox.width),
+        height: Math.round(labelBox.height)
+      },
+      page_width: pageWidth,
+      page_height: pageHeight,
       reason: 'land_registry_label',
       anchor_text: windowWords.map(function(word) { return word.text; }).join(' ')
     };
@@ -995,8 +1119,9 @@ function extractLandRegistryNumberFromCropText_(text) {
 
 function collectVisionWords_(annotation) {
   const out = [];
-  const pages = annotation && annotation.fullTextAnnotation && annotation.fullTextAnnotation.pages || [];
-  pages.forEach(function(page) {
+  const fullAnnotation = annotation && annotation.fullTextAnnotation || annotation;
+  const pages = fullAnnotation && fullAnnotation.pages || [];
+  pages.forEach(function(page, pageIndex) {
     const pageWidth = Number(page.width || 0);
     const pageHeight = Number(page.height || 0);
     (page.blocks || []).forEach(function(block) {
@@ -1004,12 +1129,67 @@ function collectVisionWords_(annotation) {
         (paragraph.words || []).forEach(function(word) {
           const text = (word.symbols || []).map(function(symbol) { return symbol.text || ''; }).join('');
           const box = visionBoundingRect_(word.boundingBox);
-          if (text && box) out.push({ text: text, box: box, pageWidth: pageWidth, pageHeight: pageHeight });
+          if (text && box) out.push({
+            text: text,
+            box: box,
+            pageIndex: pageIndex,
+            pageWidth: pageWidth,
+            pageHeight: pageHeight,
+            centerX: box.x + box.width / 2,
+            centerY: box.y + box.height / 2
+          });
         });
       });
     });
   });
   return out;
+}
+
+function buildVisionGeometryText_(annotation) {
+  const words = collectVisionWords_(annotation);
+  if (!words.length) return '';
+  const pageGroups = {};
+  words.forEach(function(word) {
+    pageGroups[word.pageIndex] = pageGroups[word.pageIndex] || [];
+    pageGroups[word.pageIndex].push(word);
+  });
+  return Object.keys(pageGroups).sort(function(a, b) { return Number(a) - Number(b); }).map(function(pageIndex) {
+    const pageWords = pageGroups[pageIndex].slice().sort(function(a, b) {
+      return a.centerY - b.centerY || a.centerX - b.centerX;
+    });
+    const lines = [];
+    pageWords.forEach(function(word) {
+      let bestLine = null;
+      let bestDistance = Infinity;
+      lines.forEach(function(line) {
+        const distance = Math.abs(word.centerY - line.centerY);
+        const tolerance = Math.max(8, Math.min(word.box.height, line.averageHeight) * 0.72);
+        if (distance <= tolerance && distance < bestDistance) {
+          bestLine = line;
+          bestDistance = distance;
+        }
+      });
+      if (!bestLine) {
+        lines.push({
+          words: [word],
+          centerY: word.centerY,
+          averageHeight: Math.max(1, word.box.height)
+        });
+        return;
+      }
+      bestLine.words.push(word);
+      const count = bestLine.words.length;
+      bestLine.centerY = (bestLine.centerY * (count - 1) + word.centerY) / count;
+      bestLine.averageHeight = (bestLine.averageHeight * (count - 1) + Math.max(1, word.box.height)) / count;
+    });
+    return lines.sort(function(a, b) { return a.centerY - b.centerY; }).map(function(line) {
+      return line.words.sort(function(a, b) { return a.centerX - b.centerX; })
+        .map(function(word) { return word.text; })
+        .join(' ')
+        .replace(/\s+([,.;:])/g, '$1')
+        .trim();
+    }).filter(Boolean).join('\n');
+  }).filter(Boolean).join('\n');
 }
 
 function visionBoundingRect_(box) {
