@@ -1,4 +1,9 @@
 function onFormSubmit(e) {
+  const labConfig = detectOcrLabConfigFromNamedValues_(e && e.namedValues);
+  if (labConfig) {
+    console.log('Skipped production form handler for OCR lab submission: ' + labConfig.skill);
+    return { skipped: true, reason: 'OCR_LAB_SUBMISSION', skill: labConfig.skill };
+  }
   setupSpreadsheet();
   const caseId = makeCaseId();
   try {

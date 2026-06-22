@@ -1249,6 +1249,38 @@ assert.strictEqual(
   }).map(item => item.text).join('|'),
   'page 1|page 2'
 );
+
+const labRoutingContext = {
+  removeVietnameseAccents_: value => String(value || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+};
+vm.createContext(labRoutingContext);
+vm.runInContext(fs.readFileSync('LabTraining.gs', 'utf8'), labRoutingContext);
+assert.strictEqual(
+  labRoutingContext.detectOcrLabConfigFromNamedValues_({
+    'Email nhan ket qua lab': [''],
+    'Upload anh bia dat/giay chung nhan': ['drive-file-id']
+  }).skill,
+  'ocr-bia-dat'
+);
+assert.strictEqual(
+  labRoutingContext.detectOcrLabConfigFromNamedValues_({
+    'Upload anh CCCD/Can cuoc': ['drive-file-id']
+  }).skill,
+  'ocr-cccd-can-cuoc'
+);
+assert.strictEqual(
+  labRoutingContext.detectOcrLabConfigFromNamedValues_({
+    'Email nguoi nhan link Review': ['review@example.com'],
+    'Upload ho so tai san': ['drive-file-id']
+  }),
+  null
+);
+assert.ok(
+  fs.readFileSync('FormHandler.gs', 'utf8').includes('detectOcrLabConfigFromNamedValues_(e && e.namedValues)'),
+  'Production form handler must skip spreadsheet-mirrored OCR lab submissions'
+);
 assert.deepStrictEqual(
   JSON.parse(JSON.stringify(ocrServiceContext.visionBoundingRectForRegions_({
     normalizedVertices: [{ x: 0.1, y: 0.2 }, { x: 0.3, y: 0.2 }, { x: 0.3, y: 0.4 }, { x: 0.1, y: 0.4 }]

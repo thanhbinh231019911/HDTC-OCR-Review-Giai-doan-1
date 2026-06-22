@@ -342,6 +342,10 @@ function processOcrLabTrainingSubmit_(labConfig, e) {
 }
 
 function resolveOcrLabConfigFromNamedValues_(preferredConfig, namedValues) {
+  return detectOcrLabConfigFromNamedValues_(namedValues) || preferredConfig;
+}
+
+function detectOcrLabConfigFromNamedValues_(namedValues) {
   const keys = Object.keys(namedValues || {});
   const normalizedKeys = keys.map(function(key) {
     return removeVietnameseAccents_(key).toLowerCase();
@@ -356,7 +360,7 @@ function resolveOcrLabConfigFromNamedValues_(preferredConfig, namedValues) {
   });
   if (hasCccdUpload) return OCR_LAB_TRAINING.CCCD;
 
-  return preferredConfig;
+  return null;
 }
 
 function makeOcrLabFormData_(labConfig, reviewEmail, fileIds) {
