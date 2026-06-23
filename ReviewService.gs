@@ -1132,6 +1132,7 @@ function collectVisionWords_(annotation) {
           if (text && box) out.push({
             text: text,
             box: box,
+            topEdgeSlope: visionTopEdgeSlope_(word.boundingBox),
             pageIndex: pageIndex,
             pageWidth: pageWidth,
             pageHeight: pageHeight,
@@ -1154,16 +1155,23 @@ function buildVisionGeometryText_(annotation) {
     pageGroups[word.pageIndex].push(word);
   });
   return Object.keys(pageGroups).sort(function(a, b) { return Number(a) - Number(b); }).map(function(pageIndex) {
+    const slopes = pageGroups[pageIndex].map(function(word) { return word.topEdgeSlope; })
+      .filter(function(slope) { return isFinite(slope) && Math.abs(slope) <= 0.35; })
+      .sort(function(a, b) { return a - b; });
+    const pageSlope = slopes.length ? slopes[Math.floor(slopes.length / 2)] : 0;
+    pageGroups[pageIndex].forEach(function(word) {
+      word.lineCenterY = word.centerY - pageSlope * word.centerX;
+    });
     const pageWords = pageGroups[pageIndex].slice().sort(function(a, b) {
-      return a.centerY - b.centerY || a.centerX - b.centerX;
+      return a.lineCenterY - b.lineCenterY || a.centerX - b.centerX;
     });
     const lines = [];
     pageWords.forEach(function(word) {
       let bestLine = null;
       let bestDistance = Infinity;
       lines.forEach(function(line) {
-        const distance = Math.abs(word.centerY - line.centerY);
-        const tolerance = Math.max(8, Math.min(word.box.height, line.averageHeight) * 0.72);
+        const distance = Math.abs(word.lineCenterY - line.centerY);
+        const tolerance = Math.max(8, Math.min(word.box.height, line.averageHeight) * 0.58);
         if (distance <= tolerance && distance < bestDistance) {
           bestLine = line;
           bestDistance = distance;
@@ -1172,14 +1180,14 @@ function buildVisionGeometryText_(annotation) {
       if (!bestLine) {
         lines.push({
           words: [word],
-          centerY: word.centerY,
+          centerY: word.lineCenterY,
           averageHeight: Math.max(1, word.box.height)
         });
         return;
       }
       bestLine.words.push(word);
       const count = bestLine.words.length;
-      bestLine.centerY = (bestLine.centerY * (count - 1) + word.centerY) / count;
+      bestLine.centerY = (bestLine.centerY * (count - 1) + word.lineCenterY) / count;
       bestLine.averageHeight = (bestLine.averageHeight * (count - 1) + Math.max(1, word.box.height)) / count;
     });
     return lines.sort(function(a, b) { return a.centerY - b.centerY; }).map(function(line) {
@@ -1190,6 +1198,14 @@ function buildVisionGeometryText_(annotation) {
         .trim();
     }).filter(Boolean).join('\n');
   }).filter(Boolean).join('\n');
+}
+
+function visionTopEdgeSlope_(box) {
+  const vertices = box && box.vertices || [];
+  if (vertices.length < 2) return 0;
+  const dx = Number(vertices[1].x || 0) - Number(vertices[0].x || 0);
+  if (!dx) return 0;
+  return (Number(vertices[1].y || 0) - Number(vertices[0].y || 0)) / dx;
 }
 
 function visionBoundingRect_(box) {

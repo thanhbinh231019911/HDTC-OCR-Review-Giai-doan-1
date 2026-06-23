@@ -1305,11 +1305,15 @@
           frame.textContent = err.message;
         }
       }
-      autoRepairIdentityIssueDatesFromImageCrops();
-      autoRepairAssetCertificateNumbersFromImageCrops();
-      autoRepairAssetRegistryNumbersFromImageCrops();
-      autoRepairAssetIssueDatesFromImageCrops();
-      autoRepairA4CertificateFieldsFromCrops();
+      runAutoOcrRepairsSequentially_();
+    }
+
+    async function runAutoOcrRepairsSequentially_() {
+      await autoRepairIdentityIssueDatesFromImageCrops();
+      await autoRepairAssetCertificateNumbersFromImageCrops();
+      await autoRepairAssetRegistryNumbersFromImageCrops();
+      await autoRepairAssetIssueDatesFromImageCrops();
+      await autoRepairA4CertificateFieldsFromCrops();
     }
 
     async function autoRepairIdentityIssueDatesFromImageCrops() {
@@ -1596,22 +1600,22 @@
               key: 'usage_purpose',
               path: 'assets[' + index + '].real_estate.usage_purpose',
               field: re.usage_purpose,
-              missing: needsA4GeometryFieldVerification_(re.usage_purpose),
-              source: 'AUTO_OCR_A4_GEOMETRY_CROP'
+              missing: needsA4GeometryFieldVerification_(re.usage_purpose, 'usage_purpose'),
+              source: 'AUTO_OCR_A4_GEOMETRY_CROP_V2'
             },
             {
               key: 'usage_term',
               path: 'assets[' + index + '].real_estate.usage_term',
               field: re.usage_term,
-              missing: needsA4GeometryFieldVerification_(re.usage_term),
-              source: 'AUTO_OCR_A4_GEOMETRY_CROP'
+              missing: needsA4GeometryFieldVerification_(re.usage_term, 'usage_term'),
+              source: 'AUTO_OCR_A4_GEOMETRY_CROP_V2'
             },
             {
               key: 'usage_form',
               path: 'assets[' + index + '].real_estate.usage_form',
               field: re.usage_form,
-              missing: needsA4GeometryFieldVerification_(re.usage_form),
-              source: 'AUTO_OCR_A4_GEOMETRY_CROP'
+              missing: needsA4GeometryFieldVerification_(re.usage_form, 'usage_form'),
+              source: 'AUTO_OCR_A4_GEOMETRY_CROP_V2'
             }
           ].filter(job => job.missing && !autoOcrDonePaths[job.path]);
           if (!jobs.length) continue;
@@ -1652,9 +1656,15 @@
       return !cleanValue(field.final_value || field.ai_value);
     }
 
-    function needsA4GeometryFieldVerification_(field) {
+    function needsA4GeometryFieldVerification_(field, fieldKey) {
       if (!field || field.manual_value) return false;
-      return cleanValue(field.source).indexOf('AUTO_OCR_A4_GEOMETRY_CROP') !== 0;
+      const value = cleanValue(field.final_value || field.ai_value);
+      const normalized = removeVietnameseMarks(value).toLowerCase();
+      if (fieldKey === 'usage_purpose' && /\d+(?:[,.]\d+)?\s*m(?!\s*(?:2|²))\b/i.test(value)) return true;
+      if (fieldKey === 'usage_term' && /\bden\s*$/i.test(normalized)) return true;
+      if (fieldKey === 'usage_form' && /\b\d{1,2}[\/.\-]\d{1,2}[\/.\-]\d{4}\b/.test(value)) return true;
+      if (/(?:loai dat|thoi han su dung|hinh thuc su dung|dia chi)\s*:/i.test(normalized)) return true;
+      return cleanValue(field.source).indexOf('AUTO_OCR_A4_GEOMETRY_CROP_V2') !== 0;
     }
 
     async function readA4CertificateFieldsFromFiles_(files, needs) {
@@ -1726,7 +1736,7 @@
               ['usage_purpose', 'usage_term', 'usage_form'].forEach(function(key) {
                 if (!out[key] && cleanValue(agreed[key])) {
                   out[key] = cleanValue(agreed[key]);
-                  out._sources[key] = 'AUTO_OCR_A4_GEOMETRY_CROP';
+                  out._sources[key] = 'AUTO_OCR_A4_GEOMETRY_CROP_V2';
                 }
               });
               if (out.usage_purpose && out.usage_term && out.usage_form) break;

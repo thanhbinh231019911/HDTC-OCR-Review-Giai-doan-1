@@ -808,6 +808,48 @@ assert.strictEqual(
   'Đất ở tại nông thôn: Lâu dài; Đất trồng cây lâu năm: Đến ngày 10/10/2045'
 );
 assert.strictEqual(visualA4Fields.usage_form, 'Sử dụng riêng');
+const staggeredVisualA4Annotation = visionAnnotationFromVisualLines([
+  '2. Thông tin thửa đất:',
+  'c. Loại đất: Đất ở tại nông thôn: 344,6m; Đất trồng cây lâu năm: 22,8m',
+  'd. Thời hạn sử dụng: Đất ở tại nông thôn: Lâu dài; Đất trồng cây lâu năm: Đến ngày 10/10/2045',
+  'đ. Hình thức sử dụng: Sử dụng riêng',
+  'e. Địa chỉ: Thôn Quyền Chương, xã Thanh Cao, huyện Lương Sơn, tỉnh Hòa Bình',
+  '3. Thông tin tài sản gắn liền với đất: --'
+]);
+staggeredVisualA4Annotation.pages[0].blocks[0].paragraphs.forEach(function(paragraph) {
+  paragraph.words.forEach(function(word) {
+    word.boundingBox.vertices.forEach(function(vertex) {
+      vertex.y += Math.round(Number(vertex.x || 0) * 0.03);
+    });
+  });
+});
+const staggeredVisualA4Fields = dataMergeContext.extractA4LandFieldsFromFocusedCrop_(
+  dataMergeContext.buildVisionGeometryText_(staggeredVisualA4Annotation)
+);
+assert.strictEqual(
+  staggeredVisualA4Fields.usage_term,
+  'Đất ở tại nông thôn: Lâu dài; Đất trồng cây lâu năm: Đến ngày 10/10/2045'
+);
+assert.strictEqual(staggeredVisualA4Fields.usage_form, 'Sử dụng riêng');
+const verifiedGeometryTerm = {
+  ai_value: 'Đất trồng cây lâu năm: Đến ngày 10/10/2045',
+  final_value: 'Đất trồng cây lâu năm: Đến ngày 10/10/2045',
+  manual_value: '',
+  source: 'AUTO_OCR_A4_GEOMETRY_CROP_V2'
+};
+assert.strictEqual(
+  dataMergeContext.shouldReplaceUsageTerm_(verifiedGeometryTerm, 'Đất trồng cây lâu năm: Đến'),
+  false
+);
+const verifiedGeometryReview = { validation: { warnings: [] } };
+dataMergeContext.clearUnsafeLandField_(
+  verifiedGeometryReview,
+  verifiedGeometryTerm,
+  'assets[].real_estate.usage_term',
+  function() { return true; },
+  'Đất trồng cây lâu năm: Đến'
+);
+assert.strictEqual(verifiedGeometryTerm.final_value, 'Đất trồng cây lâu năm: Đến ngày 10/10/2045');
 assert.strictEqual(
   dataMergeContext.shouldReplaceUsagePurpose_(
     { final_value: 'Đất ở tại nông thôn: 344,6m', manual_value: '' },
@@ -927,6 +969,44 @@ assert.strictEqual(
   true
 );
 assert.strictEqual(a4ExistingValueReview.assets[0].real_estate.usage_term.final_value, visualA4Fields.usage_term);
+const automatedOverrideReview = {
+  validation: { status: 'PENDING', missing_fields: [], conflicts: [], warnings: [] },
+  review: { status: 'PENDING_REVIEW', confirmed_by: '', confirmed_at: '' },
+  secured_parties: [{ id_issue_date: {
+    ai_value: '', form_value: '', manual_value: '', final_value: '', confirmed: false
+  }}],
+  assets: [{ real_estate: {
+    usage_purpose: { ai_value: 'Kết quả crop mới', form_value: '', manual_value: '', final_value: 'Kết quả crop mới', confirmed: false },
+    usage_term: { ai_value: 'OCR cũ', form_value: '', manual_value: '', final_value: 'OCR cũ', confirmed: false }
+  }}]
+};
+dataMergeContext.applyOverridesToReviewJson(automatedOverrideReview, [
+  {
+    field_path: 'assets[0].real_estate.usage_purpose',
+    new_value: 'Kết quả AUTO_OCR cũ',
+    edited_by: 'AUTO_OCR',
+    reason: 'AUTO_OCR_A4_GEOMETRY_CROP'
+  },
+  {
+    field_path: 'secured_parties[0].id_issue_date',
+    new_value: '01/02/2020',
+    edited_by: 'AUTO_OCR',
+    reason: 'AUTO_OCR_IDENTITY_CROP'
+  },
+  {
+    field_path: 'assets[0].real_estate.usage_term',
+    new_value: 'Người dùng sửa',
+    edited_by: 'user@example.com',
+    reason: 'Đối chiếu ảnh gốc'
+  }
+]);
+assert.strictEqual(automatedOverrideReview.assets[0].real_estate.usage_purpose.manual_value, '');
+assert.strictEqual(automatedOverrideReview.assets[0].real_estate.usage_purpose.final_value, 'Kết quả crop mới');
+assert.strictEqual(automatedOverrideReview.assets[0].real_estate.usage_purpose.confirmed, false);
+assert.strictEqual(automatedOverrideReview.secured_parties[0].id_issue_date.final_value, '01/02/2020');
+assert.strictEqual(automatedOverrideReview.secured_parties[0].id_issue_date.manual_value, '');
+assert.strictEqual(automatedOverrideReview.assets[0].real_estate.usage_term.manual_value, 'Người dùng sửa');
+assert.strictEqual(automatedOverrideReview.assets[0].real_estate.usage_term.confirmed, true);
 assert.strictEqual(dataMergeContext.cleanupIndexedCertificateValue_('Xóm Gừa , xã Liên Sơn , tỉnh Phú Thọ'), 'Xóm Gừa, xã Liên Sơn, tỉnh Phú Thọ');
 const addressSpacingReview = {
   assets: [{

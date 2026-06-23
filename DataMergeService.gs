@@ -89,6 +89,15 @@ function applyOverridesToReviewJson(reviewJson, overrides) {
   (overrides || []).forEach(function(override) {
     const field = getByPath(reviewJson, override.field_path);
     if (field && typeof field === 'object' && field.hasOwnProperty('final_value')) {
+      if (isAutomatedReviewOverride_(override)) {
+        if (isPersistedAutoOcrFieldPath_(override.field_path)) return;
+        field.ai_value = override.new_value;
+        field.final_value = override.new_value || field.form_value || '';
+        field.manual_value = '';
+        field.source = override.reason || 'AUTO_OCR';
+        field.confirmed = false;
+        return;
+      }
       field.manual_value = override.new_value;
       field.final_value = override.new_value || field.ai_value || field.form_value || '';
       field.confirmed = true;
@@ -97,6 +106,14 @@ function applyOverridesToReviewJson(reviewJson, overrides) {
   reviewJson.manual_overrides = overrides || [];
   reviewJson.final_confirmed_data = buildFinalConfirmedData(reviewJson);
   return reviewJson;
+}
+
+function isAutomatedReviewOverride_(override) {
+  return String(override && override.edited_by || '').trim().toUpperCase() === 'AUTO_OCR';
+}
+
+function isPersistedAutoOcrFieldPath_(fieldPath) {
+  return /^assets\[\d+\]\.real_estate\.(?:certificate_number|registry_number|issue_date|usage_purpose|usage_term|usage_form)$/.test(String(fieldPath || ''));
 }
 
 function repairIdentityIssueDatesInReviewJson(reviewJson, ocrTextByFileOverride) {
@@ -521,7 +538,7 @@ function repairUnsafeLandCertificateFieldsInReviewJson(reviewJson, fullAssetOcrT
 }
 
 function clearUntrustedLandIndexedField_(reviewJson, field, fieldPath) {
-  if (!field || !field.hasOwnProperty('final_value') || field.manual_value) return;
+  if (!field || !field.hasOwnProperty('final_value') || field.manual_value || isVerifiedA4GeometryField_(field)) return;
   const current = String(field.final_value || field.ai_value || '').trim();
   if (!current) return;
   field.ai_value = '';
@@ -542,7 +559,7 @@ function replaceFromTrustedLandBlock_(field, replacement) {
 }
 
 function clearUnsafeLandField_(reviewJson, field, fieldPath, predicate, replacement) {
-  if (!field || !field.hasOwnProperty('final_value') || field.manual_value) return;
+  if (!field || !field.hasOwnProperty('final_value') || field.manual_value || isVerifiedA4GeometryField_(field)) return;
   const current = String(field.final_value || field.ai_value || '').trim();
   if (!current || !predicate(current)) return;
   if (replacement && !predicate(replacement)) {
@@ -791,7 +808,7 @@ function isBetterLandAddress_(current, candidate) {
 }
 
 function shouldReplaceUsageForm_(field, candidate) {
-  if (!field || !candidate || field.manual_value) return false;
+  if (!field || !candidate || field.manual_value || isVerifiedA4GeometryField_(field)) return false;
   const current = String(field.final_value || field.ai_value || '').trim();
   if (!current) return true;
   if (/\r?\n/.test(current) && !/\r?\n/.test(candidate)) return true;
@@ -818,7 +835,7 @@ function normalizeRealEstateUsageForm_(value) {
 }
 
 function shouldReplaceUsageTerm_(field, candidate) {
-  if (!field || !candidate || field.manual_value) return false;
+  if (!field || !candidate || field.manual_value || isVerifiedA4GeometryField_(field)) return false;
   const current = String(field.final_value || field.ai_value || '').trim();
   if (!current) return true;
   const currentNorm = removeVietnameseAccents_(current).toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
@@ -2040,6 +2057,7 @@ function shouldReplaceSimpleOcrField_(field, candidate) {
 }
 
 function shouldReplaceUsagePurpose_(field, candidate) {
+  if (isVerifiedA4GeometryField_(field)) return false;
   if (shouldReplaceSimpleOcrField_(field, candidate)) return true;
   if (!field || !candidate || field.manual_value) return false;
   const current = String(field.final_value || field.ai_value || '').trim();
@@ -2049,6 +2067,10 @@ function shouldReplaceUsagePurpose_(field, candidate) {
   const candidateNorm = removeVietnameseAccents_(normalizeLandTypeAreaUnits_(candidate))
     .toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
   return Boolean(currentNorm && currentNorm === candidateNorm && current !== candidate);
+}
+
+function isVerifiedA4GeometryField_(field) {
+  return String(field && field.source || '').indexOf('AUTO_OCR_A4_GEOMETRY_CROP_V2') === 0;
 }
 
 function shouldReplaceUsageOrigin_(field, candidate) {

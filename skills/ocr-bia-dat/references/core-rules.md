@@ -130,6 +130,9 @@ Recognize at least these labels:
 When the schema does not have a separate `land_type` field, map `Loai dat` into the existing land-use purpose/description field without inventing wording. Preserve compound values such as `Dat o tai nong thon: 400,0 m2; Dat trong cay lau nam: 1041,9 m2`.
 Quantities written after land types are areas. Within `Loai dat` only, normalize OCR forms such as `344,6m`, `344,6m2`, or `344,6m²` to `344,6 m²`. Do not apply this unit repair to unrelated fields.
 For the A4 land section, reconstruct visual lines from OCR word coordinates after cropping and zooming. Sort words by line position and then from left to right; extract each field as ordinary printed text from its label to the next printed label. Do not move dates or phrases between `Thoi han su dung` and `Hinh thuc su dung` using semantic repair rules.
+When reconstructing a visual line, tolerate normal vertical drift between words caused by perspective, handwriting, or OCR boxes. Words whose vertical centers still overlap the same text row must remain on that row; this is especially important for a trailing date in `Thoi han su dung`.
+Keep automated OCR persistence distinct from a user edit. An override row whose editor is exactly `AUTO_OCR` remains replaceable AI data (`ai_value`), while a real user edit remains `manual_value`, confirmed, and must never be overwritten by automatic crops.
+For land fields that now persist through their dedicated extracted-data pipeline, ignore stale legacy `AUTO_OCR` override rows when rebuilding review data; they must not overwrite a newer focused-crop result.
 
 ## Registry Number
 
