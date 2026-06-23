@@ -335,6 +335,8 @@
     let confirmBusy = false;
     let generateBusy = false;
     let autoOcrBusy = false;
+    let autoOcrPipelineTimer = null;
+    let autoOcrPipelinePromise = null;
     let autoCertificateNumberOcrBusy = false;
     let autoRegistryOcrBusy = false;
     let autoIssueDateOcrBusy = false;
@@ -412,6 +414,7 @@
         return;
       }
       showReviewPage();
+      scheduleAutoOcrRepairs_();
     }
 
     function isReviewConfirmed() {
@@ -616,7 +619,22 @@
       if (tab === 'secured') renderPeople('content', reviewData.secured_parties || [], 'secured_parties', 'secured_party');
       if (tab === 'obligors') renderPeople('content', reviewData.obligors || [], 'obligors', 'obligor');
       if (tab === 'assets') renderAssets('content', 'asset');
-      if (tab === 'ocr') renderOcr('content');
+      if (tab === 'ocr') {
+        renderOcr('content');
+        renderLandOcrDiagnostic_('content');
+      }
+    }
+
+    function renderLandOcrDiagnostic_(targetId) {
+      if (String(CASE_ID || '').indexOf('LAB-') !== 0 || !autoA4OcrDebug.length) return;
+      const target = document.getElementById(targetId);
+      if (!target) return;
+      target.insertAdjacentHTML(
+        'beforeend',
+        '<details open><summary>Land OCR diagnostic</summary><pre>' +
+          escapeHtml(JSON.stringify(autoA4OcrDebug.slice(-40), null, 2)) +
+        '</pre></details>'
+      );
     }
 
     function renderPeople(targetId, people, root, group) {
@@ -690,8 +708,15 @@
       const ocrText = getAssetOcrText();
       const landPlotOcrText = selectTrustedLandPlotOcrText(ocrText);
       const isNewA4 = isNewA4AssetCertificate(asset, ocrText);
+      const certificateLayoutText = [
+        ocrText,
+        valueOf(re.certificate_info_raw_text),
+        valueOf(re.certificate_land_raw_text),
+        valueOf(re.certificate_attached_raw_text)
+      ].filter(Boolean).join('\n');
+      const printedLayout = extractPrintedCertificateLayout(certificateLayoutText, landPlotOcrText);
       const important = [
-        [t('Loai GCN'), valueOf(asset.certificate_title) || inferCertificateTitleFromText(ocrText)],
+        [t('Loai GCN'), certificateTitleForReview_(asset, ocrText)],
         [t('So GCN'), valueOf(re.certificate_number) || inferCertificateNumberFromText(ocrText)],
         [t('So vao so'), valueOf(re.registry_number) || inferRegistryNumberFromText(ocrText)],
         [t('Ngay cap'), valueOf(re.issue_date)],
@@ -699,57 +724,65 @@
       ];
       const lines = [];
       lines.push('<div class="asset-doc">');
-      lines.push('<section class="asset-doc-section"><h3>' + t('1. Thong tin chung') + '</h3><div class="asset-doc-grid">');
+      lines.push('<section class="asset-doc-section"><h3>' + t('Thong tin chung') + '</h3><div class="asset-doc-grid">');
       important.forEach(row => {
         lines.push('<div class="asset-doc-label">' + escapeHtml(row[0]) + '</div><div class="asset-doc-value">' + escapeHtml(row[1] || '') + '</div>');
       });
       lines.push('</div></section>');
-      lines.push('<section class="asset-doc-section"><h3>' + t('2. Thong tin theo giay chung nhan') + '</h3><div class="asset-doc-lines">');
+      lines.push('<section class="asset-doc-section"><h3>' + t('Thong tin theo giay chung nhan') + '</h3><div class="asset-doc-lines">');
       if (isNewA4) {
-        lines.push('<div class="asset-doc-line"><strong>1. ' + t('Nguoi su dung dat, chu so huu tai san gan lien voi dat') + ':</strong></div>');
-        ownerLines(asset, true).forEach(line => lines.push('<div class="asset-doc-line">' + escapeHtml(oneLineCertificateValue(line)) + '</div>'));
-        lines.push('<div class="asset-doc-line"><strong>2. ' + t('Thong tin thua dat') + ':</strong></div>');
-        pushA4CertificateLine(lines, 'a. ' + t('Thua dat so'), valueOf(re.land_plot_number) + (valueOf(re.map_sheet_number) ? '    ; ' + t('to ban do so') + ': ' + valueOf(re.map_sheet_number) : ''));
-        pushA4CertificateLine(lines, 'b. ' + t('Dien tich'), formatAreaWithWords(valueOf(re.area), valueOf(re.area_in_words) || extractAreaWordsFromOcr(ocrText)));
-        pushA4CertificateLine(lines, 'c. ' + t('Loai dat'), valueOf(re.usage_purpose));
-        pushA4CertificateLine(lines, 'd. ' + t('Thoi han su dung'), valueOf(re.usage_term));
-        pushA4CertificateLine(lines, '\u0111. ' + t('Hinh thuc su dung'), valueOf(re.usage_form));
-        pushA4CertificateLine(lines, 'e. ' + t('Dia chi'), oneLineCertificateValue(valueOf(re.land_address)));
-        const attachedState = a4AttachedAssetSectionState(re, ocrText);
-        if (attachedState === 'absent') {
-          lines.push('<div class="asset-doc-line"><strong>3. ' + t('Thong tin tai san gan lien voi dat') + ':</strong> -/-</div>');
-        } else {
-          lines.push('<div class="asset-doc-line"><strong>3. ' + t('Thong tin tai san gan lien voi dat') + ':</strong></div>');
-          if (attachedState === 'detailed') {
-            pushA4CertificateLine(lines, 'a. ' + t('Ten tai san'), valueOf(re.attached_asset_name));
-            pushA4CertificateLine(lines, 'b. ' + t('Dien tich su dung'), normalizeAreaForDisplay(valueOf(re.attached_asset_area)));
-            pushA4CertificateLine(lines, 'c. ' + t('Hinh thuc so huu'), valueOf(re.attached_asset_ownership_form));
-            pushA4CertificateLine(lines, 'd. ' + t('Thoi han so huu'), valueOf(re.attached_asset_ownership_term));
-          }
+        if (printedLayout.owner_heading) {
+          lines.push('<div class="asset-doc-line"><strong>' + escapeHtml(printedLayout.owner_heading) + '</strong></div>');
         }
-        lines.push('<div class="asset-doc-line"><strong>4. ' + t('So do thua dat, tai san gan lien voi dat') + ':</strong></div>');
-        lines.push('<div class="asset-doc-line"><strong>5. ' + t('Ghi chu') + ':</strong> ' + escapeHtml(a4CertificateNoteDisplayValue(valueOf(re.certificate_note), ocrText)) + '</div>');
-        lines.push('<div class="asset-doc-line"><strong>6. ' + t('Nhung thay doi sau khi cap Giay chung nhan') + ':</strong></div>');
-        lines.push('<div class="asset-doc-line">' + escapeHtml(a4PostIssueChangesDisplayValue(valueOf(re.post_issue_changes), ocrText)) + '</div>');
+        ownerLines(asset, true).forEach(line => lines.push('<div class="asset-doc-line">' + escapeHtml(oneLineCertificateValue(line)) + '</div>'));
+        if (printedLayout.land_section_heading) {
+          lines.push('<div class="asset-doc-line"><strong>' + escapeHtml(printedLayout.land_section_heading) + '</strong></div>');
+        }
+        printedLayout.land_fields.forEach(function(item) {
+          pushPrintedCertificateField(lines, item, re, ocrText);
+        });
+        if (printedLayout.attached_heading) {
+          lines.push('<div class="asset-doc-line"><strong>' + escapeHtml(printedLayout.attached_heading) + ':</strong>' +
+            (printedLayout.attached_value ? ' ' + escapeHtml(printedLayout.attached_value) : '') + '</div>');
+        }
+        printedLayout.attached_fields.forEach(function(item) {
+          pushPrintedCertificateField(lines, item, re, ocrText);
+        });
+        if (printedLayout.map_heading) {
+          lines.push('<div class="asset-doc-line"><strong>' + escapeHtml(printedLayout.map_heading) + '</strong></div>');
+        }
+        if (printedLayout.note_heading) {
+          lines.push('<div class="asset-doc-line"><strong>' + escapeHtml(printedLayout.note_heading) + ':</strong> ' +
+            escapeHtml(valueOf(re.certificate_note) || printedLayout.note_value) + '</div>');
+        }
+        if (printedLayout.change_heading) {
+          lines.push('<div class="asset-doc-line"><strong>' + escapeHtml(printedLayout.change_heading) + '</strong></div>');
+          lines.push('<div class="asset-doc-line">' + escapeHtml(a4PostIssueChangesDisplayValue(valueOf(re.post_issue_changes), ocrText)) + '</div>');
+        }
       } else {
-        lines.push('<div class="asset-doc-line"><strong>I. ' + t('Nguoi su dung dat, chu so huu nha o va tai san khac gan lien voi dat') + '</strong></div>');
+        if (printedLayout.owner_heading) {
+          lines.push('<div class="asset-doc-line"><strong>' + escapeHtml(printedLayout.owner_heading) + '</strong></div>');
+        }
         ownerLines(asset, false).forEach(line => lines.push('<div class="asset-doc-line">' + escapeHtml(oneLineCertificateValue(line)) + '</div>'));
-        lines.push('<div class="asset-doc-line"><strong>II. ' + t('Thua dat, nha o va tai san khac gan lien voi dat') + ':</strong></div>');
-        lines.push('<div class="asset-doc-line"><strong>1. ' + t('Thua dat') + ':</strong></div>');
-        pushAssetLine(lines, 'a. ' + t('Thua dat so'), valueOf(re.land_plot_number) + (valueOf(re.map_sheet_number) ? '    ' + t('to ban do so') + ': ' + valueOf(re.map_sheet_number) : ''));
-        pushAssetLine(lines, 'b. ' + t('Dia chi'), oneLineCertificateValue(valueOf(re.land_address)));
-        pushAssetLine(lines, 'c. ' + t('Dien tich'), formatAreaWithWords(valueOf(re.area), valueOf(re.area_in_words) || extractAreaWordsFromOcr(ocrText)));
-        pushAssetLine(lines, 'd. ' + t('Hinh thuc su dung'), valueOf(re.usage_form));
-        pushAssetLine(lines, '\u0111. ' + t('Muc dich su dung'), valueOf(re.usage_purpose));
-        pushAssetLine(lines, 'e. ' + t('Thoi han su dung'), valueOf(re.usage_term));
-        pushAssetLine(lines, 'g. ' + fixVietnameseUsageWord(t('Nguon goc su dung')), displayUsageOriginValue(valueOf(re.usage_origin)));
-        lines.push('<div class="asset-doc-line"><strong>2. ' + t('Nha o') + ':</strong> ' + escapeHtml(certificateOptionalItemValue(landPlotOcrText, 2, '-/-')) + '</div>');
-        lines.push('<div class="asset-doc-line"><strong>3. ' + t('Cong trinh xay dung khac') + ':</strong> ' + escapeHtml(certificateOptionalItemValue(landPlotOcrText, 3, '-/-')) + '</div>');
-        lines.push('<div class="asset-doc-line"><strong>4. ' + t('Rung san xuat la rung trong') + ':</strong> ' + escapeHtml(certificateOptionalItemValue(landPlotOcrText, 4, '-/-')) + '</div>');
-        lines.push('<div class="asset-doc-line"><strong>5. ' + t('Cay lau nam') + ':</strong> ' + escapeHtml(certificateOptionalItemValue(landPlotOcrText, 5, '-/-')) + '</div>');
-        lines.push('<div class="asset-doc-line"><strong>6. ' + t('Ghi chu') + ':</strong> ' + escapeHtml(certificateOptionalItemValue(landPlotOcrText, 6, 'Kh\u00f4ng')) + '</div>');
-        lines.push('<div class="asset-doc-line"><strong>IV. ' + t('Nhung thay doi sau khi cap Giay chung nhan') + ':</strong></div>');
-        lines.push('<div class="asset-doc-line">' + escapeHtml(postIssueChangesDisplayValue(valueOf(re.post_issue_changes), ocrText)) + '</div>');
+        if (printedLayout.land_section_heading) {
+          lines.push('<div class="asset-doc-line"><strong>' + escapeHtml(printedLayout.land_section_heading) + '</strong></div>');
+        }
+        if (printedLayout.land_heading) {
+          lines.push('<div class="asset-doc-line"><strong>' + escapeHtml(printedLayout.land_heading) + '</strong></div>');
+        }
+        printedLayout.land_fields.forEach(function(item) {
+          pushPrintedCertificateField(lines, item, re, ocrText);
+        });
+        printedLayout.optional_sections.forEach(function(item) {
+          lines.push('<div class="asset-doc-line"><strong>' + escapeHtml(item.marker + '. ' + item.label) + ':</strong> ' + escapeHtml(item.value) + '</div>');
+        });
+        if (printedLayout.map_heading) {
+          lines.push('<div class="asset-doc-line"><strong>' + escapeHtml(printedLayout.map_heading) + '</strong></div>');
+        }
+        if (printedLayout.change_heading) {
+          lines.push('<div class="asset-doc-line"><strong>' + escapeHtml(printedLayout.change_heading) + '</strong></div>');
+          lines.push('<div class="asset-doc-line">' + escapeHtml(postIssueChangesDisplayValue(valueOf(re.post_issue_changes), ocrText)) + '</div>');
+        }
       }
       lines.push('</div><div class="asset-doc-edit">' + fieldTable(flattenFields(asset, root)) + '</div></section>');
       lines.push('</div>');
@@ -764,8 +797,8 @@
         'So vao so': '\u0053\u1ed1 \u0076\u00e0\u006f \u0073\u1ed5',
         'Ngay cap': '\u004e\u0067\u00e0\u0079 \u0063\u1ea5\u0070',
         'Noi cap': '\u004e\u01a1\u0069 \u0063\u1ea5\u0070',
-        '1. Thong tin chung': '1. \u0054\u0068\u00f4\u006e\u0067 \u0074\u0069\u006e \u0063\u0068\u0075\u006e\u0067',
-        '2. Thong tin theo giay chung nhan': '2. \u0054\u0068\u00f4\u006e\u0067 \u0074\u0069\u006e \u0074\u0068\u0065\u006f \u0067\u0069\u1ea5\u0079 \u0063\u0068\u1ee9\u006e\u0067 \u006e\u0068\u1ead\u006e',
+        'Thong tin chung': '\u0054\u0068\u00f4\u006e\u0067 \u0074\u0069\u006e \u0063\u0068\u0075\u006e\u0067',
+        'Thong tin theo giay chung nhan': '\u0054\u0068\u00f4\u006e\u0067 \u0074\u0069\u006e \u0074\u0068\u0065\u006f \u0067\u0069\u1ea5\u0079 \u0063\u0068\u1ee9\u006e\u0067 \u006e\u0068\u1ead\u006e',
         'Nguoi su dung dat, chu so huu tai san gan lien voi dat': '\u004e\u0067\u01b0\u1edd\u0069 \u0073\u1eed \u0064\u1ee5\u006e\u0067 \u0111\u1ea5\u0074, \u0063\u0068\u1ee7 \u0073\u1edf \u0068\u1eef\u0075 \u0074\u00e0\u0069 \u0073\u1ea3\u006e \u0067\u1eaf\u006e \u006c\u0069\u1ec1\u006e \u0076\u1edb\u0069 \u0111\u1ea5\u0074',
         'Nguoi su dung dat, chu so huu nha o va tai san khac gan lien voi dat': 'Ng\u01b0\u1eddi s\u1eed d\u1ee5ng \u0111\u1ea5t, ch\u1ee7 s\u1edf h\u1eefu nh\u00e0 \u1edf v\u00e0 t\u00e0i s\u1ea3n kh\u00e1c g\u1eafn li\u1ec1n v\u1edbi \u0111\u1ea5t',
         'Thua dat, nha o va tai san khac gan lien voi dat': 'Th\u1eeda \u0111\u1ea5t, nh\u00e0 \u1edf v\u00e0 t\u00e0i s\u1ea3n kh\u00e1c g\u1eafn li\u1ec1n v\u1edbi \u0111\u1ea5t',
@@ -797,10 +830,215 @@
     }
 
     function isNewA4AssetCertificate(asset, ocrText) {
-      const title = removeVietnameseMarks(valueOf(asset && asset.certificate_title) || inferCertificateTitleFromText(ocrText)).toLowerCase();
       const text = removeVietnameseMarks(String(ocrText || '')).toLowerCase().replace(/[^a-z0-9]+/g, ' ').replace(/\s+/g, ' ');
-      return title.indexOf('quyen so huu tai san gan lien voi dat') >= 0 ||
-        text.indexOf('2 thong tin thua dat') >= 0 && text.indexOf('3 thong tin tai san gan lien voi dat') >= 0;
+      const ocrGeneration = certificateGenerationFromCompleteTitleForReview_(inferCertificateTitleFromText(ocrText));
+      if (ocrGeneration) return ocrGeneration === 'gcn_qsdd_qsh_tsglvd';
+      const storedGeneration = certificateGenerationFromCompleteTitleForReview_(valueOf(asset && asset.certificate_title));
+      if (storedGeneration) return storedGeneration === 'gcn_qsdd_qsh_tsglvd';
+      return text.indexOf('1 nguoi su dung dat') >= 0 &&
+        text.indexOf('2 thong tin thua dat') >= 0 &&
+        text.indexOf('3 thong tin tai san gan lien voi dat') >= 0;
+    }
+
+    function certificateTitleForReview_(asset, ocrText) {
+      const stored = valueOf(asset && asset.certificate_title);
+      const inferred = inferCertificateTitleFromText(ocrText);
+      const inferredGeneration = certificateGenerationFromCompleteTitleForReview_(inferred);
+      const storedGeneration = certificateGenerationFromCompleteTitleForReview_(stored);
+      if (inferredGeneration && inferredGeneration !== storedGeneration) return inferred;
+      return stored || inferred;
+    }
+
+    function certificateGenerationFromCompleteTitleForReview_(title) {
+      const clean = removeVietnameseMarks(String(title || '')).toLowerCase().replace(/[^a-z0-9]+/g, ' ').replace(/\s+/g, ' ').trim();
+      if (clean === 'giay chung nhan quyen su dung dat quyen so huu nha o va tai san khac gan lien voi dat') {
+        return 'gcn_qsdd_qsh_nha_o_va_tsk';
+      }
+      if (clean === 'giay chung nhan quyen su dung dat quyen so huu tai san gan lien voi dat') {
+        return 'gcn_qsdd_qsh_tsglvd';
+      }
+      if (clean === 'giay chung nhan quyen su dung dat') return 'gcn_qsdd';
+      return '';
+    }
+
+    function extractPrintedCertificateLayout(ocrText, landPlotOcrText) {
+      const fullLines = String(ocrText || '').replace(/\\r/g, '\r').replace(/\\n/g, '\n').split(/\r?\n+/).map(line => line.replace(/\s+/g, ' ').trim()).filter(Boolean);
+      const findHeading = function(pattern) {
+        for (let i = 0; i < fullLines.length; i++) {
+          const normalized = removeVietnameseMarks(fullLines[i]).toLowerCase().replace(/[^a-z0-9]+/g, ' ').replace(/\s+/g, ' ').trim();
+          if (pattern.test(normalized)) return fullLines[i].replace(/\s*:\s*$/, '');
+        }
+        return '';
+      };
+      const layout = {
+        owner_heading: findHeading(/^(?:i|1) nguoi su dung dat\b/),
+        land_section_heading: findHeading(/^(?:ii thua dat|2 thong tin thua dat)\b/),
+        land_heading: '',
+        land_fields: [],
+        optional_sections: [],
+        attached_heading: findHeading(/^3 thong tin tai san gan lien voi dat\b/),
+        attached_value: '',
+        attached_fields: [],
+        map_heading: findHeading(/^(?:iii|4) so do\b/),
+        note_heading: findHeading(/^5 ghi chu\b/),
+        note_value: '',
+        change_heading: findHeading(/^(?:iv|6) nhung thay doi\b/)
+      };
+      const source = [landPlotOcrText, ocrText].filter(Boolean).join('\n').replace(/\\r/g, '\r').replace(/\\n/g, '\n');
+      const expandedLines = [];
+      source.split(/\r?\n+/).forEach(function(originalLine) {
+        let line = String(originalLine || '').replace(/\s+/g, ' ').trim();
+        if (!line) return;
+        line = line
+          .replace(/([,;])\s*(?=(?:[a-z\u0111]|[1-9])\s*[\).]\s*\S)/gi, '$1\n')
+          .replace(/\s+(?=(?:[a-z\u0111]|[1-9])\s*[\).]\s*\S)/gi, '\n');
+        line.split('\n').map(part => part.trim()).filter(Boolean).forEach(part => expandedLines.push(part));
+      });
+      let current = null;
+      let scope = '';
+      const upsert = function(target, item) {
+        const normalizedLabel = removeVietnameseMarks(item.label || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+        const existing = target.find(function(entry) {
+          return entry.marker === item.marker &&
+            removeVietnameseMarks(entry.label || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim() === normalizedLabel;
+        });
+        if (!existing) {
+          target.push(item);
+        } else if (String(item.value || '').length > String(existing.value || '').length) {
+          existing.value = item.value;
+        }
+      };
+      const commit = function() {
+        if (!current) return;
+        current.value = normalizeCertificatePunctuationForReview_(current.value);
+        if (current.kind === 'land') upsert(layout.land_fields, current);
+        if (current.kind === 'attached') upsert(layout.attached_fields, current);
+        if (current.kind === 'section') upsert(layout.optional_sections, current);
+        current = null;
+      };
+      for (let i = 0; i < expandedLines.length; i++) {
+        const line = expandedLines[i];
+        const normalized = removeVietnameseMarks(line).toLowerCase().replace(/[^a-z0-9]+/g, ' ').replace(/\s+/g, ' ').trim();
+        if (/^(?:iii so do|iv nhung thay doi)\b/.test(normalized)) {
+          commit();
+          break;
+        }
+        if (/^(?:i nguoi su dung dat|ii thua dat)\b/.test(normalized)) {
+          commit();
+          continue;
+        }
+        const item = line.match(/^([a-z\u0111]|[1-9])\s*[\).]\s*([^:]{1,120}?)(?:\s*:\s*(.*))?$/i);
+        if (!item) {
+          if (current) current.value += (current.value ? ' ' : '') + line;
+          continue;
+        }
+        commit();
+        const marker = item[1];
+        const label = String(item[2] || '').trim();
+        const value = String(item[3] || '').trim();
+        if (/^\d$/.test(marker)) {
+          const normalizedLabel = removeVietnameseMarks(label).toLowerCase().replace(/[^a-z0-9]+/g, ' ').replace(/\s+/g, ' ').trim();
+          const printedHeading = marker + '. ' + label.replace(/\s*:\s*$/, '');
+          if (normalizedLabel.indexOf('nguoi su dung dat') >= 0) {
+            layout.owner_heading = printedHeading;
+            scope = '';
+          } else if (normalizedLabel === 'thua dat' || normalizedLabel.indexOf('thua dat') === 0 && normalizedLabel.indexOf('thong tin') < 0) {
+            layout.land_heading = marker + '. ' + label.replace(/\s*:\s*$/, '');
+            scope = 'land';
+          } else if (normalizedLabel.indexOf('thong tin thua dat') >= 0) {
+            layout.land_section_heading = printedHeading;
+            scope = 'land';
+          } else if (normalizedLabel.indexOf('thong tin tai san gan lien voi dat') >= 0) {
+            layout.attached_heading = printedHeading;
+            layout.attached_value = normalizeCertificatePunctuationForReview_(value);
+            scope = 'attached';
+          } else if (normalizedLabel.indexOf('so do') >= 0) {
+            layout.map_heading = printedHeading;
+            scope = '';
+          } else if (normalizedLabel.indexOf('ghi chu') >= 0 && layout.attached_heading) {
+            layout.note_heading = printedHeading;
+            layout.note_value = normalizeCertificatePunctuationForReview_(value);
+            scope = '';
+          } else if (normalizedLabel.indexOf('nhung thay doi') >= 0) {
+            layout.change_heading = printedHeading;
+            scope = '';
+          } else if (Number(marker) >= 2) {
+            current = { kind: 'section', marker: marker, label: label, value: value };
+            scope = '';
+          }
+        } else {
+          current = {
+            kind: scope === 'attached' ? 'attached' : 'land',
+            marker: marker,
+            label: label,
+            semantic: printedCertificateFieldSemantic_(label),
+            value: value
+          };
+        }
+      }
+      commit();
+      const markerRank = function(marker) {
+        const normalized = removeVietnameseMarks(String(marker || '')).toLowerCase();
+        if (/^\d+$/.test(normalized)) return Number(normalized);
+        const order = ['a', 'b', 'c', 'd', '\u0111', 'e', 'f', 'g', 'h', 'i', 'k', 'l', 'm', 'n'];
+        const exactIndex = order.indexOf(String(marker || '').toLowerCase());
+        if (exactIndex >= 0) return exactIndex;
+        const normalizedIndex = order.indexOf(normalized);
+        return normalizedIndex >= 0 ? normalizedIndex : 999;
+      };
+      layout.land_fields.sort(function(a, b) { return markerRank(a.marker) - markerRank(b.marker); });
+      layout.attached_fields.sort(function(a, b) { return markerRank(a.marker) - markerRank(b.marker); });
+      layout.optional_sections.sort(function(a, b) { return markerRank(a.marker) - markerRank(b.marker); });
+      return layout;
+    }
+
+    function printedCertificateFieldSemantic_(label) {
+      const normalized = removeVietnameseMarks(String(label || '')).toLowerCase().replace(/[^a-z0-9]+/g, ' ').replace(/\s+/g, ' ').trim();
+      if (normalized.indexOf('thua dat so') >= 0) return 'plot';
+      if (normalized.indexOf('ten tai san') >= 0) return 'attached_asset_name';
+      if (normalized.indexOf('dien tich su dung') >= 0) return 'attached_asset_area';
+      if (normalized.indexOf('hinh thuc so huu') >= 0) return 'attached_asset_ownership_form';
+      if (normalized.indexOf('thoi han so huu') >= 0) return 'attached_asset_ownership_term';
+      if (normalized.indexOf('dien tich') >= 0) return 'area';
+      if (normalized.indexOf('loai dat') >= 0 || normalized.indexOf('muc dich su dung') >= 0) return 'usage_purpose';
+      if (normalized.indexOf('thoi han su dung') >= 0) return 'usage_term';
+      if (normalized.indexOf('hinh thuc su dung') >= 0) return 'usage_form';
+      if (normalized.indexOf('dia chi') >= 0) return 'land_address';
+      if (normalized.indexOf('nguon goc su dung') >= 0) return 'usage_origin';
+      return '';
+    }
+
+    function pushPrintedCertificateField(lines, item, realEstate, ocrText) {
+      const re = realEstate || {};
+      let value = item.value || '';
+      if (item.semantic === 'plot') {
+        value = valueOf(re.land_plot_number) + (valueOf(re.map_sheet_number) ? '; ' + t('to ban do so') + ': ' + valueOf(re.map_sheet_number) : '');
+      } else if (item.semantic === 'area') {
+        value = formatAreaWithWords(valueOf(re.area), valueOf(re.area_in_words) || extractAreaWordsFromOcr(ocrText)) || value;
+      } else if (item.semantic === 'usage_purpose') {
+        value = valueOf(re.usage_purpose) || value;
+      } else if (item.semantic === 'usage_term') {
+        value = valueOf(re.usage_term) || value;
+      } else if (item.semantic === 'usage_form') {
+        value = valueOf(re.usage_form) || value;
+      } else if (item.semantic === 'land_address') {
+        value = oneLineCertificateValue(valueOf(re.land_address)) || value;
+      } else if (item.semantic === 'usage_origin') {
+        value = displayUsageOriginValue(valueOf(re.usage_origin)) || value;
+      } else if (item.semantic === 'attached_asset_name') {
+        value = valueOf(re.attached_asset_name) || value;
+      } else if (item.semantic === 'attached_asset_area') {
+        value = normalizeAreaForDisplay(valueOf(re.attached_asset_area)) || value;
+      } else if (item.semantic === 'attached_asset_ownership_form') {
+        value = valueOf(re.attached_asset_ownership_form) || value;
+      } else if (item.semantic === 'attached_asset_ownership_term') {
+        value = valueOf(re.attached_asset_ownership_term) || value;
+      }
+      lines.push('<div class="asset-doc-line">' + escapeHtml(item.marker + '. ' + item.label) + ': ' + escapeHtml(cleanValue(value)) + '</div>');
+    }
+
+    function normalizeCertificatePunctuationForReview_(value) {
+      return String(value || '').replace(/\s+/g, ' ').replace(/\s+([,.;:])/g, '$1').trim();
     }
 
     function valueOf(field) {
@@ -1305,15 +1543,44 @@
           frame.textContent = err.message;
         }
       }
-      runAutoOcrRepairsSequentially_();
+    }
+
+    function scheduleAutoOcrRepairs_() {
+      if (!reviewData || autoOcrPipelineTimer || autoOcrPipelinePromise) return;
+      autoOcrPipelineTimer = setTimeout(function() {
+        autoOcrPipelineTimer = null;
+        autoOcrPipelinePromise = runAutoOcrRepairsSequentially_()
+          .catch(function(err) {
+            console.warn('Auto OCR repair pipeline failed', err);
+          })
+          .finally(function() {
+            autoOcrPipelinePromise = null;
+          });
+      }, 0);
     }
 
     async function runAutoOcrRepairsSequentially_() {
+      recordAutoOcrPipelineStep_('START');
       await autoRepairIdentityIssueDatesFromImageCrops();
+      recordAutoOcrPipelineStep_('IDENTITY_DONE');
       await autoRepairAssetCertificateNumbersFromImageCrops();
+      recordAutoOcrPipelineStep_('CERTIFICATE_NUMBER_DONE');
       await autoRepairAssetRegistryNumbersFromImageCrops();
+      recordAutoOcrPipelineStep_('REGISTRY_NUMBER_DONE');
       await autoRepairAssetIssueDatesFromImageCrops();
+      recordAutoOcrPipelineStep_('ISSUE_DATE_DONE');
       await autoRepairA4CertificateFieldsFromCrops();
+      recordAutoOcrPipelineStep_('LAND_LABEL_FIELDS_DONE');
+    }
+
+    function recordAutoOcrPipelineStep_(stage) {
+      if (String(CASE_ID || '').indexOf('LAB-') !== 0) return;
+      autoA4OcrDebug.push({
+        type: 'AUTO_OCR_PIPELINE',
+        stage: stage,
+        at: new Date().toISOString()
+      });
+      console.info('AUTO_OCR_PIPELINE', stage);
     }
 
     async function autoRepairIdentityIssueDatesFromImageCrops() {
@@ -1520,7 +1787,7 @@
             job.field.ai_value = verification.registry_number;
             job.field.final_value = verification.registry_number;
             job.field.source = verification.verification_mode === 'PAGE_ANCHORED'
-              ? 'AUTO_OCR_LAND_REGISTRY_ANCHORED_PAGE_CROP_CONSENSUS_V2'
+              ? 'AUTO_OCR_LAND_REGISTRY_ANCHORED_PAGE_CROP_CONSENSUS_V5'
               : 'AUTO_OCR_LAND_REGISTRY_CROP_CONSENSUS';
             job.field.confidence = '0.92';
             render();
@@ -1535,7 +1802,7 @@
 
     function needsLandRegistryCropVerification_(field) {
       if (!field || field.manual_value) return false;
-      return cleanValue(field.source).indexOf('AUTO_OCR_LAND_REGISTRY_ANCHORED_PAGE_CROP_CONSENSUS_V2') !== 0;
+      return cleanValue(field.source).indexOf('AUTO_OCR_LAND_REGISTRY_ANCHORED_PAGE_CROP_CONSENSUS_V5') !== 0;
     }
 
     async function autoRepairAssetIssueDatesFromImageCrops() {
@@ -1594,61 +1861,201 @@
         for (let index = 0; index < (reviewData.assets || []).length; index++) {
           const asset = reviewData.assets[index];
           const re = asset && asset.real_estate || {};
-          if (!isNewA4AssetCertificate(asset, getAssetOcrText())) continue;
+          const isNewA4 = isNewA4AssetCertificate(asset, getAssetOcrText());
           const jobs = [
             {
               key: 'usage_purpose',
               path: 'assets[' + index + '].real_estate.usage_purpose',
               field: re.usage_purpose,
-              missing: needsA4GeometryFieldVerification_(re.usage_purpose, 'usage_purpose'),
-              source: 'AUTO_OCR_A4_GEOMETRY_CROP_V2'
+              missing: isNewA4
+                ? needsA4GeometryFieldVerification_(re.usage_purpose, 'usage_purpose')
+                : needsLabeledLandFieldVerification_(re.usage_purpose),
+              source: isNewA4 ? 'AUTO_OCR_A4_GEOMETRY_CROP_V2' : 'AUTO_OCR_LAND_LABEL_CROP_V1'
             },
             {
               key: 'usage_term',
               path: 'assets[' + index + '].real_estate.usage_term',
               field: re.usage_term,
-              missing: needsA4GeometryFieldVerification_(re.usage_term, 'usage_term'),
-              source: 'AUTO_OCR_A4_GEOMETRY_CROP_V2'
+              missing: isNewA4
+                ? needsA4GeometryFieldVerification_(re.usage_term, 'usage_term')
+                : needsLabeledLandFieldVerification_(re.usage_term),
+              source: isNewA4 ? 'AUTO_OCR_A4_GEOMETRY_CROP_V2' : 'AUTO_OCR_LAND_LABEL_CROP_V1'
             },
             {
               key: 'usage_form',
               path: 'assets[' + index + '].real_estate.usage_form',
               field: re.usage_form,
-              missing: needsA4GeometryFieldVerification_(re.usage_form, 'usage_form'),
-              source: 'AUTO_OCR_A4_GEOMETRY_CROP_V2'
+              missing: isNewA4
+                ? needsA4GeometryFieldVerification_(re.usage_form, 'usage_form')
+                : needsLabeledLandFieldVerification_(re.usage_form),
+              source: isNewA4 ? 'AUTO_OCR_A4_GEOMETRY_CROP_V2' : 'AUTO_OCR_LAND_LABEL_CROP_V1'
             }
           ].filter(job => job.missing && !autoOcrDonePaths[job.path]);
           if (!jobs.length) continue;
           jobs.forEach(job => { autoOcrDonePaths[job.path] = true; });
           const files = uniqueReviewFiles_(getFilesForObject(asset, 'asset').concat(getLandCertificateFilesFromOcr_()));
-          const result = await readA4CertificateFieldsFromFiles_(files, {
-            issueDate: false,
-            landFields: true
-          });
+          const result = isNewA4
+            ? await readA4CertificateFieldsFromFiles_(files, {
+                issueDate: false,
+                landFields: true
+              })
+            : { _sources: {} };
+          if (!isNewA4) {
+            for (const job of jobs) {
+              const reading = await readLabeledLandFieldFromFiles_(files, job.key);
+              if (!reading || !reading.value) continue;
+              result[job.key] = reading.value;
+              result._sources[job.key] = reading.source || job.source;
+            }
+          }
+          const saveValues = [];
           for (const job of jobs) {
             const newValue = cleanValue(result && result[job.key]);
             if (!newValue) continue;
             const source = result && result._sources && result._sources[job.key] || job.source;
-            const saved = await api('saveAutoOcrA4LandFieldValue', {
-              fieldPath: job.path,
-              newValue: newValue,
-              currentValue: cleanValue(job.field && (job.field.final_value || job.field.ai_value)),
-              source: source
+            saveValues.push({ job: job, fieldPath: job.path, newValue: newValue, source: source });
+          }
+          if (saveValues.length) {
+            const saved = await api('saveAutoOcrA4LandFieldValues', {
+              values: saveValues.map(function(item) {
+                return { fieldPath: item.fieldPath, newValue: item.newValue, source: item.source };
+              })
             });
-            if (!saved || !saved.ok) continue;
-            job.field.ai_value = newValue;
-            job.field.final_value = newValue;
-            job.field.source = source;
-            job.field.confidence = '0.9';
-            changed = true;
+            if (String(CASE_ID || '').indexOf('LAB-') === 0) {
+              autoA4OcrDebug.push({
+                type: 'LAND_LABEL_FIELDS_SAVE',
+                ok: Boolean(saved && saved.ok),
+                reason: saved && saved.reason || '',
+                saved_count: saved && saved.saved ? saved.saved.length : 0
+              });
+            }
+            if (saved && saved.ok) {
+              saveValues.forEach(function(item) {
+                item.job.field.ai_value = item.newValue;
+                item.job.field.final_value = item.newValue;
+                item.job.field.source = item.source;
+                item.job.field.confidence = '0.9';
+              });
+              changed = true;
+            }
           }
         }
         if (changed) render();
       } catch (err) {
+        if (String(CASE_ID || '').indexOf('LAB-') === 0) {
+          autoA4OcrDebug.push({
+            type: 'AUTO_OCR_PIPELINE',
+            stage: 'LAND_LABEL_FIELDS_ERROR',
+            message: err && err.message ? err.message : String(err)
+          });
+        }
         console.warn('Auto OCR A4 certificate fields failed', err);
       } finally {
         autoA4OcrBusy = false;
       }
+    }
+
+    function needsLabeledLandFieldVerification_(field) {
+      if (!field || field.manual_value) return false;
+      return cleanValue(field.source).indexOf('AUTO_OCR_LAND_LABEL_CROP_V1') !== 0;
+    }
+
+    async function readLabeledLandFieldFromFiles_(files, fieldKey) {
+      for (const file of files || []) {
+        if (!file.file_id) continue;
+        let found = null;
+        await forEachRegistryPageImage_(file, async function(pageImage) {
+          const scaled = await scaleImageForRegistrySuggestion_(pageImage.data_url, 2400);
+          if (!scaled || !scaled.data_url) return true;
+          const suggested = await api('suggestLandTextFieldCropFromImage', {
+            dataUrl: scaled.data_url,
+            fieldKey: fieldKey
+          });
+          if (!suggested || !suggested.ok || !suggested.crop) {
+            autoA4OcrDebug.push({
+              stage: 'label_crop_no_anchor',
+              field: fieldKey,
+              page: pageImage.page_index,
+              region: pageImage.page_region,
+              reason: suggested && suggested.reason || ''
+            });
+            console.info('LAND_LABEL_CROP_NO_ANCHOR', {
+              fieldKey: fieldKey,
+              pageIndex: pageImage.page_index,
+              pageRegion: pageImage.page_region,
+              reason: suggested && suggested.reason || ''
+            });
+            return true;
+          }
+          const crop = {
+            x: Math.round((suggested.crop.x || 0) * scaled.scale_x),
+            y: Math.round((suggested.crop.y || 0) * scaled.scale_y),
+            width: Math.round((suggested.crop.width || 0) * scaled.scale_x),
+            height: Math.round((suggested.crop.height || 0) * scaled.scale_y),
+            reason: suggested.crop.reason || 'vision_land_label_' + fieldKey
+          };
+          const readings = [];
+          for (const colorMode of criticalFieldColorModes_()) {
+            const dataUrl = await cropDataUrlFromImage_(pageImage.data_url, crop, {
+              scale: pageImage.high_resolution ? 1.5 : 3,
+              colorMode: colorMode,
+              enhance: colorMode === 'color'
+            });
+            if (!dataUrl) continue;
+            const read = await api('ocrA4LandCertificateCrop', {
+              dataUrl: dataUrl,
+              cropType: 'land_fields'
+            });
+            const value = cleanValue(read && read[fieldKey]);
+            if (value) readings.push(value);
+          }
+          console.info('LAND_LABEL_CROP_READINGS', {
+            fieldKey: fieldKey,
+            pageIndex: pageImage.page_index,
+            pageRegion: pageImage.page_region,
+            reason: crop.reason,
+            anchor: suggested.crop.anchor_text || '',
+            readings: readings
+          });
+          autoA4OcrDebug.push({
+            stage: 'label_crop_readings',
+            field: fieldKey,
+            page: pageImage.page_index,
+            region: pageImage.page_region,
+            reason: crop.reason,
+            anchor: suggested.crop.anchor_text || '',
+            readings: readings
+          });
+          let value = sameCropTextConsensus_(readings);
+          if (!value) {
+            const aiReadings = [];
+            for (const colorMode of ['color', 'adaptive_bw', 'chroma_ink']) {
+              const dataUrl = await cropDataUrlFromImage_(pageImage.data_url, crop, {
+                scale: pageImage.high_resolution ? 1.5 : 3,
+                colorMode: colorMode
+              });
+              if (!dataUrl) continue;
+              const ai = await api('ocrLandCriticalFieldCropWithAi', {
+                dataUrl: dataUrl,
+                cropType: fieldKey
+              });
+              const aiValue = cleanValue(ai && ai.value);
+              if (aiValue) aiReadings.push(aiValue);
+            }
+            value = sameCropTextConsensus_(aiReadings);
+          }
+          if (value) {
+            const anchor = removeVietnameseMarks(String(suggested.crop.anchor_text || '')).toLowerCase().replace(/[^a-z0-9]+/g, '_');
+            found = {
+              value: value,
+              source: 'AUTO_OCR_LAND_LABEL_CROP_V1' + (anchor ? '_' + anchor : '')
+            };
+          }
+          return !found;
+        });
+        if (found) return found;
+      }
+      return '';
     }
 
     function isMissingA4CertificateTextField_(field) {
@@ -2052,6 +2459,14 @@
           const focusedCrops = crops.filter(crop => crop.reason.indexOf('_focused') >= 0);
           for (const crop of focusedCrops) {
             const focusedReadings = [];
+            const fillProbeDataUrl = await cropDataUrlFromImage_(pageImage.data_url, crop, {
+              scale: pageImage.high_resolution ? 1 : 3,
+              colorMode: 'color',
+              rotation: crop.rotation || 0
+            });
+            const printedFillDetected = fillProbeDataUrl
+              ? await detectPrintedRegistryFillLine_(fillProbeDataUrl)
+              : false;
             for (const colorMode of criticalFieldColorModes_()) {
               const cropDataUrl = await cropDataUrlFromImage_(pageImage.data_url, crop, {
                 scale: pageImage.high_resolution ? 1 : 3,
@@ -2060,11 +2475,15 @@
               });
               if (!cropDataUrl) continue;
               const ocr = await api('ocrLandRegistryCrop', { dataUrl: cropDataUrl });
-              const registry = normalizeRegistryCropReading_(ocr && ocr.registry_number);
+              const registry = normalizeRegistryCropReading_(
+                ocr && ocr.registry_number,
+                printedFillDetected || Boolean(ocr && ocr.printed_fill_detected)
+              );
               if (registry) focusedReadings.push(registry);
             }
             let consensusValue = registrySameCropConsensus_(focusedReadings);
-            if (!consensusValue && /_tight(?:_|$)/.test(String(crop.reason || ''))) {
+            let selectedReadings = focusedReadings;
+            if (/_tight(?:_|$)/.test(String(crop.reason || ''))) {
               const aiReadings = [];
               for (const colorMode of ['color', 'adaptive_bw', 'chroma_ink']) {
                 const cropDataUrl = await cropDataUrlFromImage_(pageImage.data_url, crop, {
@@ -2077,16 +2496,24 @@
                   dataUrl: cropDataUrl,
                   cropType: 'registry_number'
                 });
-                const registry = normalizeRegistryCropReading_(ai && ai.value);
+                const registry = normalizeRegistryCropReading_(ai && ai.value, printedFillDetected);
                 if (registry) aiReadings.push(registry);
               }
-              consensusValue = registrySameCropConsensus_(aiReadings);
-              if (consensusValue) focusedReadings.push(...aiReadings);
+              const aiConsensus = registrySameCropConsensus_(aiReadings);
+              if (aiConsensus) {
+                const cloudComparable = String(consensusValue || '').replace(/[^A-Z0-9]/gi, '');
+                const aiComparable = aiConsensus.replace(/[^A-Z0-9]/gi, '');
+                if (!consensusValue ||
+                    cloudComparable === aiComparable && (aiConsensus.match(/[.\/-]/g) || []).length <= (consensusValue.match(/[.\/-]/g) || []).length) {
+                  consensusValue = aiConsensus;
+                  selectedReadings = aiReadings;
+                }
+              }
             }
             if (consensusValue) {
               const candidate = {
                 value: consensusValue,
-                readings: focusedReadings,
+                readings: selectedReadings,
                 page_index: pageImage.page_index,
                 crop_reason: crop.reason || ''
               };
@@ -2107,7 +2534,11 @@
             });
             if (!cropDataUrl) continue;
             const ocr = await api('ocrLandRegistryCrop', { dataUrl: cropDataUrl });
-            const registry = normalizeRegistryCropReading_(ocr && ocr.registry_number);
+            const printedFillDetected = await detectPrintedRegistryFillLine_(cropDataUrl);
+            const registry = normalizeRegistryCropReading_(
+              ocr && ocr.registry_number,
+              printedFillDetected || Boolean(ocr && ocr.printed_fill_detected)
+            );
             if (registry && ocr && ocr.has_registry_label) {
               fallbackVotes[file.file_id + ':' + pageImage.page_index] = registry;
             }
@@ -2246,11 +2677,90 @@
       });
     }
 
-    function normalizeRegistryCropReading_(value) {
-      const registry = cleanValue(value).replace(/\s+/g, '').toUpperCase();
+    function normalizeRegistryCropReading_(value, printedFillDetected) {
+      let registry = cleanValue(value).replace(/\s+/g, '').toUpperCase();
+      if (printedFillDetected) registry = registry.replace(/\./g, '');
       return /^(?:CS|CT|CN|CH|CL|HX|VP|DC|DL)[-.]?[0-9A-Z.\/-]{2,24}$/i.test(registry)
         ? registry
         : '';
+    }
+
+    function detectPrintedRegistryFillLine_(dataUrl) {
+      return new Promise(function(resolve) {
+        const img = new Image();
+        img.onload = function() {
+          const canvas = document.createElement('canvas');
+          const maxWidth = 1200;
+          const scale = Math.min(1, maxWidth / Math.max(1, img.naturalWidth));
+          canvas.width = Math.max(1, Math.round(img.naturalWidth * scale));
+          canvas.height = Math.max(1, Math.round(img.naturalHeight * scale));
+          const ctx = canvas.getContext('2d');
+          ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+          const pixels = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
+          let coloredInkPixels = 0;
+          for (let p = 0; p < pixels.length; p += 4) {
+            const maxChannel = Math.max(pixels[p], pixels[p + 1], pixels[p + 2]);
+            const minChannel = Math.min(pixels[p], pixels[p + 1], pixels[p + 2]);
+            const gray = pixels[p] * 0.299 + pixels[p + 1] * 0.587 + pixels[p + 2] * 0.114;
+            if (maxChannel - minChannel >= 48 && gray < 190) coloredInkPixels++;
+          }
+          const hasColoredInk = coloredInkPixels >= Math.max(12, canvas.width * canvas.height * 0.00008);
+          const minimumDots = hasColoredInk ? 3 : 5;
+          const minY = Math.floor(canvas.height * 0.28);
+          const maxRun = Math.max(3, Math.round(canvas.width * 0.016));
+          for (let y = minY; y < canvas.height; y++) {
+            const runs = [];
+            let start = -1;
+            for (let x = 0; x < canvas.width; x++) {
+              const offset = (y * canvas.width + x) * 4;
+              const red = pixels[offset];
+              const green = pixels[offset + 1];
+              const blue = pixels[offset + 2];
+              const gray = red * 0.299 + green * 0.587 + blue * 0.114;
+              const neutralInk = Math.max(red, green, blue) - Math.min(red, green, blue) < 42;
+              const dark = gray < 165 && neutralInk;
+              if (dark && start < 0) start = x;
+              if ((!dark || x === canvas.width - 1) && start >= 0) {
+                const end = dark && x === canvas.width - 1 ? x : x - 1;
+                const width = end - start + 1;
+                if (width >= 1 && width <= maxRun) runs.push({ start: start, end: end, center: (start + end) / 2 });
+                start = -1;
+              }
+            }
+            if (runs.length < minimumDots) continue;
+            for (let from = 0; from <= runs.length - minimumDots; from++) {
+              const sequence = runs.slice(from, Math.min(runs.length, from + 12));
+              const gaps = [];
+              for (let i = 1; i < sequence.length; i++) gaps.push(sequence[i].center - sequence[i - 1].center);
+              const usable = gaps.filter(function(gap) {
+                return gap >= canvas.width * 0.006 && gap <= canvas.width * 0.075;
+              });
+              if (usable.length < minimumDots - 1) continue;
+              const average = usable.reduce(function(sum, gap) { return sum + gap; }, 0) / usable.length;
+              const regular = usable.filter(function(gap) {
+                return gap >= average * 0.5 && gap <= average * 1.7;
+              }).length;
+              const span = sequence[sequence.length - 1].center - sequence[0].center;
+              if (regular >= minimumDots - 1 && span >= canvas.width * (hasColoredInk ? 0.06 : 0.12)) {
+                console.info('LAND_REGISTRY_PRINTED_FILL', {
+                  detected: true,
+                  hasColoredInk: hasColoredInk,
+                  dots: sequence.length,
+                  spanRatio: Math.round(span / canvas.width * 1000) / 1000
+                });
+                return resolve(true);
+              }
+            }
+          }
+          console.info('LAND_REGISTRY_PRINTED_FILL', {
+            detected: false,
+            hasColoredInk: hasColoredInk
+          });
+          resolve(false);
+        };
+        img.onerror = function() { resolve(false); };
+        img.src = dataUrl;
+      });
     }
 
     async function forEachRegistryPageImage_(file, callback) {
@@ -2277,12 +2787,39 @@
         }
         return;
       }
-      if (!window.pdfjsLib) return;
+      if (!window.pdfjsLib) {
+        if (String(CASE_ID || '').indexOf('LAB-') === 0) {
+          autoA4OcrDebug.push({
+            type: 'PDF_PAGE_RENDER',
+            stage: 'PDFJS_UNAVAILABLE',
+            file_id: file.file_id
+          });
+        }
+        return;
+      }
       const pdfData = await api('getCasePdfData', { fileId: file.file_id });
       const bytes = base64ToUint8Array_(pdfData && pdfData.base64);
-      if (!bytes.length) return;
+      if (!bytes.length) {
+        if (String(CASE_ID || '').indexOf('LAB-') === 0) {
+          autoA4OcrDebug.push({
+            type: 'PDF_PAGE_RENDER',
+            stage: 'PDF_DATA_EMPTY',
+            file_id: file.file_id
+          });
+        }
+        return;
+      }
       const pdf = await window.pdfjsLib.getDocument({ data: bytes, disableWorker: true }).promise;
       const pageCount = Math.min(Number(pdf.numPages || 0), 10);
+      if (String(CASE_ID || '').indexOf('LAB-') === 0) {
+        autoA4OcrDebug.push({
+          type: 'PDF_PAGE_RENDER',
+          stage: 'PDF_LOADED',
+          file_id: file.file_id,
+          bytes: bytes.length,
+          pages: pageCount
+        });
+      }
       for (let pageIndex = 1; pageIndex <= pageCount; pageIndex++) {
         const page = await pdf.getPage(pageIndex);
         const baseViewport = page.getViewport({ scale: 1 });
@@ -2709,10 +3246,25 @@
       ctx.putImageData(imgData, 0, 0);
     }
 
-    function autoOrientReviewImage(img) {
+    async function autoOrientReviewImage(img) {
       const frame = img.closest('.source-image-frame');
       const degrees = Number(frame && frame.getAttribute('data-ocr-rotation') || 0);
-      setReviewImageRotation(img, degrees);
+      if (degrees) {
+        setReviewImageRotation(img, degrees);
+        return;
+      }
+      const cacheKey = 'preview:' + String(frame && frame.getAttribute('data-file-id') || img.src || '');
+      let analysis = landPageGeometryCache[cacheKey] || null;
+      if (!analysis) {
+        try {
+          const scaled = await scaleImageForRegistrySuggestion_(img.src, 2400);
+          analysis = scaled && scaled.data_url ? await api('analyzeLandPageImage', { dataUrl: scaled.data_url }) : {};
+          landPageGeometryCache[cacheKey] = analysis || {};
+        } catch (err) {
+          analysis = {};
+        }
+      }
+      setReviewImageRotation(img, Number(analysis && analysis.rotation || 0));
     }
 
     function rotateReviewImage(frameId, delta) {

@@ -496,6 +496,30 @@ const dataMergeContext = { console };
 vm.createContext(dataMergeContext);
 vm.runInContext(fs.readFileSync('DataMergeService.gs', 'utf8'), dataMergeContext);
 vm.runInContext(fs.readFileSync('ReviewService.gs', 'utf8'), dataMergeContext);
+assert.strictEqual(
+  dataMergeContext.normalizeRealEstateUsageForm_('Sử dụng riêng 2 Đường bê tông'),
+  'Sử dụng riêng'
+);
+assert.strictEqual(
+  dataMergeContext.normalizeRealEstateUsageForm_('Sử dụng riêng: 100 m²; Sử dụng chung: 20 m²'),
+  'Sử dụng riêng: 100 m²; Sử dụng chung: 20 m²'
+);
+assert.strictEqual(
+  dataMergeContext.isVerifiedLandLabelField_({ source: 'AUTO_OCR_LAND_LABEL_CROP_V1' }),
+  true
+);
+assert.strictEqual(
+  dataMergeContext.isVerifiedA4GeometryField_({ source: 'AUTO_OCR_LAND_LABEL_CROP_V1' }),
+  false
+);
+const protectedLabelField = {
+  ai_value: 'Focused crop value',
+  final_value: 'Focused crop value',
+  manual_value: '',
+  source: 'AUTO_OCR_LAND_LABEL_CROP_V1'
+};
+dataMergeContext.replaceFromTrustedLandBlock_(protectedLabelField, 'Whole OCR value');
+assert.strictEqual(protectedLabelField.final_value, 'Focused crop value');
 const productionA4FullRegionFields = dataMergeContext.extractRealEstateIndexedLandFields_(newA4FullAndLeftRegions);
 assert.strictEqual(productionA4FullRegionFields._quality.reason, 'vision_region_full');
 assert.strictEqual(productionA4FullRegionFields.usage_purpose, 'Dat o tai nong thon: 400,0 m²; Dat trong cay lau nam: 1041,9 m²');
@@ -1073,6 +1097,74 @@ assert.strictEqual(
   oldCertificateFields.usage_origin,
   'Nhận chuyển nhượng đất được Nhà nước giao đất có thu tiền sử dụng đất'
 );
+const variableOldCertificateText = `
+GIẤY CHỨNG NHẬN
+QUYỀN SỬ DỤNG ĐẤT, QUYỀN SỞ HỮU NHÀ Ở VÀ TÀI SẢN KHÁC GẮN LIỀN VỚI ĐẤT
+I. Người sử dụng đất, chủ sở hữu nhà ở và tài sản khác gắn liền với đất
+II. Thửa đất, nhà ở và tài sản khác gắn liền với đất
+1. Thửa đất:
+a) Thửa đất số: 452; tờ bản đồ số: 10
+b) Diện tích: 1429,4m2
+c) Loại đất: Đất ở 884,9m2; đất trồng cây lâu năm 544,5m2
+d) Thời hạn sử dụng: Đất ở: Lâu dài; Đất trồng cây lâu năm: Đến ngày 31/12/2064
+đ) Hình thức sử dụng: Sử dụng riêng
+e) Địa chỉ: Thôn Sấu Thượng, xã Thanh Cao, huyện Lương Sơn, tỉnh Hòa Bình
+f) Nguồn gốc sử dụng: Nhận chuyển nhượng đất được Công nhận QSDĐ như giao đất có thu tiền sử dụng đất
+2. Nhà ở: -/-
+3. Công trình xây dựng khác: -/-
+4. Ghi chú: Không
+III. Sơ đồ thửa đất, nhà ở và tài sản khác gắn liền với đất
+IV. Những thay đổi sau khi cấp Giấy chứng nhận
+`;
+assert.strictEqual(
+  dataMergeContext.extractKnownCertificateTitleFromText_(variableOldCertificateText),
+  'Giấy chứng nhận quyền sử dụng đất, quyền sở hữu nhà ở và tài sản khác gắn liền với đất'
+);
+assert.strictEqual(dataMergeContext.isNewA4LandCertificateText_(variableOldCertificateText), false);
+assert.strictEqual(
+  dataMergeContext.classifyLandCertificatePageText_(variableOldCertificateText).layout,
+  'gcn_qsdd_qsh_nha_o_va_tsk_change'
+);
+const variableOldFields = dataMergeContext.extractRealEstateIndexedLandFields_(variableOldCertificateText);
+assert.strictEqual(variableOldFields.usage_purpose, 'Đất ở 884,9 m²; đất trồng cây lâu năm 544,5 m²');
+assert.strictEqual(variableOldFields.usage_term, 'Đất ở: Lâu dài; Đất trồng cây lâu năm: Đến ngày 31/12/2064');
+assert.ok(variableOldFields.usage_origin.indexOf('Nhận chuyển nhượng đất được Công nhận QSDĐ') === 0);
+assert.strictEqual(
+  dataMergeContext.shouldReplaceCertificateTitleFromOcr_(
+    { final_value: 'Giấy chứng nhận quyền sử dụng đất, quyền sở hữu tài sản gắn liền với đất', manual_value: '' },
+    'Giấy chứng nhận quyền sử dụng đất, quyền sở hữu nhà ở và tài sản khác gắn liền với đất'
+  ),
+  true
+);
+const repairedVariableTitleReview = {
+  assets: [{
+    certificate_title: {
+      ai_value: 'Giấy chứng nhận quyền sử dụng đất, quyền sở hữu tài sản gắn liền với đất',
+      manual_value: '',
+      final_value: 'Giấy chứng nhận quyền sử dụng đất, quyền sở hữu tài sản gắn liền với đất'
+    }
+  }]
+};
+dataMergeContext.repairAssetCertificateTitleInReviewJson(repairedVariableTitleReview, variableOldCertificateText);
+assert.strictEqual(
+  repairedVariableTitleReview.assets[0].certificate_title.final_value,
+  'Giấy chứng nhận quyền sử dụng đất, quyền sở hữu nhà ở và tài sản khác gắn liền với đất'
+);
+const staleMisclassifiedGeometryReview = {
+  assets: [{
+    real_estate: {
+      usage_purpose: { ai_value: 'Đất ở 884,9 m², đất trồng cây lâu năm 544,5 m²', manual_value: '', final_value: 'Đất ở 884,9 m², đất trồng cây lâu năm 544,5 m²', source: 'AUTO_OCR_A4_GEOMETRY_CROP_V2' },
+      usage_term: { ai_value: 'Đất ở: Lâu dài; Đất trồng cây lâu năm: Đến ngày 31/12/2064 B', manual_value: '', final_value: 'Đất ở: Lâu dài; Đất trồng cây lâu năm: Đến ngày 31/12/2064 B', source: 'AUTO_OCR_A4_GEOMETRY_CROP_V2' },
+      usage_form: { ai_value: 'Sử dụng riêng Đường', manual_value: '', final_value: 'Sử dụng riêng Đường', source: 'AUTO_OCR_A4_GEOMETRY_CROP_V2' }
+    }
+  }]
+};
+dataMergeContext.repairAssetUsagePurposeInReviewJson(staleMisclassifiedGeometryReview, variableOldCertificateText);
+dataMergeContext.repairAssetUsageTermInReviewJson(staleMisclassifiedGeometryReview, variableOldCertificateText);
+dataMergeContext.repairAssetUsageFormInReviewJson(staleMisclassifiedGeometryReview, variableOldCertificateText);
+assert.strictEqual(staleMisclassifiedGeometryReview.assets[0].real_estate.usage_term.final_value, 'Đất ở: Lâu dài; Đất trồng cây lâu năm: Đến ngày 31/12/2064');
+assert.strictEqual(staleMisclassifiedGeometryReview.assets[0].real_estate.usage_form.final_value, 'Sử dụng riêng');
+assert.strictEqual(staleMisclassifiedGeometryReview.assets[0].real_estate.usage_form.source, 'OCR_INDEXED_ASSET_TEXT_RECOVERED_FROM_WRONG_LAYOUT');
 const oldCertificateReview = {
   assets: [{
     real_estate: {
@@ -1502,6 +1594,59 @@ const splitRegistrySuggestionAnnotation = {
 const splitRegistrySuggestion = dataMergeContext.suggestLandRegistryCodeCropFromVisionAnnotation_(splitRegistrySuggestionAnnotation);
 assert.strictEqual(splitRegistrySuggestion.anchor_text, 'CNQ.344');
 assert.ok(splitRegistrySuggestion.code_box.width > 55);
+const printedRegistryFillAnnotation = {
+  pages: [{
+    blocks: [{
+      paragraphs: [{
+        words: [{
+          symbols: Array.from({ length: 7 }, function(_, index) {
+            const x = 100 + index * 14;
+            return {
+              text: '.',
+              boundingBox: { vertices: [{ x, y: 80 }, { x: x + 3, y: 80 }, { x: x + 3, y: 84 }, { x, y: 84 }] }
+            };
+          })
+        }]
+      }]
+    }]
+  }]
+};
+assert.strictEqual(dataMergeContext.hasPrintedRegistryFillLineFromAnnotation_(printedRegistryFillAnnotation), true);
+assert.strictEqual(dataMergeContext.normalizeRegistryCodeValue_('CN.51'), 'CN.51');
+assert.strictEqual(dataMergeContext.normalizeRegistryCodeValue_('CN.51', true), 'CN51');
+const labeledLandFieldAnnotation = {
+  pages: [{
+    width: 1200,
+    height: 1600,
+    blocks: [{
+      paragraphs: [{
+        words: [
+          ['c.', 80, 300], ['Loại', 120, 300], ['đất:', 200, 300], ['Đất', 300, 300], ['ở', 370, 300], ['100m2', 410, 300],
+          ['d.', 80, 390], ['Thời', 120, 390], ['hạn', 205, 390], ['sử', 270, 390], ['dụng:', 320, 390], ['Lâu', 430, 390], ['dài', 500, 390]
+        ].map(function(item) {
+          return {
+            symbols: item[0].split('').map(function(char) { return { text: char }; }),
+            boundingBox: {
+              vertices: [
+                { x: item[1], y: item[2] },
+                { x: item[1] + 60, y: item[2] },
+                { x: item[1] + 60, y: item[2] + 32 },
+                { x: item[1], y: item[2] + 32 }
+              ]
+            }
+          };
+        })
+      }]
+    }]
+  }]
+};
+const landTypeCrop = dataMergeContext.suggestLandTextFieldCropFromVisionAnnotation_(labeledLandFieldAnnotation, 'usage_purpose');
+assert.strictEqual(landTypeCrop.reason, 'vision_land_label_usage_purpose');
+assert.ok(landTypeCrop.height > 30 && landTypeCrop.height < 150);
+assert.strictEqual(
+  dataMergeContext.extractA4LandFieldsFromFocusedCrop_('đ. Mục đích sử dụng: Đất ở tại nông thôn').usage_purpose,
+  'Đất ở tại nông thôn'
+);
 
 const certificateSuggestionAnnotation = {
   fullTextAnnotation: {
@@ -1561,6 +1706,10 @@ vm.runInContext([
   extractClientFunction('cleanValue'),
   extractClientFunction('valueOf'),
   extractClientFunction('removeVietnameseMarks'),
+  extractClientFunction('certificateGenerationFromCompleteTitleForReview_'),
+  extractClientFunction('normalizeCertificatePunctuationForReview_'),
+  extractClientFunction('printedCertificateFieldSemantic_'),
+  extractClientFunction('extractPrintedCertificateLayout'),
   extractClientFunction('a4AttachedAssetSectionState'),
   extractClientFunction('getLandCertificateFilesFromOcr_'),
   extractClientFunction('clampCropBox_'),
@@ -1572,6 +1721,38 @@ vm.runInContext([
   extractClientFunction('sameCropTextConsensus_'),
   extractClientFunction('chooseFocusedRegistryCandidate_')
 ].join('\n'), reviewClientContext);
+assert.strictEqual(
+  reviewClientContext.certificateGenerationFromCompleteTitleForReview_(
+    'Giấy chứng nhận quyền sử dụng đất, quyền sở hữu nhà ở và tài sản khác gắn liền với đất'
+  ),
+  'gcn_qsdd_qsh_nha_o_va_tsk'
+);
+const variablePrintedLayout = reviewClientContext.extractPrintedCertificateLayout(
+  variableOldCertificateText,
+  variableOldCertificateText
+);
+assert.strictEqual(variablePrintedLayout.land_fields.map(item => item.label).join('|'), [
+  'Thửa đất số',
+  'Diện tích',
+  'Loại đất',
+  'Thời hạn sử dụng',
+  'Hình thức sử dụng',
+  'Địa chỉ',
+  'Nguồn gốc sử dụng'
+].join('|'));
+assert.strictEqual(variablePrintedLayout.optional_sections.map(item => item.label).join('|'), 'Nhà ở|Công trình xây dựng khác|Ghi chú');
+assert.strictEqual(variablePrintedLayout.map_heading.indexOf('III.'), 0);
+assert.strictEqual(variablePrintedLayout.change_heading.indexOf('IV.'), 0);
+assert.strictEqual(reviewClientContext.normalizeRegistryCropReading_('CN.5.1', true), 'CN51');
+assert.strictEqual(reviewClientContext.normalizeRegistryCropReading_('CN.5.1', false), 'CN.5.1');
+const printedA4Layout = reviewClientContext.extractPrintedCertificateLayout(
+  labeledA4AttachedAssetText,
+  labeledA4AttachedAssetText
+);
+assert.ok(printedA4Layout.owner_heading.indexOf('1.') === 0);
+assert.ok(printedA4Layout.land_section_heading.indexOf('2.') === 0);
+assert.ok(printedA4Layout.attached_heading.indexOf('3.') === 0);
+assert.strictEqual(printedA4Layout.attached_fields.map(item => item.label).join('|'), 'Tên tài sản|Diện tích sử dụng|Hình thức sở hữu|Thời hạn sở hữu');
 assert.strictEqual(
   reviewClientContext.a4AttachedAssetSectionState(
     {
@@ -1761,6 +1942,14 @@ assert.ok(
 assert.ok(
   fs.readFileSync('LabTraining.gs', 'utf8').includes('sendReviewEmail(caseId, recipient, reviewUrl)'),
   'OCR lab handler must send the generated review URL to the submitted email'
+);
+assert.ok(
+  fs.readFileSync('ReviewWebApp.gs', 'utf8').includes("action === 'suggestLandTextFieldCropFromImage'"),
+  'Review API must route focused land-label crop suggestions'
+);
+assert.ok(
+  fs.readFileSync('ReviewWebApp.gs', 'utf8').includes("action === 'saveAutoOcrA4LandFieldValues'"),
+  'Review API must route atomic focused land-label persistence'
 );
 assert.deepStrictEqual(
   JSON.parse(JSON.stringify(ocrServiceContext.visionBoundingRectForRegions_({

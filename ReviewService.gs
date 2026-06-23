@@ -46,6 +46,7 @@ function repairReviewDataFromFullOcr_(data, caseId) {
   const fullOcr = getFullOcrTextMapsForCase_(caseId, data);
   repairIdentityIssueDatesInReviewJson(data, fullOcr.byFileName);
   repairAssetCertificateTitleInReviewJson(data, fullOcr.assetText);
+  repairUnsafeLandCertificateFieldsInReviewJson(data, fullOcr.assetText);
   repairAssetCertificateCodesInReviewJson(data, fullOcr.assetText);
   repairAssetIssueDateInReviewJson(data, fullOcr.assetText);
   repairAssetIssuingAuthorityInReviewJson(data, fullOcr.assetText);
@@ -60,7 +61,6 @@ function repairReviewDataFromFullOcr_(data, caseId) {
   repairAssetPostIssueChangesInReviewJson(data, fullOcr.assetText, fullOcr.assetTextByFileName);
   repairAssetCertificateNoteInReviewJson(data, fullOcr.assetText);
   repairAssetAttachedAssetsInReviewJson(data, fullOcr.assetText, fullOcr.assetTextByFileName);
-  repairUnsafeLandCertificateFieldsInReviewJson(data, fullOcr.assetText);
   repairAssetOwnerIdentityInReviewJson(data, fullOcr.assetText, fullOcr.assetTextByFileName);
   repairAssetOwnerAddressInReviewJson(data, fullOcr.assetText);
   return data;
@@ -260,11 +260,13 @@ function ocrLandRegistryCrop(caseId, token, dataUrl) {
   }, 2);
   const annotation = response.responses && response.responses[0] && response.responses[0].fullTextAnnotation;
   const text = annotation && annotation.text || '';
-  const registry = extractLandRegistryNumberFromCropText_(text);
+  const printedFillDetected = hasPrintedRegistryFillLineFromAnnotation_(annotation);
+  const registry = extractLandRegistryNumberFromCropText_(text, printedFillDetected);
   return {
     registry_number: registry,
     raw_text: text,
     has_registry_label: hasRegistryLabelInCropText_(text),
+    printed_fill_detected: printedFillDetected,
     character_evidence: collectRegistryCharacterEvidence_(annotation),
     reason: registry ? 'OK' : 'NO_FULL_REGISTRY_NUMBER'
   };
@@ -304,6 +306,49 @@ function collectRegistryCharacterEvidence_(annotation) {
     });
   });
   return out.slice(0, 8);
+}
+
+function hasPrintedRegistryFillLineFromAnnotation_(annotation) {
+  const dots = [];
+  (annotation && annotation.pages || []).forEach(function(page) {
+    (page.blocks || []).forEach(function(block) {
+      (block.paragraphs || []).forEach(function(paragraph) {
+        (paragraph.words || []).forEach(function(word) {
+          (word.symbols || []).forEach(function(symbol) {
+            if (String(symbol.text || '') !== '.') return;
+            const vertices = symbol.boundingBox && symbol.boundingBox.vertices || [];
+            if (!vertices.length) return;
+            const xs = vertices.map(function(v) { return Number(v.x || 0); });
+            const ys = vertices.map(function(v) { return Number(v.y || 0); });
+            dots.push({
+              x: (Math.min.apply(null, xs) + Math.max.apply(null, xs)) / 2,
+              y: (Math.min.apply(null, ys) + Math.max.apply(null, ys)) / 2,
+              height: Math.max.apply(null, ys) - Math.min.apply(null, ys)
+            });
+          });
+        });
+      });
+    });
+  });
+  if (dots.length < 4) return false;
+  for (let i = 0; i < dots.length; i++) {
+    const row = dots.filter(function(dot) {
+      return Math.abs(dot.y - dots[i].y) <= Math.max(4, dots[i].height * 0.8);
+    }).sort(function(a, b) { return a.x - b.x; });
+    if (row.length < 4) continue;
+    const gaps = [];
+    for (let j = 1; j < row.length; j++) {
+      const gap = row[j].x - row[j - 1].x;
+      if (gap > 0) gaps.push(gap);
+    }
+    if (gaps.length < 3) continue;
+    const average = gaps.reduce(function(sum, gap) { return sum + gap; }, 0) / gaps.length;
+    const regular = gaps.filter(function(gap) {
+      return gap >= average * 0.45 && gap <= average * 1.8;
+    }).length;
+    if (regular >= 3) return true;
+  }
+  return false;
 }
 
 function ocrA4LandCertificateCrop(caseId, token, dataUrl, cropType) {
@@ -362,12 +407,20 @@ function ocrA4LandCertificateCrop(caseId, token, dataUrl, cropType) {
     reason: result.reason,
     excerpt: text.slice(0, 300)
   });
+  console.log(JSON.stringify({
+    action: 'LAND_LABEL_CROP_OCR',
+    crop_type: cropType || '',
+    usage_purpose: result.usage_purpose,
+    usage_term: result.usage_term,
+    usage_form: result.usage_form,
+    excerpt: text.slice(0, 180)
+  }));
   return result;
 }
 
 function ocrLandCriticalFieldCropWithAi(caseId, token, dataUrl, cropType) {
   assertValidToken_(caseId, token);
-  const allowed = ['certificate_number', 'registry_number', 'issue_date'];
+  const allowed = ['certificate_number', 'registry_number', 'issue_date', 'usage_purpose', 'usage_term', 'usage_form'];
   if (allowed.indexOf(String(cropType || '')) < 0) return { value: '', reason: 'UNSUPPORTED_CROP_TYPE' };
   if (!/^data:image\/[a-zA-Z0-9.+-]+;base64,/.test(String(dataUrl || ''))) {
     return { value: '', reason: 'INVALID_IMAGE_DATA' };
@@ -377,7 +430,10 @@ function ocrLandCriticalFieldCropWithAi(caseId, token, dataUrl, cropType) {
   const instructions = {
     certificate_number: 'Transcribe only the printed certificate serial, usually a short letter prefix followed by 6 to 9 digits. Do not return the registry number.',
     registry_number: 'Transcribe only the handwritten or printed value after the registry label. Preserve visible isolated punctuation and omit the surrounding printed dotted fill line.',
-    issue_date: 'Transcribe only the complete certificate issue date from the line containing ngay, thang, nam. Return it as DD/MM/YYYY.'
+    issue_date: 'Transcribe only the complete certificate issue date from the line containing ngay, thang, nam. Return it as DD/MM/YYYY.',
+    usage_purpose: 'Transcribe only the complete value after the printed land-type or usage-purpose label. Preserve all land types, quantities, punctuation, and line continuations.',
+    usage_term: 'Transcribe only the complete value after the printed usage-term label. Preserve all dates, punctuation, and line continuations.',
+    usage_form: 'Transcribe only the complete value after the printed usage-form label. Do not include adjacent map, signature, date, or other field text.'
   };
   const payload = {
     model: PropertiesService.getScriptProperties().getProperty('OPENAI_MODEL') || CONFIG.OPENAI_MODEL_DEFAULT,
@@ -421,6 +477,9 @@ function ocrLandCriticalFieldCropWithAi(caseId, token, dataUrl, cropType) {
   if (cropType === 'certificate_number') value = normalizeCertificateSerialValue_(value);
   if (cropType === 'registry_number') value = normalizeRegistryCodeValue_(value);
   if (cropType === 'issue_date') value = normalizeDateValue_(value);
+  if (cropType === 'usage_purpose') value = cleanupIndexedCertificateValue_(value);
+  if (cropType === 'usage_term') value = normalizeRealEstateUsageTerm_(cleanupIndexedCertificateValue_(value));
+  if (cropType === 'usage_form') value = normalizeRealEstateUsageForm_(cleanupIndexedCertificateValue_(value));
   return { value: value, reason: value ? 'OK' : 'UNREADABLE' };
 }
 
@@ -436,8 +495,12 @@ function extractLandCertificateNumberFromCropText_(text) {
 
 function extractA4LandFieldsFromFocusedCrop_(text) {
   const source = String(text || '');
+  const landType = findSemanticLandFieldValue_(source, ['loai dat']);
+  const usagePurpose = findSemanticLandFieldValue_(source, ['muc dich su dung']);
   return {
-    usage_purpose: normalizeLandTypeAreaUnits_(cleanupIndexedCertificateValue_(findSemanticLandFieldValue_(source, ['loai dat']))),
+    usage_purpose: landType
+      ? normalizeLandTypeAreaUnits_(cleanupIndexedCertificateValue_(landType))
+      : cleanupIndexedCertificateValue_(usagePurpose),
     usage_term: normalizeRealEstateUsageTerm_(cleanupIndexedCertificateValue_(findSemanticLandFieldValue_(source, ['thoi han su dung']))),
     usage_form: normalizeRealEstateUsageForm_(cleanupIndexedCertificateValue_(findSemanticLandFieldValue_(source, ['hinh thuc su dung'])))
   };
@@ -482,6 +545,126 @@ function analyzeLandPageImage(caseId, token, dataUrl) {
     page_height: normalizedHeight,
     word_count: wordCount,
     reason: annotation ? 'OK' : 'NO_TEXT'
+  };
+}
+
+function suggestLandTextFieldCropFromImage(caseId, token, dataUrl, fieldKey) {
+  assertValidToken_(caseId, token);
+  const apiKey = PropertiesService.getScriptProperties().getProperty(CONFIG.CLOUD_VISION_API_KEY_PROPERTY);
+  if (!apiKey) return { ok: false, reason: 'MISSING_CLOUD_VISION_API_KEY' };
+  const match = String(dataUrl || '').match(/^data:image\/[a-zA-Z0-9.+-]+;base64,(.+)$/);
+  if (!match) return { ok: false, reason: 'INVALID_IMAGE_DATA' };
+  const response = withRetry('Vision suggest land text field crop ' + String(fieldKey || ''), function() {
+    const res = UrlFetchApp.fetch('https://vision.googleapis.com/v1/images:annotate?key=' + encodeURIComponent(apiKey), {
+      method: 'post',
+      contentType: 'application/json',
+      payload: JSON.stringify({
+        requests: [{
+          image: { content: match[1] },
+          features: [{ type: 'DOCUMENT_TEXT_DETECTION' }],
+          imageContext: { languageHints: ['vi', 'en'] }
+        }]
+      }),
+      muteHttpExceptions: true
+    });
+    if (res.getResponseCode() >= 300) throw new Error(res.getContentText());
+    return JSON.parse(res.getContentText());
+  }, 2);
+  const annotation = response.responses && response.responses[0] && response.responses[0].fullTextAnnotation;
+  const crop = suggestLandTextFieldCropFromVisionAnnotation_(annotation, fieldKey);
+  console.log(JSON.stringify({
+    action: 'LAND_LABEL_CROP_SUGGEST',
+    field_key: String(fieldKey || ''),
+    found: Boolean(crop),
+    reason: crop && crop.reason || '',
+    anchor: crop && crop.anchor_text || ''
+  }));
+  return crop ? { ok: true, crop: crop } : { ok: false, reason: 'LABEL_NOT_FOUND' };
+}
+
+function suggestLandTextFieldCropFromVisionAnnotation_(annotation, fieldKey) {
+  const aliasesByField = {
+    usage_purpose: [['loai', 'dat'], ['muc', 'dich', 'su', 'dung']],
+    usage_term: [['thoi', 'han', 'su', 'dung']],
+    usage_form: [['hinh', 'thuc', 'su', 'dung']],
+    usage_origin: [['nguon', 'goc', 'su', 'dung']]
+  };
+  const allAliases = [].concat(
+    aliasesByField.usage_purpose,
+    aliasesByField.usage_term,
+    aliasesByField.usage_form,
+    aliasesByField.usage_origin,
+    [['thua', 'dat', 'so'], ['dien', 'tich'], ['dia', 'chi']]
+  );
+  const aliases = aliasesByField[fieldKey] || [];
+  if (!aliases.length) return null;
+  const words = collectVisionWords_(annotation);
+  const normalizedWords = words.map(function(word) {
+    return removeVietnameseAccents_(String(word.text || '')).toLowerCase().replace(/[^a-z0-9]+/g, '');
+  });
+  function matchAliasAt(index, alias) {
+    if (index + alias.length > normalizedWords.length) return false;
+    for (let j = 0; j < alias.length; j++) {
+      if (normalizedWords[index + j] !== alias[j]) return false;
+    }
+    return true;
+  }
+  let startIndex = -1;
+  let matchedAlias = null;
+  for (let i = 0; i < words.length && startIndex < 0; i++) {
+    for (let a = 0; a < aliases.length; a++) {
+      if (matchAliasAt(i, aliases[a])) {
+        startIndex = i;
+        matchedAlias = aliases[a];
+        break;
+      }
+    }
+  }
+  if (startIndex < 0 || !matchedAlias) return null;
+  const labelWords = words.slice(startIndex, startIndex + matchedAlias.length);
+  const labelBox = mergeVisionRects_(labelWords.map(function(word) { return word.box; }));
+  let nextLabelIndex = -1;
+  for (let i = startIndex + matchedAlias.length; i < words.length; i++) {
+    const candidate = words[i];
+    if (candidate.pageIndex !== words[startIndex].pageIndex) break;
+    let matched = false;
+    for (let a = 0; a < allAliases.length; a++) {
+      if (matchAliasAt(i, allAliases[a])) {
+        matched = true;
+        break;
+      }
+    }
+    if (!matched) continue;
+    if (candidate.box.y > labelBox.y + labelBox.height * 0.45 ||
+        Math.abs(candidate.box.y - labelBox.y) <= labelBox.height * 0.45 && candidate.box.x > labelBox.x + labelBox.width) {
+      nextLabelIndex = i;
+      break;
+    }
+  }
+  const pageWidth = words[startIndex].pageWidth;
+  const pageHeight = words[startIndex].pageHeight;
+  const padX = Math.max(10, Math.round(labelBox.height * 0.8));
+  const padY = Math.max(8, Math.round(labelBox.height * 0.7));
+  const x = Math.max(0, Math.round(labelBox.x - padX));
+  const y = Math.max(0, Math.round(labelBox.y - padY));
+  let right = pageWidth;
+  let bottom = Math.min(pageHeight, Math.round(labelBox.y + labelBox.height * 4.2));
+  if (nextLabelIndex >= 0) {
+    const nextBox = words[nextLabelIndex].box;
+    if (Math.abs(nextBox.y - labelBox.y) <= labelBox.height * 0.55 && nextBox.x > labelBox.x) {
+      right = Math.max(x + 8, Math.round(nextBox.x - padX));
+      bottom = Math.min(pageHeight, Math.round(labelBox.y + labelBox.height * 2.2));
+    } else {
+      bottom = Math.max(y + 8, Math.round(nextBox.y - padY * 0.4));
+    }
+  }
+  return {
+    x: x,
+    y: y,
+    width: Math.max(8, Math.min(pageWidth - x, right - x)),
+    height: Math.max(8, Math.min(pageHeight - y, bottom - y)),
+    reason: 'vision_land_label_' + fieldKey,
+    anchor_text: labelWords.map(function(word) { return word.text; }).join(' ')
   };
 }
 
@@ -584,7 +767,12 @@ function saveAutoOcrA4LandFieldValue(caseId, token, fieldPath, newValue, current
   if (!pathMatch) throw new Error('Field path is not an A4 land text field: ' + fieldPath);
   if (getLatestFinalData(caseId)) return { ok: false, reason: 'CASE_FINALIZED' };
   const fieldKey = pathMatch[1];
-  if (fieldKey === 'usage_purpose') newValue = normalizeLandTypeAreaUnits_(cleanupIndexedCertificateValue_(newValue));
+  if (fieldKey === 'usage_purpose') {
+    const cleaned = cleanupIndexedCertificateValue_(newValue);
+    newValue = String(source || '').indexOf('_loai_dat') >= 0 || String(source || '').indexOf('AUTO_OCR_A4_') === 0
+      ? normalizeLandTypeAreaUnits_(cleaned)
+      : cleaned;
+  }
   if (fieldKey === 'usage_term') newValue = normalizeRealEstateUsageTerm_(cleanupIndexedCertificateValue_(newValue));
   if (fieldKey === 'usage_form') newValue = normalizeRealEstateUsageForm_(cleanupIndexedCertificateValue_(newValue));
   if (!newValue) return { ok: false, reason: 'EMPTY_VALUE' };
@@ -628,6 +816,57 @@ function saveAutoOcrA4LandFieldValue(caseId, token, fieldPath, newValue, current
   return { ok: true, field_path: fieldPath, new_value: newValue };
 }
 
+function saveAutoOcrA4LandFieldValues(caseId, token, values) {
+  assertValidToken_(caseId, token);
+  if (getLatestFinalData(caseId)) return { ok: false, reason: 'CASE_FINALIZED' };
+  const items = (values || []).filter(function(item) {
+    return item && /^assets\[\d+\]\.real_estate\.(usage_purpose|usage_term|usage_form)$/.test(String(item.fieldPath || ''));
+  });
+  if (!items.length) return { ok: false, reason: 'NO_VALUES' };
+  const manualPaths = {};
+  getOverrides(caseId).forEach(function(item) {
+    if (item.edited_by !== 'AUTO_OCR') manualPaths[item.field_path] = true;
+  });
+  let data = getLatestExtractedData(caseId);
+  if (!data) throw new Error('No extracted review data for case ' + caseId);
+  repairReviewDataFromFullOcr_(data, caseId);
+  const saved = [];
+  items.forEach(function(item) {
+    const fieldPath = String(item.fieldPath || '');
+    if (manualPaths[fieldPath]) return;
+    const field = getByPath(data, fieldPath);
+    if (!field || typeof field !== 'object' || !field.hasOwnProperty('final_value') || field.manual_value) return;
+    const fieldKey = fieldPath.match(/\.(usage_purpose|usage_term|usage_form)$/)[1];
+    let newValue = cleanupIndexedCertificateValue_(item.newValue);
+    if (fieldKey === 'usage_purpose') newValue = normalizeLandTypeAreaUnits_(newValue);
+    if (fieldKey === 'usage_term') newValue = normalizeRealEstateUsageTerm_(newValue);
+    if (fieldKey === 'usage_form') newValue = normalizeRealEstateUsageForm_(newValue);
+    if (!newValue) return;
+    field.ai_value = newValue;
+    field.final_value = newValue;
+    field.manual_value = '';
+    field.source = item.source || 'AUTO_OCR_LAND_LABEL_CROP_V1';
+    field.confidence = 0.92;
+    field.confirmed = false;
+    field.evidence = 'Focused high-resolution label crop consensus';
+    saved.push({ field_path: fieldPath, new_value: newValue, source: field.source });
+  });
+  if (!saved.length) return { ok: false, reason: 'NO_SAVABLE_VALUES' };
+  data = validateReviewJson(data);
+  appendSheetRow(SHEETS.EXTRACTED_DATA, {
+    'Case ID': caseId,
+    'JSON Data': data,
+    'Validation Status': data.validation.status,
+    'Missing Fields': data.validation.missing_fields,
+    'Conflicts': data.validation.conflicts,
+    'Warnings': data.validation.warnings,
+    'AI JSON File URL': '',
+    'Created At': nowIso()
+  });
+  logAudit(caseId, 'AUTO_OCR_LAND_LABEL_FIELDS_SAVED', { fields: saved });
+  return { ok: true, saved: saved };
+}
+
 function saveAutoOcrRegistryValue(caseId, token, fieldPath, newValue, currentValue, readings, verificationMode) {
   assertValidToken_(caseId, token);
   if (!/^assets\[\d+\]\.real_estate\.registry_number$/.test(String(fieldPath || ''))) {
@@ -661,7 +900,7 @@ function saveAutoOcrRegistryValue(caseId, token, fieldPath, newValue, currentVal
   field.manual_value = '';
   const focusedPageVerification = verificationMode === 'PAGE_FOCUSED' || verificationMode === 'PAGE_ANCHORED';
   field.source = focusedPageVerification
-    ? 'AUTO_OCR_LAND_REGISTRY_ANCHORED_PAGE_CROP_CONSENSUS_V2'
+    ? 'AUTO_OCR_LAND_REGISTRY_ANCHORED_PAGE_CROP_CONSENSUS_V5'
     : 'AUTO_OCR_LAND_REGISTRY_CROP_CONSENSUS';
   field.confidence = 0.92;
   field.confirmed = false;
@@ -1110,11 +1349,11 @@ function suggestLandIssueDateCropFromVisionAnnotation_(annotation) {
   return null;
 }
 
-function extractLandRegistryNumberFromCropText_(text) {
+function extractLandRegistryNumberFromCropText_(text, printedFillDetected) {
   const raw = String(text || '').replace(/\r?\n+/g, ' ').replace(/\s+/g, ' ').trim();
   const fromLabel = extractRealEstateRegistryNumber_(raw);
-  if (fromLabel) return fromLabel;
-  return normalizeRegistryCodeValue_(raw);
+  if (fromLabel) return normalizeRegistryCodeValue_(fromLabel, printedFillDetected);
+  return normalizeRegistryCodeValue_(raw, printedFillDetected);
 }
 
 function collectVisionWords_(annotation) {

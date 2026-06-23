@@ -189,10 +189,9 @@ function repairAssetCertificateTitleInReviewJson(reviewJson, fullAssetOcrText) {
   (reviewJson.assets || []).forEach(function(asset) {
     const field = asset && asset.certificate_title;
     if (!field || !field.hasOwnProperty('final_value')) return;
-    const current = String(field.final_value || field.ai_value || '').trim();
     const manual = String(field.manual_value || '').trim();
-    if (manual && !isShortCertificateTitleForReviewRepair_(manual, title)) return;
-    if (current && !isShortCertificateTitleForReviewRepair_(current, title) && !isBadCertificateTitleForMerge_(current)) return;
+    if (manual) return;
+    if (!shouldReplaceCertificateTitleFromOcr_(field, title)) return;
     field.ai_value = title;
     field.final_value = title;
     field.source = field.source || 'OCR_ASSET_TEXT_TITLE_REPAIR';
@@ -538,7 +537,8 @@ function repairUnsafeLandCertificateFieldsInReviewJson(reviewJson, fullAssetOcrT
 }
 
 function clearUntrustedLandIndexedField_(reviewJson, field, fieldPath) {
-  if (!field || !field.hasOwnProperty('final_value') || field.manual_value || isVerifiedA4GeometryField_(field)) return;
+  if (!field || !field.hasOwnProperty('final_value') || field.manual_value ||
+      isVerifiedA4GeometryField_(field) || isVerifiedLandLabelField_(field)) return;
   const current = String(field.final_value || field.ai_value || '').trim();
   if (!current) return;
   field.ai_value = '';
@@ -549,7 +549,8 @@ function clearUntrustedLandIndexedField_(reviewJson, field, fieldPath) {
 }
 
 function replaceFromTrustedLandBlock_(field, replacement) {
-  if (!field || !field.hasOwnProperty('final_value') || field.manual_value || !replacement) return;
+  if (!field || !field.hasOwnProperty('final_value') || field.manual_value || !replacement ||
+      isVerifiedA4GeometryField_(field) || isVerifiedLandLabelField_(field)) return;
   const current = String(field.final_value || field.ai_value || '').trim();
   if (current === replacement) return;
   field.ai_value = replacement;
@@ -559,7 +560,8 @@ function replaceFromTrustedLandBlock_(field, replacement) {
 }
 
 function clearUnsafeLandField_(reviewJson, field, fieldPath, predicate, replacement) {
-  if (!field || !field.hasOwnProperty('final_value') || field.manual_value || isVerifiedA4GeometryField_(field)) return;
+  if (!field || !field.hasOwnProperty('final_value') || field.manual_value ||
+      isVerifiedA4GeometryField_(field) || isVerifiedLandLabelField_(field)) return;
   const current = String(field.final_value || field.ai_value || '').trim();
   if (!current || !predicate(current)) return;
   if (replacement && !predicate(replacement)) {
@@ -691,13 +693,25 @@ function repairAssetUsageTermInReviewJson(reviewJson, fullAssetOcrText) {
   const indexed = extractRealEstateIndexedLandFields_(assetText);
   const usageTerm = indexed.usage_term || '';
   if (!usageTerm) return reviewJson;
+  const protectVerifiedGeometry = isNewA4LandCertificateText_(assetText);
   (reviewJson.assets || []).forEach(function(asset) {
     const field = asset && asset.real_estate && asset.real_estate.usage_term;
     if (!field || !field.hasOwnProperty('final_value') || field.manual_value) return;
-    if (!shouldReplaceUsageTerm_(field, usageTerm)) return;
+    if (isVerifiedLandLabelField_(field)) return;
+    if (!protectVerifiedGeometry && isVerifiedA4GeometryField_(field)) {
+      const recovered = recoverMisclassifiedGeometryField_(field, usageTerm, 'usage_term');
+      if (recovered) {
+        field.ai_value = recovered;
+        field.final_value = recovered;
+        field.source = 'OCR_INDEXED_ASSET_TEXT_RECOVERED_FROM_WRONG_LAYOUT';
+        field.confidence = Math.max(Number(field.confidence || 0), 0.86);
+        return;
+      }
+    }
+    if (!shouldReplaceUsageTerm_(field, usageTerm, protectVerifiedGeometry)) return;
     field.ai_value = usageTerm;
     field.final_value = usageTerm;
-    field.source = field.source || 'OCR_INDEXED_ASSET_TEXT';
+    field.source = 'OCR_INDEXED_ASSET_TEXT';
     field.confidence = Math.max(Number(field.confidence || 0), 0.86);
   });
   return reviewJson;
@@ -712,13 +726,25 @@ function repairAssetUsageFormInReviewJson(reviewJson, fullAssetOcrText) {
   const indexed = extractRealEstateIndexedLandFields_(assetText);
   const usageForm = indexed.usage_form || '';
   if (!usageForm) return reviewJson;
+  const protectVerifiedGeometry = isNewA4LandCertificateText_(assetText);
   (reviewJson.assets || []).forEach(function(asset) {
     const field = asset && asset.real_estate && asset.real_estate.usage_form;
     if (!field || !field.hasOwnProperty('final_value') || field.manual_value) return;
-    if (!shouldReplaceUsageForm_(field, usageForm)) return;
+    if (isVerifiedLandLabelField_(field)) return;
+    if (!protectVerifiedGeometry && isVerifiedA4GeometryField_(field)) {
+      const recovered = recoverMisclassifiedGeometryField_(field, usageForm, 'usage_form');
+      if (recovered) {
+        field.ai_value = recovered;
+        field.final_value = recovered;
+        field.source = 'OCR_INDEXED_ASSET_TEXT_RECOVERED_FROM_WRONG_LAYOUT';
+        field.confidence = Math.max(Number(field.confidence || 0), 0.86);
+        return;
+      }
+    }
+    if (!shouldReplaceUsageForm_(field, usageForm, protectVerifiedGeometry)) return;
     field.ai_value = usageForm;
     field.final_value = usageForm;
-    field.source = field.source || 'OCR_INDEXED_ASSET_TEXT';
+    field.source = 'OCR_INDEXED_ASSET_TEXT';
     field.confidence = Math.max(Number(field.confidence || 0), 0.86);
   });
   return reviewJson;
@@ -733,10 +759,12 @@ function repairAssetUsagePurposeInReviewJson(reviewJson, fullAssetOcrText) {
   const indexed = extractRealEstateIndexedLandFields_(assetText);
   const usagePurpose = indexed.usage_purpose || '';
   if (!usagePurpose) return reviewJson;
+  const protectVerifiedGeometry = isNewA4LandCertificateText_(assetText);
   (reviewJson.assets || []).forEach(function(asset) {
     const field = asset && asset.real_estate && asset.real_estate.usage_purpose;
     if (!field || !field.hasOwnProperty('final_value') || field.manual_value) return;
-    if (!shouldReplaceUsagePurpose_(field, usagePurpose)) return;
+    if (isVerifiedLandLabelField_(field)) return;
+    if (!shouldReplaceUsagePurpose_(field, usagePurpose, protectVerifiedGeometry)) return;
     field.ai_value = usagePurpose;
     field.final_value = usagePurpose;
     field.source = 'OCR_INDEXED_ASSET_TEXT';
@@ -807,8 +835,11 @@ function isBetterLandAddress_(current, candidate) {
   return candidateParts > currentParts && candidateNorm.length > currentNorm.length;
 }
 
-function shouldReplaceUsageForm_(field, candidate) {
-  if (!field || !candidate || field.manual_value || isVerifiedA4GeometryField_(field)) return false;
+function shouldReplaceUsageForm_(field, candidate, protectVerifiedGeometry) {
+  protectVerifiedGeometry = protectVerifiedGeometry !== false;
+  if (!field || !candidate || field.manual_value) return false;
+  if (isVerifiedLandLabelField_(field)) return false;
+  if (isVerifiedA4GeometryField_(field)) return !protectVerifiedGeometry;
   const current = String(field.final_value || field.ai_value || '').trim();
   if (!current) return true;
   if (/\r?\n/.test(current) && !/\r?\n/.test(candidate)) return true;
@@ -831,11 +862,20 @@ function normalizeRealEstateUsageForm_(value) {
   raw = raw.replace(/(\d+(?:[,.]\d+)?)\s*m(?![A-Za-z0-9\u00b2])/gi, '$1 m\u00b2');
   raw = raw.replace(/\bKh[o\u00f4]ng\s*m(?![A-Za-z0-9\u00b2])/gi, 'Kh\u00f4ng m\u00b2');
   raw = raw.replace(/\bChung:\s*Khong\s*m\u00b2/gi, 'Chung: Kh\u00f4ng m\u00b2');
+  const simpleUsage = raw.match(/^(S\u1eed d\u1ee5ng (?:ri\u00eang|chung))\b(.*)$/i);
+  if (simpleUsage &&
+      !/\d+(?:[,.]\d+)?\s*m(?:2|\u00b2)\b/i.test(simpleUsage[2]) &&
+      /\b(?:\u0111\u01b0\u1eddng|duong|b\u00ea t\u00f4ng|be tong|m\u01b0\u01a1ng|muong)\b/i.test(simpleUsage[2])) {
+    raw = simpleUsage[1];
+  }
   return raw;
 }
 
-function shouldReplaceUsageTerm_(field, candidate) {
-  if (!field || !candidate || field.manual_value || isVerifiedA4GeometryField_(field)) return false;
+function shouldReplaceUsageTerm_(field, candidate, protectVerifiedGeometry) {
+  protectVerifiedGeometry = protectVerifiedGeometry !== false;
+  if (!field || !candidate || field.manual_value) return false;
+  if (isVerifiedLandLabelField_(field)) return false;
+  if (isVerifiedA4GeometryField_(field)) return !protectVerifiedGeometry;
   const current = String(field.final_value || field.ai_value || '').trim();
   if (!current) return true;
   const currentNorm = removeVietnameseAccents_(current).toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
@@ -1294,6 +1334,9 @@ function shouldReplaceCertificateTitleFromOcr_(field, extractedTitle) {
   const current = String(field.final_value || field.ai_value || '').trim();
   if (!current) return true;
   if (isBadCertificateTitleForMerge_(current)) return true;
+  const extractedGeneration = certificateGenerationFromCompleteTitle_(extractedTitle);
+  const currentGeneration = certificateGenerationFromCompleteTitle_(current);
+  if (extractedGeneration && extractedGeneration !== currentGeneration) return true;
   return isShortCertificateTitleForReviewRepair_(current, extractedTitle);
 }
 
@@ -1322,13 +1365,15 @@ function extractRealEstateIndexedLandFields_(text) {
   if (selected.layout === 'gcn_qsdd_qsh_tsglvd_page_1' && normalizeCertificateIndexLine_(source).indexOf('2 thong tin thua dat') >= 0) {
     return extractNewA4RealEstateLandFields_(source, selected);
   }
+  const landTypeValue = findSemanticLandFieldValue_(source, ['loai dat']);
+  const usagePurposeValue = findSemanticLandFieldValue_(source, ['muc dich su dung']);
   const semantic = {
     land_plot_number: findSemanticLandFieldValue_(source, ['thua dat so']),
     map_sheet_number: findSemanticLandFieldValue_(source, ['to ban do so']),
     land_address: findSemanticLandFieldValue_(source, ['dia chi']),
     area: findSemanticLandFieldValue_(source, ['dien tich']),
     usage_form: findSemanticLandFieldValue_(source, ['hinh thuc su dung']),
-    usage_purpose: findSemanticLandFieldValue_(source, ['muc dich su dung']),
+    usage_purpose: landTypeValue || usagePurposeValue,
     usage_term: findSemanticLandFieldValue_(source, ['thoi han su dung']),
     usage_origin: findSemanticLandFieldValue_(source, ['nguon goc su dung'])
   };
@@ -1338,7 +1383,9 @@ function extractRealEstateIndexedLandFields_(text) {
     land_address: cleanupLandAddressCertificateValue_(semantic.land_address || items.b || '') || cleanupLandAddressCertificateValue_(extractDislocatedLandAddressFromBlock_(source)),
     area: normalizeRealEstateAreaValue_(cleanupIndexedCertificateValue_(semantic.area || items.c || '')) || extractRealEstateArea_(source),
     usage_form: normalizeRealEstateUsageForm_(cleanupIndexedCertificateValue_(semantic.usage_form || '')),
-    usage_purpose: cleanupIndexedCertificateValue_(semantic.usage_purpose || ''),
+    usage_purpose: landTypeValue
+      ? normalizeLandTypeAreaUnits_(cleanupIndexedCertificateValue_(semantic.usage_purpose || ''))
+      : cleanupIndexedCertificateValue_(semantic.usage_purpose || ''),
     usage_term: normalizeRealEstateUsageTerm_(cleanupIndexedCertificateValue_(semantic.usage_term || '')),
     usage_origin: cleanupUsageOriginCertificateValue_(completeUsageOriginFromContext_(semantic.usage_origin || '', text || source)),
     _quality: selected
@@ -1622,12 +1669,11 @@ function classifyLandCertificatePageText_(value) {
     gcn_qsdd_qsh_tsglvd_page_1: 0,
     gcn_qsdd_qsh_tsglvd_page_2: 0
   };
-  const hasCertificateTitle = normalized.indexOf('giay chung nhan') >= 0;
-  const hasHouseOtherAssetsTitle = normalized.indexOf('quyen so huu nha o') >= 0 || normalized.indexOf('tai san khac gan lien voi dat') >= 0;
-  const hasAttachedAssetsTitle = normalized.indexOf('quyen so huu tai san gan lien voi dat') >= 0 && !hasHouseOtherAssetsTitle;
-  if (hasCertificateTitle && !hasHouseOtherAssetsTitle && !hasAttachedAssetsTitle) scores.gcn_qsdd_cover += 4;
-  if (hasCertificateTitle && hasHouseOtherAssetsTitle) scores.gcn_qsdd_qsh_nha_o_va_tsk_cover += 4;
-  if (hasCertificateTitle && hasAttachedAssetsTitle) scores.gcn_qsdd_qsh_tsglvd_page_1 += 2;
+  const completeTitle = extractKnownCertificateTitleFromText_(value);
+  const titleGeneration = certificateGenerationFromCompleteTitle_(completeTitle);
+  if (titleGeneration === 'gcn_qsdd') scores.gcn_qsdd_cover += 4;
+  if (titleGeneration === 'gcn_qsdd_qsh_nha_o_va_tsk') scores.gcn_qsdd_qsh_nha_o_va_tsk_cover += 4;
+  if (titleGeneration === 'gcn_qsdd_qsh_tsglvd') scores.gcn_qsdd_qsh_tsglvd_page_1 += 2;
   if (/\b(?:co|dh|aa)\s*\d{5,}\b/i.test(normalized)) {
     scores.gcn_qsdd_cover += 1;
     scores.gcn_qsdd_qsh_nha_o_va_tsk_cover += 1;
@@ -1669,9 +1715,11 @@ function classifyOldStyleChangeLayout_(value) {
 
 function isNewA4LandCertificateText_(value) {
   const normalized = removeVietnameseAccents_(String(value || '')).toLowerCase().replace(/[^a-z0-9]+/g, ' ').replace(/\s+/g, ' ').trim();
-  return normalized.indexOf('quyen so huu tai san gan lien voi dat') >= 0 ||
-    normalized.indexOf('2 thong tin thua dat') >= 0 && normalized.indexOf('3 thong tin tai san gan lien voi dat') >= 0 ||
-    classifyLandCertificatePageText_(value).layout === 'gcn_qsdd_qsh_tsglvd_page_1';
+  const titleGeneration = certificateGenerationFromCompleteTitle_(extractKnownCertificateTitleFromText_(value));
+  if (titleGeneration) return titleGeneration === 'gcn_qsdd_qsh_tsglvd';
+  return normalized.indexOf('1 nguoi su dung dat') >= 0 &&
+    normalized.indexOf('2 thong tin thua dat') >= 0 &&
+    normalized.indexOf('3 thong tin tai san gan lien voi dat') >= 0;
 }
 
 function scoreLandPlotTextCandidate_(value) {
@@ -2056,8 +2104,10 @@ function shouldReplaceSimpleOcrField_(field, candidate) {
   return false;
 }
 
-function shouldReplaceUsagePurpose_(field, candidate) {
-  if (isVerifiedA4GeometryField_(field)) return false;
+function shouldReplaceUsagePurpose_(field, candidate, protectVerifiedGeometry) {
+  protectVerifiedGeometry = protectVerifiedGeometry !== false;
+  if (isVerifiedLandLabelField_(field)) return false;
+  if (isVerifiedA4GeometryField_(field) && protectVerifiedGeometry) return false;
   if (shouldReplaceSimpleOcrField_(field, candidate)) return true;
   if (!field || !candidate || field.manual_value) return false;
   const current = String(field.final_value || field.ai_value || '').trim();
@@ -2069,8 +2119,28 @@ function shouldReplaceUsagePurpose_(field, candidate) {
   return Boolean(currentNorm && currentNorm === candidateNorm && current !== candidate);
 }
 
+function recoverMisclassifiedGeometryField_(field, candidate, fieldType) {
+  const current = String(field && (field.final_value || field.ai_value) || '').replace(/\s+/g, ' ').trim();
+  candidate = String(candidate || '').replace(/\s+/g, ' ').trim();
+  if (!current) return candidate;
+  if (fieldType === 'usage_form') return candidate || current;
+  if (fieldType === 'usage_term') {
+    const cleanedCurrent = current.replace(/\s+[A-Z\u0110]\s*$/i, '').trim();
+    const candidateHasCompleteDate = /\b\d{1,2}[\/.\-]\d{1,2}[\/.\-]\d{4}\b/.test(candidate);
+    const currentHasCompleteDate = /\b\d{1,2}[\/.\-]\d{1,2}[\/.\-]\d{4}\b/.test(cleanedCurrent);
+    if (candidateHasCompleteDate && candidate.length >= cleanedCurrent.length * 0.75) return candidate;
+    if (currentHasCompleteDate) return cleanedCurrent;
+    return candidate || cleanedCurrent;
+  }
+  return '';
+}
+
 function isVerifiedA4GeometryField_(field) {
   return String(field && field.source || '').indexOf('AUTO_OCR_A4_GEOMETRY_CROP_V2') === 0;
+}
+
+function isVerifiedLandLabelField_(field) {
+  return String(field && field.source || '').indexOf('AUTO_OCR_LAND_LABEL_CROP_V1') === 0;
 }
 
 function shouldReplaceUsageOrigin_(field, candidate) {
@@ -2611,6 +2681,18 @@ function extractKnownCertificateTitleFromText_(text) {
   return '';
 }
 
+function certificateGenerationFromCompleteTitle_(title) {
+  const clean = normalizeCertificateTitleSearchText_(title);
+  if (clean === 'giay chung nhan quyen su dung dat quyen so huu nha o va tai san khac gan lien voi dat') {
+    return 'gcn_qsdd_qsh_nha_o_va_tsk';
+  }
+  if (clean === 'giay chung nhan quyen su dung dat quyen so huu tai san gan lien voi dat') {
+    return 'gcn_qsdd_qsh_tsglvd';
+  }
+  if (clean === 'giay chung nhan quyen su dung dat') return 'gcn_qsdd';
+  return '';
+}
+
 function normalizeCertificateTitleSearchText_(text) {
   return removeVietnameseAccents_(String(text || ''))
     .toLowerCase()
@@ -2840,9 +2922,9 @@ function extractRegistryCodeAfterRegistryLabel_(value) {
   return normalizeRegistryCodeValue_(candidate);
 }
 
-function normalizeRegistryCodeValue_(value) {
+function normalizeRegistryCodeValue_(value, printedFillDetected) {
   const original = String(value || '');
-  const hasPrintedFillLine = /\.{4,}/.test(original);
+  const hasPrintedFillLine = Boolean(printedFillDetected) || /\.{4,}/.test(original);
   value = original
     .replace(/\.{4,}/g, ' ')
     .replace(/[;,:]+$/g, '')

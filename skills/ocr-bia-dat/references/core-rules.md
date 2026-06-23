@@ -42,7 +42,9 @@ Rules:
 
 Land-certificate uploads may contain one physical page per image, two facing pages in one image, or rendered PDF pages. Before extracting certificate fields, classify candidate pages/regions by OCR markers.
 
-Use the OCR-read certificate title as a classification signal. Different certificate generations have different titles and section structures; do not assume all land certificates use the old 4-page `II. Thua dat` layout.
+Use the complete OCR-read certificate title from the printed title page as the primary generation signal. Different certificate generations have different titles and section structures; do not assume all land certificates use the old 4-page `II. Thua dat` layout.
+
+Do not accept an abbreviated or truncated title as a standard certificate title. Crop and OCR the printed title independently, join all title lines, and preserve every distinguishing phrase such as `nha o`, `va`, `khac`, or `tai san gan lien voi dat`. Section markers and page layout are supporting evidence for page classification and conflict detection; they must not silently replace a complete title or turn a truncated title into a guessed standard title. If the title remains incomplete or conflicts with the page structure, classify the generation as unknown and request review instead of forcing the nearest known generation.
 
 Recognize these three certificate title/template generations. Name templates by certificate title, not by filename:
 
@@ -80,6 +82,8 @@ Crop/OCR policy:
 Review display policy:
 
 - The review screen must preserve the printed certificate layout for the classified template.
+- Discover printed section numbers, item markers, labels, and their order from the certificate OCR. Render the labels actually printed on the certificate; do not create optional sections or labels merely because another certificate in the same generation contains them.
+- Map detected labels to internal schema fields by label meaning. A technical field may receive either `Loai dat` or `Muc dich su dung`, but the review presentation must keep the detected printed label.
 - For `gcn_qsdd_qsh_tsglvd`, display page 1 as `1. Nguoi su dung dat, chu so huu tai san gan lien voi dat`, `2. Thong tin thua dat`, `3. Thong tin tai san gan lien voi dat`; display page 2 as `4. So do thua dat, tai san gan lien voi dat`, `5. Ghi chu`, `6. Nhung thay doi sau khi cap Giay chung nhan`.
 - Do not render the old `I/II/1/a-g/2-6/IV` layout for `gcn_qsdd_qsh_tsglvd`.
 - Do not create an owner/user address when the printed `1. Nguoi su dung...` section has only name and ID number. The `e. Dia chi` item under `2. Thong tin thua dat` is land address only.
@@ -95,6 +99,7 @@ Review display policy:
 ## Field Extraction
 
 - Use section/index boundaries such as `II`, `1`, `2`, `a)`, `b)`, `c)`, `d)`, `đ)`, `e)`, `g)`.
+- The examples in this skill and its regression fixtures demonstrate capabilities, not fixed layouts. Never turn a sample's item letter, item count, ordering, wording, or blank-section pattern into a production rule.
 - A field continues until the next section/index boundary.
 - Section/index markers such as `a)`, `b)`, `c)`, `d)`, `đ)`, `e)`, and `g)` are boundaries only. They do not define field meaning by themselves.
 - If OCR attaches the next section/index marker to the end of the previous value, for example `Sử dụng riêng đ`, remove that trailing marker from the previous field value.
