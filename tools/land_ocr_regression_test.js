@@ -1130,6 +1130,29 @@ assert.strictEqual(variableOldFields.usage_purpose, 'Đất ở 884,9 m²; đấ
 assert.strictEqual(variableOldFields.usage_term, 'Đất ở: Lâu dài; Đất trồng cây lâu năm: Đến ngày 31/12/2064');
 assert.ok(variableOldFields.usage_origin.indexOf('Nhận chuyển nhượng đất được Công nhận QSDĐ') === 0);
 assert.strictEqual(
+  dataMergeContext.normalizeUsageOriginAreaUnits_(
+    'Nhận chuyển nhượng đất có thu tiền sử dụng đất: 884,9m; không thu tiền sử dụng đất: 544,5m2'
+  ),
+  'Nhận chuyển nhượng đất có thu tiền sử dụng đất: 884,9 m²; không thu tiền sử dụng đất: 544,5 m²'
+);
+const usageOriginReview = {
+  assets: [{
+    real_estate: {
+      usage_origin: {
+        ai_value: 'Nhận chuyển nhượng: 884,9m; 544,5m2',
+        final_value: 'Nhận chuyển nhượng: 884,9m; 544,5m2',
+        manual_value: ''
+      }
+    }
+  }],
+  ocr_results: []
+};
+dataMergeContext.repairAssetUsageOriginInReviewJson(usageOriginReview, '', {});
+assert.strictEqual(
+  usageOriginReview.assets[0].real_estate.usage_origin.final_value,
+  'Nhận chuyển nhượng: 884,9 m²; 544,5 m²'
+);
+assert.strictEqual(
   dataMergeContext.shouldReplaceCertificateTitleFromOcr_(
     { final_value: 'Giấy chứng nhận quyền sử dụng đất, quyền sở hữu tài sản gắn liền với đất', manual_value: '' },
     'Giấy chứng nhận quyền sử dụng đất, quyền sở hữu nhà ở và tài sản khác gắn liền với đất'
@@ -1708,6 +1731,7 @@ vm.runInContext([
   extractClientFunction('fixCommonMojibake'),
   extractClientFunction('cleanValue'),
   extractClientFunction('valueOf'),
+  extractClientFunction('normalizeUsageOriginAreaUnitsForReview_'),
   extractClientFunction('removeVietnameseMarks'),
   extractClientFunction('certificateGenerationFromCompleteTitleForReview_'),
   extractClientFunction('canonicalOldCertificateHeadingForReview_'),
@@ -1766,6 +1790,14 @@ assert.strictEqual(
     'usage_origin'
   ),
   'g'
+);
+assert.strictEqual(
+  reviewClientContext.normalizeUsageOriginAreaUnitsForReview_('884,9m; 544,5m2'),
+  '884,9 m²; 544,5 m²'
+);
+assert.strictEqual(
+  reviewClientContext.normalizeUsageOriginAreaUnitsForReview_('884,9 m²; 544,5 m²'),
+  '884,9 m²; 544,5 m²'
 );
 const printedA4Layout = reviewClientContext.extractPrintedCertificateLayout(
   labeledA4AttachedAssetText,

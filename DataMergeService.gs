@@ -783,6 +783,11 @@ function repairAssetUsageOriginInReviewJson(reviewJson, fullAssetOcrText, assetT
   (reviewJson.assets || []).forEach(function(asset) {
     const field = asset && asset.real_estate && asset.real_estate.usage_origin;
     if (!field || !field.hasOwnProperty('final_value') || field.manual_value) return;
+    const normalizedCurrent = normalizeUsageOriginAreaUnits_(field.final_value || field.ai_value || '');
+    if (normalizedCurrent && normalizedCurrent !== String(field.final_value || field.ai_value || '').trim()) {
+      field.ai_value = normalizedCurrent;
+      field.final_value = normalizedCurrent;
+    }
     const scopedAssetText = assetOcrTextForRepair_(asset, assetText, assetTextByFileName, allowAllAssetTexts);
     if (!scopedAssetText) return;
     const indexed = extractRealEstateIndexedLandFields_(scopedAssetText);
@@ -1894,12 +1899,19 @@ function cleanupLandAddressCertificateValue_(value) {
 }
 
 function cleanupUsageOriginCertificateValue_(value) {
-  return accentUsageOriginCertificateValue_(cleanupIndexedCertificateValue_(value)
+  return normalizeUsageOriginAreaUnits_(accentUsageOriginCertificateValue_(cleanupIndexedCertificateValue_(value)
     .replace(/\s+(?:2|3|4|5|6)\s*[\).:]\s*(?:nh[aÃ ]\s*[oá»Ÿ]|nha\s*o|c[oÃ´]ng\s*tr[Ã¬i]nh|cong\s*trinh|r[Æ°á»«]ng|rung|c[aÃ¢]y|cay|ghi\s*ch[uÃº]|ghi\s*chu)\b.*$/i, '')
     .replace(/\s+iv\s*[\).:]?\s*nh[uá»¯]ng\s+thay\s+[dÄ‘][oá»•]i.*$/i, '')
     .replace(/\s+iv\s*[\).:]?\s*nhung\s+thay\s+doi.*$/i, '')
     .replace(/[;,.:\-\s]+$/g, '')
-    .trim());
+    .trim()));
+}
+
+function normalizeUsageOriginAreaUnits_(value) {
+  return String(value || '')
+    .replace(/(\d+(?:[,.]\d+)?)\s*m(?:2|\u00b2)?(?![A-Za-z0-9\u00b2])/gi, '$1 m\u00b2')
+    .replace(/\s+([,;:.])/g, '$1')
+    .trim();
 }
 
 function completeUsageOriginFromContext_(value, source) {

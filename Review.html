@@ -793,7 +793,8 @@
         if (valueOf(re.usage_origin) &&
             !printedLayout.land_fields.some(function(item) { return item.semantic === 'usage_origin'; })) {
           const originMarker = inferPrintedCertificateFieldMarker_(certificateLayoutText, 'usage_origin');
-          const originLabel = (originMarker ? originMarker + '. ' : '') + t('Nguon goc su dung');
+          const displayedOriginMarker = originMarker || (oldHouseCertificate ? 'g' : '');
+          const originLabel = (displayedOriginMarker ? displayedOriginMarker + ') ' : '') + t('Nguon goc su dung');
           lines.push('<div class="asset-doc-line">' + escapeHtml(originLabel) + ': ' +
             escapeHtml(displayUsageOriginValue(valueOf(re.usage_origin))) + '</div>');
         }
@@ -1428,7 +1429,14 @@
     }
 
     function displayUsageOriginValue(value) {
-      return accentUsageOriginForReview(cleanValue(value));
+      return normalizeUsageOriginAreaUnitsForReview_(accentUsageOriginForReview(cleanValue(value)));
+    }
+
+    function normalizeUsageOriginAreaUnitsForReview_(value) {
+      return String(value || '')
+        .replace(/(\d+(?:[,.]\d+)?)\s*m(?:2|\u00b2)?(?![A-Za-z0-9\u00b2])/gi, '$1 m\u00b2')
+        .replace(/\s+([,;:.])/g, '$1')
+        .trim();
     }
 
     function accentUsageOriginForReview(value) {
