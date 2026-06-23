@@ -1614,6 +1614,9 @@ const printedRegistryFillAnnotation = {
 assert.strictEqual(dataMergeContext.hasPrintedRegistryFillLineFromAnnotation_(printedRegistryFillAnnotation), true);
 assert.strictEqual(dataMergeContext.normalizeRegistryCodeValue_('CN.51'), 'CN.51');
 assert.strictEqual(dataMergeContext.normalizeRegistryCodeValue_('CN.51', true), 'CN51');
+assert.strictEqual(dataMergeContext.normalizeRegistryCodeValue_('CN.5.1'), 'CN51');
+assert.strictEqual(dataMergeContext.normalizeRegistryCodeValue_('C.N.5.4.2.9'), 'C.N.5.4.2.9');
+assert.strictEqual(dataMergeContext.normalizeRegistryCodeValue_('CN.5429'), 'CN.5429');
 const labeledLandFieldAnnotation = {
   pages: [{
     width: 1200,
@@ -1707,6 +1710,8 @@ vm.runInContext([
   extractClientFunction('valueOf'),
   extractClientFunction('removeVietnameseMarks'),
   extractClientFunction('certificateGenerationFromCompleteTitleForReview_'),
+  extractClientFunction('canonicalOldCertificateHeadingForReview_'),
+  extractClientFunction('inferPrintedCertificateFieldMarker_'),
   extractClientFunction('normalizeCertificatePunctuationForReview_'),
   extractClientFunction('printedCertificateFieldSemantic_'),
   extractClientFunction('extractPrintedCertificateLayout'),
@@ -1715,6 +1720,7 @@ vm.runInContext([
   extractClientFunction('clampCropBox_'),
   extractClientFunction('buildFocusedRegistryCodeBoxes_'),
   extractClientFunction('buildFocusedRegistryLabelBoxes_'),
+  extractClientFunction('stripInterleavedRegistryFillDotsForReview_'),
   extractClientFunction('normalizeRegistryCropReading_'),
   extractClientFunction('registrySameCropConsensus_'),
   extractClientFunction('sameCropValueConsensus_'),
@@ -1744,7 +1750,23 @@ assert.strictEqual(variablePrintedLayout.optional_sections.map(item => item.labe
 assert.strictEqual(variablePrintedLayout.map_heading.indexOf('III.'), 0);
 assert.strictEqual(variablePrintedLayout.change_heading.indexOf('IV.'), 0);
 assert.strictEqual(reviewClientContext.normalizeRegistryCropReading_('CN.5.1', true), 'CN51');
-assert.strictEqual(reviewClientContext.normalizeRegistryCropReading_('CN.5.1', false), 'CN.5.1');
+assert.strictEqual(reviewClientContext.normalizeRegistryCropReading_('CN.5.1', false), 'CN51');
+assert.strictEqual(reviewClientContext.normalizeRegistryCropReading_('CN.5429', false), 'CN.5429');
+assert.strictEqual(
+  reviewClientContext.canonicalOldCertificateHeadingForReview_(
+    'II . Thửa đất , nhà ở và tài san khác gắn liền với đất',
+    'land',
+    'gcn_qsdd_qsh_nha_o_va_tsk'
+  ),
+  'II. Thửa đất, nhà ở và tài sản khác gắn liền với đất'
+);
+assert.strictEqual(
+  reviewClientContext.inferPrintedCertificateFieldMarker_(
+    'e. Địa chỉ: Xã A\ng) Nguồn gốc sử dụng: Nhận chuyển nhượng',
+    'usage_origin'
+  ),
+  'g'
+);
 const printedA4Layout = reviewClientContext.extractPrintedCertificateLayout(
   labeledA4AttachedAssetText,
   labeledA4AttachedAssetText

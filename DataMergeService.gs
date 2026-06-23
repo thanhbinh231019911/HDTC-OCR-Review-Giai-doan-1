@@ -2930,11 +2930,18 @@ function normalizeRegistryCodeValue_(value, printedFillDetected) {
     .replace(/[;,:]+$/g, '')
     .trim();
   if (hasPrintedFillLine) value = value.replace(/\./g, '');
+  value = stripInterleavedRegistryFillDots_(value);
   const direct = value.match(/(?:\b(?:CS|CT|CN|CH|CL|HX|VP|DC|DL)|\bC\s*\.\s*[NSHT]\s*\.)\s*[-.]?\s*[0-9][A-Z0-9.\/-]{1,20}\b/i);
   if (direct) value = direct[0];
   value = value.replace(/\s+/g, '').trim();
   if (!isPlausibleRegistryCode_(value)) return '';
   return value.toUpperCase();
+}
+
+function stripInterleavedRegistryFillDots_(value) {
+  const text = String(value || '').replace(/\s+/g, '').toUpperCase();
+  const match = text.match(/^((?:CS|CT|CN|CH|CL|HX|VP|DC|DL))((?:\.[A-Z0-9]){2,})$/);
+  return match ? match[1] + match[2].replace(/\./g, '') : text;
 }
 
 function isPlausibleRegistryCode_(value) {

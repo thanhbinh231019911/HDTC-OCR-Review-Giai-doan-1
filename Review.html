@@ -715,10 +715,15 @@
         valueOf(re.certificate_attached_raw_text)
       ].filter(Boolean).join('\n');
       const printedLayout = extractPrintedCertificateLayout(certificateLayoutText, landPlotOcrText);
+      const certificateGeneration = certificateGenerationFromCompleteTitleForReview_(
+        certificateTitleForReview_(asset, ocrText)
+      );
+      const ownerDisplayLines = ownerLines(asset, isNewA4);
+      const oldHouseCertificate = certificateGeneration === 'gcn_qsdd_qsh_nha_o_va_tsk';
       const important = [
         [t('Loai GCN'), certificateTitleForReview_(asset, ocrText)],
         [t('So GCN'), valueOf(re.certificate_number) || inferCertificateNumberFromText(ocrText)],
-        [t('So vao so'), valueOf(re.registry_number) || inferRegistryNumberFromText(ocrText)],
+        [t('So vao so'), normalizeRegistryForReview(valueOf(re.registry_number) || inferRegistryNumberFromText(ocrText))],
         [t('Ngay cap'), valueOf(re.issue_date)],
         [t('Noi cap'), titleCaseAgency(valueOf(re.issuing_authority))]
       ];
@@ -760,12 +765,24 @@
           lines.push('<div class="asset-doc-line">' + escapeHtml(a4PostIssueChangesDisplayValue(valueOf(re.post_issue_changes), ocrText)) + '</div>');
         }
       } else {
-        if (printedLayout.owner_heading) {
-          lines.push('<div class="asset-doc-line"><strong>' + escapeHtml(printedLayout.owner_heading) + '</strong></div>');
+        const ownerHeading = canonicalOldCertificateHeadingForReview_(
+          printedLayout.owner_heading || (oldHouseCertificate && ownerDisplayLines.length
+            ? 'I. Người sử dụng đất, chủ sở hữu nhà ở và tài sản khác gắn liền với đất'
+            : ''),
+          'owner',
+          certificateGeneration
+        );
+        if (ownerHeading) {
+          lines.push('<div class="asset-doc-line"><strong>' + escapeHtml(ownerHeading) + '</strong></div>');
         }
-        ownerLines(asset, false).forEach(line => lines.push('<div class="asset-doc-line">' + escapeHtml(oneLineCertificateValue(line)) + '</div>'));
-        if (printedLayout.land_section_heading) {
-          lines.push('<div class="asset-doc-line"><strong>' + escapeHtml(printedLayout.land_section_heading) + '</strong></div>');
+        ownerDisplayLines.forEach(line => lines.push('<div class="asset-doc-line">' + escapeHtml(oneLineCertificateValue(line)) + '</div>'));
+        const landSectionHeading = canonicalOldCertificateHeadingForReview_(
+          printedLayout.land_section_heading,
+          'land',
+          certificateGeneration
+        );
+        if (landSectionHeading) {
+          lines.push('<div class="asset-doc-line"><strong>' + escapeHtml(landSectionHeading) + '</strong></div>');
         }
         if (printedLayout.land_heading) {
           lines.push('<div class="asset-doc-line"><strong>' + escapeHtml(printedLayout.land_heading) + '</strong></div>');
@@ -773,15 +790,30 @@
         printedLayout.land_fields.forEach(function(item) {
           pushPrintedCertificateField(lines, item, re, ocrText);
         });
+        if (valueOf(re.usage_origin) &&
+            !printedLayout.land_fields.some(function(item) { return item.semantic === 'usage_origin'; })) {
+          const originMarker = inferPrintedCertificateFieldMarker_(certificateLayoutText, 'usage_origin');
+          const originLabel = (originMarker ? originMarker + '. ' : '') + t('Nguon goc su dung');
+          lines.push('<div class="asset-doc-line">' + escapeHtml(originLabel) + ': ' +
+            escapeHtml(displayUsageOriginValue(valueOf(re.usage_origin))) + '</div>');
+        }
         printedLayout.optional_sections.forEach(function(item) {
           lines.push('<div class="asset-doc-line"><strong>' + escapeHtml(item.marker + '. ' + item.label) + ':</strong> ' + escapeHtml(item.value) + '</div>');
         });
         if (printedLayout.map_heading) {
           lines.push('<div class="asset-doc-line"><strong>' + escapeHtml(printedLayout.map_heading) + '</strong></div>');
         }
-        if (printedLayout.change_heading) {
-          lines.push('<div class="asset-doc-line"><strong>' + escapeHtml(printedLayout.change_heading) + '</strong></div>');
-          lines.push('<div class="asset-doc-line">' + escapeHtml(postIssueChangesDisplayValue(valueOf(re.post_issue_changes), ocrText)) + '</div>');
+        const postIssueDisplay = postIssueChangesDisplayValue(valueOf(re.post_issue_changes), ocrText);
+        const changeHeading = canonicalOldCertificateHeadingForReview_(
+          printedLayout.change_heading || (oldHouseCertificate && postIssueDisplay
+            ? 'IV. Những thay đổi sau khi cấp Giấy chứng nhận'
+            : ''),
+          'change',
+          certificateGeneration
+        );
+        if (changeHeading) {
+          lines.push('<div class="asset-doc-line"><strong>' + escapeHtml(changeHeading) + '</strong></div>');
+          lines.push('<div class="asset-doc-line">' + escapeHtml(postIssueDisplay) + '</div>');
         }
       }
       lines.push('</div><div class="asset-doc-edit">' + fieldTable(flattenFields(asset, root)) + '</div></section>');
@@ -858,6 +890,36 @@
         return 'gcn_qsdd_qsh_tsglvd';
       }
       if (clean === 'giay chung nhan quyen su dung dat') return 'gcn_qsdd';
+      return '';
+    }
+
+    function canonicalOldCertificateHeadingForReview_(heading, section, generation) {
+      const text = String(heading || '').trim();
+      if (!text || generation !== 'gcn_qsdd_qsh_nha_o_va_tsk') return text;
+      if (section === 'owner') {
+        return 'I. Ng\u01b0\u1eddi s\u1eed d\u1ee5ng \u0111\u1ea5t, ch\u1ee7 s\u1edf h\u1eefu nh\u00e0 \u1edf v\u00e0 t\u00e0i s\u1ea3n kh\u00e1c g\u1eafn li\u1ec1n v\u1edbi \u0111\u1ea5t';
+      }
+      if (section === 'land') {
+        return 'II. Th\u1eeda \u0111\u1ea5t, nh\u00e0 \u1edf v\u00e0 t\u00e0i s\u1ea3n kh\u00e1c g\u1eafn li\u1ec1n v\u1edbi \u0111\u1ea5t';
+      }
+      if (section === 'change') {
+        return 'IV. Nh\u1eefng thay \u0111\u1ed5i sau khi c\u1ea5p Gi\u1ea5y ch\u1ee9ng nh\u1eadn';
+      }
+      return text;
+    }
+
+    function inferPrintedCertificateFieldMarker_(text, semantic) {
+      const aliases = semantic === 'usage_origin'
+        ? ['nguon goc su dung']
+        : [];
+      const lines = String(text || '').replace(/\\r/g, '\r').replace(/\\n/g, '\n').split(/\r?\n+/);
+      for (let i = 0; i < lines.length; i++) {
+        const normalized = removeVietnameseMarks(lines[i]).toLowerCase().replace(/\s+/g, ' ').trim();
+        for (let j = 0; j < aliases.length; j++) {
+          const match = normalized.match(new RegExp('(?:^|\\s)([a-z])\\s*[\\).]\\s*' + aliases[j] + '\\b'));
+          if (match) return match[1];
+        }
+      }
       return '';
     }
 
@@ -1431,7 +1493,13 @@
         .replace(/\s+/g, '')
         .trim();
       if (hasPrintedFillLine) text = text.replace(/\./g, '');
-      return text.toUpperCase();
+      return stripInterleavedRegistryFillDotsForReview_(text);
+    }
+
+    function stripInterleavedRegistryFillDotsForReview_(value) {
+      const text = String(value || '').replace(/\s+/g, '').toUpperCase();
+      const match = text.match(/^((?:CS|CT|CN|CH|CL|HX|VP|DC|DL))((?:\.[A-Z0-9]){2,})$/);
+      return match ? match[1] + match[2].replace(/\./g, '') : text;
     }
 
     function titleCaseAgency(value) {
@@ -2680,6 +2748,7 @@
     function normalizeRegistryCropReading_(value, printedFillDetected) {
       let registry = cleanValue(value).replace(/\s+/g, '').toUpperCase();
       if (printedFillDetected) registry = registry.replace(/\./g, '');
+      registry = stripInterleavedRegistryFillDotsForReview_(registry);
       return /^(?:CS|CT|CN|CH|CL|HX|VP|DC|DL)[-.]?[0-9A-Z.\/-]{2,24}$/i.test(registry)
         ? registry
         : '';
