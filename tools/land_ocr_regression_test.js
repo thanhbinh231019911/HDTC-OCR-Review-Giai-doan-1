@@ -509,6 +509,14 @@ assert.strictEqual(
   true
 );
 assert.strictEqual(
+  dataMergeContext.isVerifiedLandLabelField_({ source: 'AUTO_OCR_LAND_LABEL_CROP_V2_thua_dat_so' }),
+  true
+);
+assert.strictEqual(
+  dataMergeContext.isVerifiedLandLabelField_({ source: 'AUTO_OCR_LAND_PAGE_REGION_CROP_V2' }),
+  true
+);
+assert.strictEqual(
   dataMergeContext.isVerifiedA4GeometryField_({ source: 'AUTO_OCR_LAND_LABEL_CROP_V1' }),
   false
 );
@@ -912,6 +920,22 @@ const facingPageAnnotation = {
   }]
 };
 assert.strictEqual(dataMergeContext.isLikelyFacingPageSpread_(facingPageAnnotation, 0), true);
+const detectedFacingRegions = dataMergeContext.suggestLandPageRegionsFromVisionAnnotation_(facingPageAnnotation, 0);
+assert.strictEqual(detectedFacingRegions.length, 2);
+assert.strictEqual(detectedFacingRegions[0].region, 'left');
+assert.strictEqual(detectedFacingRegions[1].region, 'right');
+assert.ok(detectedFacingRegions[0].width > 800 && detectedFacingRegions[0].width < 1300);
+assert.ok(detectedFacingRegions[1].x > 700 && detectedFacingRegions[1].x < 1300);
+assert.strictEqual(
+  dataMergeContext.suggestLandPageRegionsFromVisionAnnotation_({
+    pages: [{
+      width: 1200,
+      height: 1800,
+      blocks: facingPageAnnotation.pages[0].blocks
+    }]
+  }, 0).length,
+  0
+);
 assert.strictEqual(dislocatedA4Fields.attached_assets, '-/-');
 assert.strictEqual(
   dataMergeContext.extractNewA4AttachedAssetFields_(dislocatedA4TermText).state,
@@ -1092,7 +1116,23 @@ chieri C1994238 cung ba for This Theey Lind, CMIND 082114 972
 che chi tai khu SA, the tras
 `;
 const oldCertificateFields = dataMergeContext.extractRealEstateIndexedLandFields_(oldCertificateSplitPageText);
+const oldFocusedCropFields = dataMergeContext.extractAllLandFieldsFromFocusedCrop_(oldCertificateSplitPageText);
 assert.strictEqual(oldCertificateFields.land_address, 'Tiểu khu 9, thị trấn Lương Sơn, huyện Lương Sơn, tỉnh Hòa Bình');
+assert.strictEqual(oldFocusedCropFields.land_plot_number, '255');
+assert.ok(/^102,3 m/.test(oldFocusedCropFields.area));
+assert.strictEqual(oldFocusedCropFields.usage_form, 'Sử dụng riêng');
+assert.strictEqual(oldFocusedCropFields.usage_purpose, 'Đất ở tại đô thị');
+assert.strictEqual(oldFocusedCropFields.usage_term, 'Lâu dài');
+assert.ok(oldFocusedCropFields.usage_origin.indexOf('Nhận chuyển nhượng đất được Nhà nước giao') === 0);
+const numericOldFocusedCropFields = dataMergeContext.extractAllLandFieldsFromFocusedCrop_(
+  'II. Thửa đất, nhà ở và tài sản khác gắn liền với đất\n1. Thửa đất:\na) Thửa đất số: 303; tờ bản đồ số: 3\nb) Địa chỉ: Khu 1, thị trấn Chi Nê, huyện Lạc Thủy, tỉnh Hòa Bình'
+);
+assert.strictEqual(numericOldFocusedCropFields.land_plot_number, '303');
+assert.strictEqual(numericOldFocusedCropFields.map_sheet_number, '3');
+assert.strictEqual(
+  dataMergeContext.extractAllLandFieldsFromFocusedCrop_('a) Thura dat so; 303 to ban do so: 3').land_plot_number,
+  '303'
+);
 assert.strictEqual(
   oldCertificateFields.usage_origin,
   'Nhận chuyển nhượng đất được Nhà nước giao đất có thu tiền sử dụng đất'

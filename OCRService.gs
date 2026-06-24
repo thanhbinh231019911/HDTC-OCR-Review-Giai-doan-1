@@ -318,7 +318,7 @@ function buildLandCertificateRegionTextFromVisionAnnotation_(annotation) {
     const pageBlocks = pageGroups[key];
     const pageWidth = pageBlocks[0].pageWidth;
     const pageHeight = pageBlocks[0].pageHeight;
-    const regions = buildLandCertificateRegionRects_(pageWidth, pageHeight);
+    const regions = buildLandCertificateRegionRects_(pageWidth, pageHeight, pageBlocks);
     regions.forEach(function(region) {
       const text = textFromVisionBlocksInRect_(pageBlocks, region.rect);
       if (!text) return;
@@ -421,17 +421,53 @@ function collectVisionBlockText_(block) {
   return paragraphs.join('\n').replace(/\s+\n/g, '\n').replace(/\n\s+/g, '\n').trim();
 }
 
-function buildLandCertificateRegionRects_(pageWidth, pageHeight) {
+function buildLandCertificateRegionRects_(pageWidth, pageHeight, blocks) {
   const w = Math.max(Number(pageWidth || 0), 1);
   const h = Math.max(Number(pageHeight || 0), 1);
   const regions = [
     { name: 'full', rect: { x: 0, y: 0, width: w, height: h } },
-    { name: 'left', rect: { x: 0, y: 0, width: w * 0.54, height: h } },
-    { name: 'right', rect: { x: w * 0.46, y: 0, width: w * 0.54, height: h } },
     { name: 'top', rect: { x: 0, y: 0, width: w, height: h * 0.54 } },
     { name: 'bottom', rect: { x: 0, y: h * 0.46, width: w, height: h * 0.54 } }
   ];
+  const boundary = detectLandFacingPageBoundary_(w, h, blocks || []);
+  if (boundary) {
+    const overlap = Math.max(12, w * 0.025);
+    regions.splice(1, 0,
+      { name: 'left', rect: { x: 0, y: 0, width: Math.min(w, boundary + overlap), height: h } },
+      { name: 'right', rect: { x: Math.max(0, boundary - overlap), y: 0, width: w - Math.max(0, boundary - overlap), height: h } }
+    );
+  }
   return regions;
+}
+
+function detectLandFacingPageBoundary_(pageWidth, pageHeight, blocks) {
+  const w = Number(pageWidth || 0);
+  const h = Number(pageHeight || 0);
+  if (!w || !h || w <= h * 1.12 || (blocks || []).length < 4) return 0;
+  let left = 0;
+  let right = 0;
+  (blocks || []).forEach(function(block) {
+    if (block.centerX < w * 0.46) left++;
+    else if (block.centerX > w * 0.54) right++;
+  });
+  if (left < 2 || right < 2) return 0;
+  const binCount = 40;
+  const bins = new Array(binCount).fill(0);
+  (blocks || []).forEach(function(block) {
+    const start = Math.max(0, Math.floor(block.box.x / w * binCount));
+    const end = Math.min(binCount - 1, Math.floor((block.box.x + block.box.width) / w * binCount));
+    for (let i = start; i <= end; i++) bins[i]++;
+  });
+  let bestBin = Math.floor(binCount / 2);
+  let bestScore = Infinity;
+  for (let i = Math.floor(binCount * 0.34); i <= Math.ceil(binCount * 0.66); i++) {
+    const score = bins[i] * 3 + (bins[i - 1] || 0) + (bins[i + 1] || 0) + Math.abs(i - binCount / 2) * 0.08;
+    if (score < bestScore) {
+      bestScore = score;
+      bestBin = i;
+    }
+  }
+  return Math.round((bestBin + 0.5) / binCount * w);
 }
 
 function textFromVisionBlocksInRect_(blocks, rect) {

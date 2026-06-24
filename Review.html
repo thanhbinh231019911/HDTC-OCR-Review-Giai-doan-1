@@ -720,6 +720,7 @@
       );
       const ownerDisplayLines = ownerLines(asset, isNewA4);
       const oldHouseCertificate = certificateGeneration === 'gcn_qsdd_qsh_nha_o_va_tsk';
+      const oldA3Certificate = certificateGeneration === 'gcn_qsdd' || oldHouseCertificate;
       const important = [
         [t('Loai GCN'), certificateTitleForReview_(asset, ocrText)],
         [t('So GCN'), valueOf(re.certificate_number) || inferCertificateNumberFromText(ocrText)],
@@ -766,7 +767,7 @@
         }
       } else {
         const ownerHeading = canonicalOldCertificateHeadingForReview_(
-          printedLayout.owner_heading || (oldHouseCertificate && ownerDisplayLines.length
+          printedLayout.owner_heading || (oldA3Certificate
             ? 'I. Người sử dụng đất, chủ sở hữu nhà ở và tài sản khác gắn liền với đất'
             : ''),
           'owner',
@@ -777,7 +778,9 @@
         }
         ownerDisplayLines.forEach(line => lines.push('<div class="asset-doc-line">' + escapeHtml(oneLineCertificateValue(line)) + '</div>'));
         const landSectionHeading = canonicalOldCertificateHeadingForReview_(
-          printedLayout.land_section_heading,
+          printedLayout.land_section_heading || (oldA3Certificate
+            ? 'II. Thửa đất, nhà ở và tài sản khác gắn liền với đất'
+            : ''),
           'land',
           certificateGeneration
         );
@@ -793,7 +796,7 @@
         if (valueOf(re.usage_origin) &&
             !printedLayout.land_fields.some(function(item) { return item.semantic === 'usage_origin'; })) {
           const originMarker = inferPrintedCertificateFieldMarker_(certificateLayoutText, 'usage_origin');
-          const displayedOriginMarker = originMarker || (oldHouseCertificate ? 'g' : '');
+          const displayedOriginMarker = originMarker || (oldA3Certificate ? 'g' : '');
           const originLabel = (displayedOriginMarker ? displayedOriginMarker + ') ' : '') + t('Nguon goc su dung');
           lines.push('<div class="asset-doc-line">' + escapeHtml(originLabel) + ': ' +
             escapeHtml(displayUsageOriginValue(valueOf(re.usage_origin))) + '</div>');
@@ -806,7 +809,7 @@
         }
         const postIssueDisplay = postIssueChangesDisplayValue(valueOf(re.post_issue_changes), ocrText);
         const changeHeading = canonicalOldCertificateHeadingForReview_(
-          printedLayout.change_heading || (oldHouseCertificate && postIssueDisplay
+          printedLayout.change_heading || (oldA3Certificate
             ? 'IV. Những thay đổi sau khi cấp Giấy chứng nhận'
             : ''),
           'change',
@@ -896,7 +899,7 @@
 
     function canonicalOldCertificateHeadingForReview_(heading, section, generation) {
       const text = String(heading || '').trim();
-      if (!text || generation !== 'gcn_qsdd_qsh_nha_o_va_tsk') return text;
+      if (!text || (generation !== 'gcn_qsdd' && generation !== 'gcn_qsdd_qsh_nha_o_va_tsk')) return text;
       if (section === 'owner') {
         return 'I. Ng\u01b0\u1eddi s\u1eed d\u1ee5ng \u0111\u1ea5t, ch\u1ee7 s\u1edf h\u1eefu nh\u00e0 \u1edf v\u00e0 t\u00e0i s\u1ea3n kh\u00e1c g\u1eafn li\u1ec1n v\u1edbi \u0111\u1ea5t';
       }
@@ -1940,13 +1943,55 @@
           const isNewA4 = isNewA4AssetCertificate(asset, getAssetOcrText());
           const jobs = [
             {
+              key: 'land_plot_number',
+              path: 'assets[' + index + '].real_estate.land_plot_number',
+              field: re.land_plot_number,
+              missing: needsLabeledLandFieldVerification_(re.land_plot_number),
+              source: 'AUTO_OCR_LAND_LABEL_CROP_V2'
+            },
+            {
+              key: 'map_sheet_number',
+              path: 'assets[' + index + '].real_estate.map_sheet_number',
+              field: re.map_sheet_number,
+              missing: needsLabeledLandFieldVerification_(re.map_sheet_number),
+              source: 'AUTO_OCR_LAND_LABEL_CROP_V2'
+            },
+            {
+              key: 'land_address',
+              path: 'assets[' + index + '].real_estate.land_address',
+              field: re.land_address,
+              missing: needsLabeledLandFieldVerification_(re.land_address),
+              source: 'AUTO_OCR_LAND_LABEL_CROP_V2'
+            },
+            {
+              key: 'area',
+              path: 'assets[' + index + '].real_estate.area',
+              field: re.area,
+              missing: needsLabeledLandFieldVerification_(re.area),
+              source: 'AUTO_OCR_LAND_LABEL_CROP_V2'
+            },
+            {
+              key: 'area_in_words',
+              path: 'assets[' + index + '].real_estate.area_in_words',
+              field: re.area_in_words,
+              missing: needsLabeledLandFieldVerification_(re.area_in_words),
+              source: 'AUTO_OCR_LAND_LABEL_CROP_V2'
+            },
+            {
               key: 'usage_purpose',
               path: 'assets[' + index + '].real_estate.usage_purpose',
               field: re.usage_purpose,
               missing: isNewA4
                 ? needsA4GeometryFieldVerification_(re.usage_purpose, 'usage_purpose')
                 : needsLabeledLandFieldVerification_(re.usage_purpose),
-              source: isNewA4 ? 'AUTO_OCR_A4_GEOMETRY_CROP_V2' : 'AUTO_OCR_LAND_LABEL_CROP_V1'
+              source: isNewA4 ? 'AUTO_OCR_A4_GEOMETRY_CROP_V2' : 'AUTO_OCR_LAND_LABEL_CROP_V2'
+            },
+            {
+              key: 'usage_origin',
+              path: 'assets[' + index + '].real_estate.usage_origin',
+              field: re.usage_origin,
+              missing: !isNewA4 && needsLabeledLandFieldVerification_(re.usage_origin),
+              source: 'AUTO_OCR_LAND_LABEL_CROP_V2'
             },
             {
               key: 'usage_term',
@@ -1955,7 +2000,7 @@
               missing: isNewA4
                 ? needsA4GeometryFieldVerification_(re.usage_term, 'usage_term')
                 : needsLabeledLandFieldVerification_(re.usage_term),
-              source: isNewA4 ? 'AUTO_OCR_A4_GEOMETRY_CROP_V2' : 'AUTO_OCR_LAND_LABEL_CROP_V1'
+              source: isNewA4 ? 'AUTO_OCR_A4_GEOMETRY_CROP_V2' : 'AUTO_OCR_LAND_LABEL_CROP_V2'
             },
             {
               key: 'usage_form',
@@ -1964,7 +2009,7 @@
               missing: isNewA4
                 ? needsA4GeometryFieldVerification_(re.usage_form, 'usage_form')
                 : needsLabeledLandFieldVerification_(re.usage_form),
-              source: isNewA4 ? 'AUTO_OCR_A4_GEOMETRY_CROP_V2' : 'AUTO_OCR_LAND_LABEL_CROP_V1'
+              source: isNewA4 ? 'AUTO_OCR_A4_GEOMETRY_CROP_V2' : 'AUTO_OCR_LAND_LABEL_CROP_V2'
             }
           ].filter(job => job.missing && !autoOcrDonePaths[job.path]);
           if (!jobs.length) continue;
@@ -1975,9 +2020,10 @@
                 issueDate: false,
                 landFields: true
               })
-            : { _sources: {} };
+            : await readOldLandCertificateFieldsFromFiles_(files);
           if (!isNewA4) {
             for (const job of jobs) {
+              if (cleanValue(result && result[job.key])) continue;
               const reading = await readLabeledLandFieldFromFiles_(files, job.key);
               if (!reading || !reading.value) continue;
               result[job.key] = reading.value;
@@ -2031,9 +2077,90 @@
       }
     }
 
+    async function readOldLandCertificateFieldsFromFiles_(files) {
+      const keys = [
+        'land_plot_number',
+        'map_sheet_number',
+        'land_address',
+        'area',
+        'area_in_words',
+        'usage_purpose',
+        'usage_term',
+        'usage_form',
+        'usage_origin'
+      ];
+      const out = { _sources: {} };
+      for (const file of files || []) {
+        if (!file.file_id) continue;
+        await forEachRegistryPageImage_(file, async function(pageImage) {
+          const readings = [];
+          for (const colorMode of ['color', 'adaptive_bw']) {
+            const dataUrl = await cropDataUrlFromImage_(pageImage.data_url, {
+              x: 0,
+              y: 0,
+              width: 100000,
+              height: 100000
+            }, {
+              scale: pageImage.high_resolution ? 1 : 2.5,
+              colorMode: colorMode,
+              enhance: colorMode === 'color'
+            });
+            if (!dataUrl) continue;
+            const read = await api('ocrA4LandCertificateCrop', {
+              dataUrl: dataUrl,
+              cropType: 'land_fields'
+            });
+            const layout = cleanValue(read && read.layout);
+            if (layout !== 'gcn_qsdd_land' && layout !== 'gcn_qsdd_qsh_nha_o_va_tsk_land') continue;
+            readings.push(read || {});
+          }
+          const agreed = chooseA4GeometryFieldConsensus_(readings);
+          keys.forEach(function(key) {
+            const value = cleanValue(agreed[key]);
+            if (!out[key] && isTrustedLandPageRegionFieldValue_(key, value)) {
+              out[key] = value;
+              out._sources[key] = 'AUTO_OCR_LAND_PAGE_REGION_CROP_V2';
+            }
+          });
+          autoA4OcrDebug.push({
+            stage: 'old_land_page_region_crop',
+            page: pageImage.page_index,
+            region: pageImage.page_region || 'full',
+            accepted_modes: readings.length,
+            fields: keys.filter(function(key) { return Boolean(out[key]); })
+          });
+          return true;
+        });
+      }
+      return out;
+    }
+
+    function isTrustedLandPageRegionFieldValue_(fieldKey, value) {
+      const normalized = removeVietnameseMarks(cleanValue(value)).toLowerCase()
+        .replace(/[^a-z0-9]+/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+      if (!normalized) return false;
+      if (fieldKey === 'land_plot_number') {
+        return /\d/.test(normalized) && !/\b(?:thua dat|thura|to ban do)\b/.test(normalized);
+      }
+      if (fieldKey === 'map_sheet_number') return /\d/.test(normalized);
+      if (fieldKey === 'land_address') {
+        return !/\b(?:bang chu|met vuong|mot tram|muoi sau|phay khong|dien tich|hinh thuc su dung)\b/.test(normalized);
+      }
+      if (fieldKey === 'area') return /\d/.test(normalized) && /\bm(?:2)?\b/.test(normalized);
+      if (fieldKey === 'area_in_words') return /\bmet vuong\b/.test(normalized);
+      if (fieldKey === 'usage_origin') {
+        return !/\b(?:2 nha o|3 cong trinh|4 rung|5 cay lau nam|6 ghi chu)\b/.test(normalized);
+      }
+      return true;
+    }
+
     function needsLabeledLandFieldVerification_(field) {
       if (!field || field.manual_value) return false;
-      return cleanValue(field.source).indexOf('AUTO_OCR_LAND_LABEL_CROP_V1') !== 0;
+      return cleanValue(field.source).indexOf('AUTO_OCR_LAND_LABEL_CROP_V2') !== 0 &&
+        cleanValue(field.source).indexOf('AUTO_OCR_LAND_PAGE_REGION_CROP_V2') !== 0 &&
+        cleanValue(field.source).indexOf('AUTO_OCR_A4_GEOMETRY_CROP_V2') !== 0;
     }
 
     async function readLabeledLandFieldFromFiles_(files, fieldKey) {
@@ -2083,7 +2210,7 @@
               cropType: 'land_fields'
             });
             const value = cleanValue(read && read[fieldKey]);
-            if (value) readings.push(value);
+            if (isTrustedFocusedLandFieldValue_(fieldKey, value)) readings.push(value);
           }
           console.info('LAND_LABEL_CROP_READINGS', {
             fieldKey: fieldKey,
@@ -2116,7 +2243,7 @@
                 cropType: fieldKey
               });
               const aiValue = cleanValue(ai && ai.value);
-              if (aiValue) aiReadings.push(aiValue);
+              if (isTrustedFocusedLandFieldValue_(fieldKey, aiValue)) aiReadings.push(aiValue);
             }
             value = sameCropTextConsensus_(aiReadings);
           }
@@ -2124,7 +2251,7 @@
             const anchor = removeVietnameseMarks(String(suggested.crop.anchor_text || '')).toLowerCase().replace(/[^a-z0-9]+/g, '_');
             found = {
               value: value,
-              source: 'AUTO_OCR_LAND_LABEL_CROP_V1' + (anchor ? '_' + anchor : '')
+              source: 'AUTO_OCR_LAND_LABEL_CROP_V2' + (anchor ? '_' + anchor : '')
             };
           }
           return !found;
@@ -2132,6 +2259,26 @@
         if (found) return found;
       }
       return '';
+    }
+
+    function isTrustedFocusedLandFieldValue_(fieldKey, value) {
+      const normalized = removeVietnameseMarks(cleanValue(value)).toLowerCase()
+        .replace(/[^a-z0-9,;]+/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+      if (!normalized) return false;
+      if (fieldKey === 'land_plot_number') return /\d/.test(normalized);
+      if (fieldKey === 'map_sheet_number') return /\d/.test(normalized);
+      if (fieldKey === 'land_address') {
+        const separators = (cleanValue(value).match(/[,;]/g) || []).length;
+        return separators >= 2 && !/\b(?:bang chu|met vuong|dien tich|hinh thuc su dung)\b/.test(normalized);
+      }
+      if (fieldKey === 'area') return /\d/.test(normalized);
+      if (fieldKey === 'area_in_words') return /\bmet vuong\b/.test(normalized);
+      if (fieldKey === 'usage_origin') {
+        return !/\b(?:2 nha o|3 cong trinh|4 rung|5 cay lau nam|6 ghi chu|nha o cong trinh|rung san xuat)\b/.test(normalized);
+      }
+      return true;
     }
 
     function isMissingA4CertificateTextField_(field) {
@@ -2151,7 +2298,30 @@
     }
 
     async function readA4CertificateFieldsFromFiles_(files, needs) {
-      const out = { issue_date: '', usage_purpose: '', usage_term: '', usage_form: '', _sources: {} };
+      const landFieldKeys = [
+        'land_plot_number',
+        'map_sheet_number',
+        'land_address',
+        'area',
+        'area_in_words',
+        'usage_purpose',
+        'usage_term',
+        'usage_form',
+        'usage_origin'
+      ];
+      const out = {
+        issue_date: '',
+        land_plot_number: '',
+        map_sheet_number: '',
+        land_address: '',
+        area: '',
+        area_in_words: '',
+        usage_purpose: '',
+        usage_term: '',
+        usage_form: '',
+        usage_origin: '',
+        _sources: {}
+      };
       const ordered = (files || []).slice().sort((a, b) => {
         const aPdf = String(a.file_type || '').toLowerCase() === 'application/pdf' ? 0 : 1;
         const bPdf = String(b.file_type || '').toLowerCase() === 'application/pdf' ? 0 : 1;
@@ -2216,17 +2386,20 @@
                 usageTerm: Boolean(agreed.usage_term),
                 usageForm: Boolean(agreed.usage_form)
               });
-              ['usage_purpose', 'usage_term', 'usage_form'].forEach(function(key) {
+              landFieldKeys.forEach(function(key) {
                 if (!out[key] && cleanValue(agreed[key])) {
                   out[key] = cleanValue(agreed[key]);
                   out._sources[key] = 'AUTO_OCR_A4_GEOMETRY_CROP_V2';
                 }
               });
-              if (out.usage_purpose && out.usage_term && out.usage_form) break;
+              if (out.usage_purpose && out.usage_term && out.usage_form &&
+                  out.land_plot_number && out.map_sheet_number && out.land_address && out.area) break;
             }
-            return !(out.usage_purpose && out.usage_term && out.usage_form);
+            return !(out.usage_purpose && out.usage_term && out.usage_form &&
+              out.land_plot_number && out.map_sheet_number && out.land_address && out.area);
           });
-          if (out.usage_purpose && out.usage_term && out.usage_form) break;
+          if (out.usage_purpose && out.usage_term && out.usage_form &&
+              out.land_plot_number && out.map_sheet_number && out.land_address && out.area) break;
         }
         return out;
       }
@@ -2293,7 +2466,17 @@
 
     function chooseA4GeometryFieldConsensus_(readings) {
       const out = {};
-      ['usage_purpose', 'usage_term', 'usage_form'].forEach(function(key) {
+      [
+        'land_plot_number',
+        'map_sheet_number',
+        'land_address',
+        'area',
+        'area_in_words',
+        'usage_purpose',
+        'usage_term',
+        'usage_form',
+        'usage_origin'
+      ].forEach(function(key) {
         const values = (readings || []).map(function(read) {
           return cleanValue(read && read[key]);
         }).filter(Boolean);
@@ -2737,7 +2920,9 @@
         img.onload = function() {
           const originalWidth = img.naturalWidth;
           const originalHeight = img.naturalHeight;
-          const scale = Math.min(1, maxDimension / Math.max(originalWidth, originalHeight));
+          const requestedScale = maxDimension / Math.max(originalWidth, originalHeight);
+          const pixelScaleLimit = Math.sqrt(8000000 / Math.max(1, originalWidth * originalHeight));
+          const scale = Math.max(0.1, Math.min(2.5, requestedScale, pixelScaleLimit));
           const canvas = document.createElement('canvas');
           canvas.width = Math.max(1, Math.round(originalWidth * scale));
           canvas.height = Math.max(1, Math.round(originalHeight * scale));
@@ -2945,7 +3130,12 @@
       const normalizedDataUrl = await rotateFullImageDataUrl_(dataUrl, rotation);
       const out = [{ data_url: normalizedDataUrl || dataUrl, region: 'full' }];
       if (analysis && analysis.split_candidate) {
-        const halves = await splitFacingPageDataUrls_(normalizedDataUrl || dataUrl);
+        const halves = await splitFacingPageDataUrls_(
+          normalizedDataUrl || dataUrl,
+          analysis.page_regions || [],
+          Number(analysis.page_width || 0),
+          Number(analysis.page_height || 0)
+        );
         out.push(...halves);
       }
       return out;
@@ -2966,18 +3156,30 @@
       });
     }
 
-    function splitFacingPageDataUrls_(dataUrl) {
+    function splitFacingPageDataUrls_(dataUrl, pageRegions, analysisWidth, analysisHeight) {
       return new Promise(function(resolve) {
         const img = new Image();
         img.onload = function() {
           if (img.naturalWidth <= img.naturalHeight * 1.22) return resolve([]);
-          const overlap = Math.round(img.naturalWidth * 0.025);
-          const half = Math.round(img.naturalWidth / 2);
-          const specs = [
-            { x: 0, width: Math.min(img.naturalWidth, half + overlap), region: 'left' },
-            { x: Math.max(0, half - overlap), width: img.naturalWidth - Math.max(0, half - overlap), region: 'right' }
-          ];
+          const specs = (pageRegions || []).length === 2 && analysisWidth > 0 && analysisHeight > 0
+            ? pageRegions.map(function(region) {
+                return {
+                  x: Math.max(0, Math.round(Number(region.x || 0) / analysisWidth * img.naturalWidth)),
+                  width: Math.max(1, Math.round(Number(region.width || 0) / analysisWidth * img.naturalWidth)),
+                  region: region.region || 'page'
+                };
+              })
+            : (function() {
+                const overlap = Math.round(img.naturalWidth * 0.025);
+                const half = Math.round(img.naturalWidth / 2);
+                return [
+                  { x: 0, width: Math.min(img.naturalWidth, half + overlap), region: 'left' },
+                  { x: Math.max(0, half - overlap), width: img.naturalWidth - Math.max(0, half - overlap), region: 'right' }
+                ];
+              })();
           resolve(specs.map(function(spec) {
+            spec.x = Math.min(img.naturalWidth - 1, Math.max(0, spec.x));
+            spec.width = Math.min(img.naturalWidth - spec.x, Math.max(1, spec.width));
             const canvas = document.createElement('canvas');
             canvas.width = spec.width;
             canvas.height = img.naturalHeight;

@@ -2152,7 +2152,7 @@ function isVerifiedA4GeometryField_(field) {
 }
 
 function isVerifiedLandLabelField_(field) {
-  return String(field && field.source || '').indexOf('AUTO_OCR_LAND_LABEL_CROP_V1') === 0;
+  return /^(?:AUTO_OCR_LAND_LABEL_CROP_V[12]|AUTO_OCR_LAND_PAGE_REGION_CROP_V2)/.test(String(field && field.source || ''));
 }
 
 function shouldReplaceUsageOrigin_(field, candidate) {

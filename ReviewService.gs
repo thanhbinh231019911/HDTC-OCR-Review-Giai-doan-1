@@ -379,9 +379,16 @@ function ocrA4LandCertificateCrop(caseId, token, dataUrl, cropType) {
   const result = {
     certificate_number: '',
     issue_date: '',
+    land_plot_number: '',
+    map_sheet_number: '',
+    land_address: '',
+    area: '',
+    area_in_words: '',
     usage_purpose: '',
     usage_term: '',
     usage_form: '',
+    usage_origin: '',
+    layout: 'unknown',
     raw_text: text,
     reason: text ? 'OK' : 'NO_TEXT'
   };
@@ -392,10 +399,17 @@ function ocrA4LandCertificateCrop(caseId, token, dataUrl, cropType) {
     result.issue_date = extractRealEstateIssueDateFromPlainText_(text);
   }
   if (cropType === 'land_fields' || !cropType) {
-    const fields = extractA4LandFieldsFromFocusedCrop_(text);
+    const fields = extractAllLandFieldsFromFocusedCrop_(text);
+    result.land_plot_number = fields.land_plot_number || '';
+    result.map_sheet_number = fields.map_sheet_number || '';
+    result.land_address = fields.land_address || '';
+    result.area = fields.area || '';
+    result.area_in_words = fields.area_in_words || '';
     result.usage_purpose = fields.usage_purpose || '';
     result.usage_term = fields.usage_term || '';
     result.usage_form = fields.usage_form || '';
+    result.usage_origin = fields.usage_origin || '';
+    result.layout = classifyLandCertificatePageText_(text).layout;
   }
   logA4AutoOcrDebug_(caseId, 'AUTO_OCR_A4_CROP_RESULT', {
     crop_type: cropType || '',
@@ -404,6 +418,7 @@ function ocrA4LandCertificateCrop(caseId, token, dataUrl, cropType) {
     usage_purpose_found: Boolean(result.usage_purpose),
     usage_term_found: Boolean(result.usage_term),
     usage_form_found: Boolean(result.usage_form),
+    usage_origin_found: Boolean(result.usage_origin),
     reason: result.reason,
     excerpt: text.slice(0, 300)
   });
@@ -420,7 +435,7 @@ function ocrA4LandCertificateCrop(caseId, token, dataUrl, cropType) {
 
 function ocrLandCriticalFieldCropWithAi(caseId, token, dataUrl, cropType) {
   assertValidToken_(caseId, token);
-  const allowed = ['certificate_number', 'registry_number', 'issue_date', 'usage_purpose', 'usage_term', 'usage_form'];
+  const allowed = ['certificate_number', 'registry_number', 'issue_date', 'land_plot_number', 'map_sheet_number', 'land_address', 'area', 'area_in_words', 'usage_purpose', 'usage_term', 'usage_form', 'usage_origin'];
   if (allowed.indexOf(String(cropType || '')) < 0) return { value: '', reason: 'UNSUPPORTED_CROP_TYPE' };
   if (!/^data:image\/[a-zA-Z0-9.+-]+;base64,/.test(String(dataUrl || ''))) {
     return { value: '', reason: 'INVALID_IMAGE_DATA' };
@@ -431,9 +446,15 @@ function ocrLandCriticalFieldCropWithAi(caseId, token, dataUrl, cropType) {
     certificate_number: 'Transcribe only the printed certificate serial, usually a short letter prefix followed by 6 to 9 digits. Do not return the registry number.',
     registry_number: 'Transcribe only the handwritten or printed value after the registry label. Preserve visible isolated punctuation and omit the surrounding printed dotted fill line.',
     issue_date: 'Transcribe only the complete certificate issue date from the line containing ngay, thang, nam. Return it as DD/MM/YYYY.',
+    land_plot_number: 'Transcribe only the land plot number after the printed label Thua dat so.',
+    map_sheet_number: 'Transcribe only the map sheet number after the printed label To ban do so.',
+    land_address: 'Transcribe only the complete land address after the printed label Dia chi. Preserve all line continuations.',
+    area: 'Transcribe only the numeric land area and its square-metre unit after the printed label Dien tich.',
+    area_in_words: 'Transcribe only the area written in words after the printed label Bang chu.',
     usage_purpose: 'Transcribe only the complete value after the printed land-type or usage-purpose label. Preserve all land types, quantities, punctuation, and line continuations.',
     usage_term: 'Transcribe only the complete value after the printed usage-term label. Preserve all dates, punctuation, and line continuations.',
-    usage_form: 'Transcribe only the complete value after the printed usage-form label. Do not include adjacent map, signature, date, or other field text.'
+    usage_form: 'Transcribe only the complete value after the printed usage-form label. Do not include adjacent map, signature, date, or other field text.',
+    usage_origin: 'Transcribe only the complete value after the printed usage-origin label. Preserve all wrapped continuations and do not include the next numbered section.'
   };
   const payload = {
     model: PropertiesService.getScriptProperties().getProperty('OPENAI_MODEL') || CONFIG.OPENAI_MODEL_DEFAULT,
@@ -477,9 +498,14 @@ function ocrLandCriticalFieldCropWithAi(caseId, token, dataUrl, cropType) {
   if (cropType === 'certificate_number') value = normalizeCertificateSerialValue_(value);
   if (cropType === 'registry_number') value = normalizeRegistryCodeValue_(value);
   if (cropType === 'issue_date') value = normalizeDateValue_(value);
+  if (cropType === 'land_plot_number') value = extractLandPlotNumberFromIndexedValue_(value);
+  if (cropType === 'map_sheet_number') value = extractMapSheetNumberFromIndexedValue_(value);
+  if (cropType === 'land_address') value = cleanupLandAddressCertificateValue_(value);
+  if (cropType === 'area') value = normalizeRealEstateAreaValue_(value);
   if (cropType === 'usage_purpose') value = cleanupIndexedCertificateValue_(value);
   if (cropType === 'usage_term') value = normalizeRealEstateUsageTerm_(cleanupIndexedCertificateValue_(value));
   if (cropType === 'usage_form') value = normalizeRealEstateUsageForm_(cleanupIndexedCertificateValue_(value));
+  if (cropType === 'usage_origin') value = cleanupUsageOriginCertificateValue_(value);
   return { value: value, reason: value ? 'OK' : 'UNREADABLE' };
 }
 
@@ -504,6 +530,31 @@ function extractA4LandFieldsFromFocusedCrop_(text) {
     usage_term: normalizeRealEstateUsageTerm_(cleanupIndexedCertificateValue_(findSemanticLandFieldValue_(source, ['thoi han su dung']))),
     usage_form: normalizeRealEstateUsageForm_(cleanupIndexedCertificateValue_(findSemanticLandFieldValue_(source, ['hinh thuc su dung'])))
   };
+}
+
+function extractAllLandFieldsFromFocusedCrop_(text) {
+  const source = String(text || '');
+  const indexed = extractRealEstateIndexedLandFields_(source);
+  const basic = extractA4LandFieldsFromFocusedCrop_(source);
+  return {
+    land_plot_number: /\d/.test(String(indexed.land_plot_number || ''))
+      ? indexed.land_plot_number
+      : extractLandPlotNumberFromFocusedOcrText_(source),
+    map_sheet_number: indexed.map_sheet_number || '',
+    land_address: indexed.land_address || '',
+    area: indexed.area || '',
+    area_in_words: extractAreaWordsFromCertificateText_(source) || '',
+    usage_purpose: indexed.usage_purpose || basic.usage_purpose || '',
+    usage_term: indexed.usage_term || basic.usage_term || '',
+    usage_form: indexed.usage_form || basic.usage_form || '',
+    usage_origin: indexed.usage_origin || cleanupUsageOriginCertificateValue_(findSemanticLandFieldValue_(source, ['nguon goc su dung']))
+  };
+}
+
+function extractLandPlotNumberFromFocusedOcrText_(text) {
+  const normalized = removeVietnameseAccents_(String(text || '')).toLowerCase().replace(/\s+/g, ' ');
+  const match = normalized.match(/\bth(?:ua|ura|ira)\s+dat\s+so\s*[:;,.]?\s*([0-9]+(?:[./-][0-9]+)?)/i);
+  return match ? match[1] : '';
 }
 
 function analyzeLandPageImage(caseId, token, dataUrl) {
@@ -538,9 +589,11 @@ function analyzeLandPageImage(caseId, token, dataUrl) {
   const normalizedWidth = rotation === 90 || rotation === 270 ? rawHeight : rawWidth;
   const normalizedHeight = rotation === 90 || rotation === 270 ? rawWidth : rawHeight;
   const wordCount = collectVisionWords_(annotation).length;
+  const pageRegions = suggestLandPageRegionsFromVisionAnnotation_(annotation, rotation);
   return {
     rotation: rotation,
-    split_candidate: isLikelyFacingPageSpread_(annotation, rotation),
+    split_candidate: pageRegions.length === 2,
+    page_regions: pageRegions,
     page_width: normalizedWidth,
     page_height: normalizedHeight,
     word_count: wordCount,
@@ -584,18 +637,25 @@ function suggestLandTextFieldCropFromImage(caseId, token, dataUrl, fieldKey) {
 
 function suggestLandTextFieldCropFromVisionAnnotation_(annotation, fieldKey) {
   const aliasesByField = {
+    land_plot_number: [['thua', 'dat', 'so'], ['thira', 'dat', 'so'], ['thura', 'dat', 'so']],
+    map_sheet_number: [['to', 'ban', 'do', 'so']],
+    land_address: [['dia', 'chi']],
+    area: [['dien', 'tich']],
+    area_in_words: [['bang', 'chu']],
     usage_purpose: [['loai', 'dat'], ['muc', 'dich', 'su', 'dung']],
     usage_term: [['thoi', 'han', 'su', 'dung']],
     usage_form: [['hinh', 'thuc', 'su', 'dung']],
     usage_origin: [['nguon', 'goc', 'su', 'dung']]
   };
-  const allAliases = [].concat(
-    aliasesByField.usage_purpose,
-    aliasesByField.usage_term,
-    aliasesByField.usage_form,
-    aliasesByField.usage_origin,
-    [['thua', 'dat', 'so'], ['dien', 'tich'], ['dia', 'chi']]
-  );
+  const allAliases = Object.keys(aliasesByField).reduce(function(out, key) {
+    return out.concat(aliasesByField[key]);
+  }, []).concat([
+    ['nha', 'o'],
+    ['cong', 'trinh', 'xay', 'dung', 'khac'],
+    ['rung', 'san', 'xuat'],
+    ['cay', 'lau', 'nam'],
+    ['ghi', 'chu']
+  ]);
   const aliases = aliasesByField[fieldKey] || [];
   if (!aliases.length) return null;
   const words = collectVisionWords_(annotation);
@@ -658,6 +718,17 @@ function suggestLandTextFieldCropFromVisionAnnotation_(annotation, fieldKey) {
       bottom = Math.max(y + 8, Math.round(nextBox.y - padY * 0.4));
     }
   }
+  const minimumLineFactors = {
+    land_plot_number: 3.0,
+    map_sheet_number: 3.0,
+    land_address: 4.2,
+    area: 3.2,
+    area_in_words: 4.2,
+    usage_origin: 4.2
+  };
+  if (minimumLineFactors[fieldKey]) {
+    bottom = Math.min(pageHeight, Math.max(bottom, Math.round(labelBox.y + labelBox.height * minimumLineFactors[fieldKey])));
+  }
   return {
     x: x,
     y: y,
@@ -669,27 +740,75 @@ function suggestLandTextFieldCropFromVisionAnnotation_(annotation, fieldKey) {
 }
 
 function isLikelyFacingPageSpread_(annotation, rotation) {
+  return suggestLandPageRegionsFromVisionAnnotation_(annotation, rotation).length === 2;
+}
+
+function suggestLandPageRegionsFromVisionAnnotation_(annotation, rotation) {
   const words = collectVisionWords_(annotation);
-  if (words.length < 20) return false;
+  if (words.length < 20) return [];
   const page = annotation && annotation.pages && annotation.pages[0];
   const rawWidth = Number(page && page.width || 0);
   const rawHeight = Number(page && page.height || 0);
   const normalizedWidth = rotation === 90 || rotation === 270 ? rawHeight : rawWidth;
   const normalizedHeight = rotation === 90 || rotation === 270 ? rawWidth : rawHeight;
-  if (!normalizedWidth || normalizedWidth <= normalizedHeight * 1.22) return false;
-  let left = 0;
-  let right = 0;
-  let gutter = 0;
-  words.forEach(function(word) {
+  if (!normalizedWidth || !normalizedHeight || normalizedWidth <= normalizedHeight * 1.12) return [];
+  const normalizedWords = words.map(function(word) {
     const box = typeof normalizeVisionRectForRotation_ === 'function'
       ? normalizeVisionRectForRotation_(word.box, rawWidth, rawHeight, rotation)
       : word.box;
-    const centerX = box.x + box.width / 2;
-    if (centerX < normalizedWidth * 0.46) left++;
-    else if (centerX > normalizedWidth * 0.54) right++;
-    else gutter++;
+    return {
+      text: word.text,
+      box: box,
+      centerX: box.x + box.width / 2,
+      centerY: box.y + box.height / 2
+    };
   });
-  return left >= 8 && right >= 8 && gutter <= Math.max(4, Math.round(words.length * 0.14));
+  let left = 0;
+  let right = 0;
+  normalizedWords.forEach(function(word) {
+    if (word.centerX < normalizedWidth * 0.46) left++;
+    else if (word.centerX > normalizedWidth * 0.54) right++;
+  });
+  if (left < 8 || right < 8) return [];
+  const binCount = 40;
+  const bins = new Array(binCount).fill(0);
+  normalizedWords.forEach(function(word) {
+    const start = Math.max(0, Math.floor(word.box.x / normalizedWidth * binCount));
+    const end = Math.min(binCount - 1, Math.floor((word.box.x + word.box.width) / normalizedWidth * binCount));
+    for (let i = start; i <= end; i++) bins[i]++;
+  });
+  let gutterBin = Math.floor(binCount / 2);
+  let gutterScore = Infinity;
+  for (let i = Math.floor(binCount * 0.34); i <= Math.ceil(binCount * 0.66); i++) {
+    const score = bins[i] * 3 + (bins[i - 1] || 0) + (bins[i + 1] || 0) + Math.abs(i - binCount / 2) * 0.08;
+    if (score < gutterScore) {
+      gutterScore = score;
+      gutterBin = i;
+    }
+  }
+  const boundary = Math.round((gutterBin + 0.5) / binCount * normalizedWidth);
+  const overlap = Math.max(12, Math.round(normalizedWidth * 0.025));
+  function regionForSide(sideWords, x, width, name) {
+    const bounds = mergeVisionRects_(sideWords.map(function(word) { return word.box; }));
+    const padY = Math.max(12, Math.round(normalizedHeight * 0.025));
+    const top = bounds && isFinite(bounds.y) ? Math.max(0, Math.round(bounds.y - padY)) : 0;
+    const bottom = bounds && isFinite(bounds.y + bounds.height)
+      ? Math.min(normalizedHeight, Math.round(bounds.y + bounds.height + padY))
+      : normalizedHeight;
+    return {
+      x: Math.max(0, x),
+      y: 0,
+      width: Math.min(normalizedWidth - Math.max(0, x), width),
+      height: normalizedHeight,
+      content_y: top,
+      content_height: Math.max(1, bottom - top),
+      region: name
+    };
+  }
+  return [
+    regionForSide(normalizedWords.filter(function(word) { return word.centerX <= boundary + overlap; }), 0, boundary + overlap, 'left'),
+    regionForSide(normalizedWords.filter(function(word) { return word.centerX >= boundary - overlap; }), boundary - overlap, normalizedWidth - boundary + overlap, 'right')
+  ];
 }
 
 function extractA4LandCertificateFieldsFromStoredOcr(caseId, token, fileId, fileName) {
@@ -820,7 +939,7 @@ function saveAutoOcrA4LandFieldValues(caseId, token, values) {
   assertValidToken_(caseId, token);
   if (getLatestFinalData(caseId)) return { ok: false, reason: 'CASE_FINALIZED' };
   const items = (values || []).filter(function(item) {
-    return item && /^assets\[\d+\]\.real_estate\.(usage_purpose|usage_term|usage_form)$/.test(String(item.fieldPath || ''));
+    return item && /^assets\[\d+\]\.real_estate\.(land_plot_number|map_sheet_number|land_address|area|area_in_words|usage_purpose|usage_term|usage_form|usage_origin)$/.test(String(item.fieldPath || ''));
   });
   if (!items.length) return { ok: false, reason: 'NO_VALUES' };
   const manualPaths = {};
@@ -836,16 +955,22 @@ function saveAutoOcrA4LandFieldValues(caseId, token, values) {
     if (manualPaths[fieldPath]) return;
     const field = getByPath(data, fieldPath);
     if (!field || typeof field !== 'object' || !field.hasOwnProperty('final_value') || field.manual_value) return;
-    const fieldKey = fieldPath.match(/\.(usage_purpose|usage_term|usage_form)$/)[1];
+    const fieldKey = fieldPath.match(/\.(land_plot_number|map_sheet_number|land_address|area|area_in_words|usage_purpose|usage_term|usage_form|usage_origin)$/)[1];
     let newValue = cleanupIndexedCertificateValue_(item.newValue);
+    if (fieldKey === 'land_plot_number') newValue = extractLandPlotNumberFromIndexedValue_(newValue);
+    if (fieldKey === 'map_sheet_number') newValue = extractMapSheetNumberFromIndexedValue_(newValue);
+    if (fieldKey === 'land_address') newValue = cleanupLandAddressCertificateValue_(newValue);
+    if (fieldKey === 'area') newValue = normalizeRealEstateAreaValue_(newValue);
+    if (fieldKey === 'area_in_words') newValue = cleanupIndexedCertificateValue_(newValue).replace(/^[()]+|[()]+$/g, '').trim();
     if (fieldKey === 'usage_purpose') newValue = normalizeLandTypeAreaUnits_(newValue);
     if (fieldKey === 'usage_term') newValue = normalizeRealEstateUsageTerm_(newValue);
     if (fieldKey === 'usage_form') newValue = normalizeRealEstateUsageForm_(newValue);
+    if (fieldKey === 'usage_origin') newValue = cleanupUsageOriginCertificateValue_(newValue);
     if (!newValue) return;
     field.ai_value = newValue;
     field.final_value = newValue;
     field.manual_value = '';
-    field.source = item.source || 'AUTO_OCR_LAND_LABEL_CROP_V1';
+    field.source = item.source || 'AUTO_OCR_LAND_LABEL_CROP_V2';
     field.confidence = 0.92;
     field.confirmed = false;
     field.evidence = 'Focused high-resolution label crop consensus';
