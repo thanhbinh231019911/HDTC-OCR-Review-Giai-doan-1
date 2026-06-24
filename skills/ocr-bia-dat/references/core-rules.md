@@ -42,6 +42,20 @@ Rules:
 
 Land-certificate uploads may contain one physical page per image, two facing pages in one image, or rendered PDF pages. Before extracting certificate fields, classify candidate pages/regions by OCR markers.
 
+Mandatory processing order:
+
+1. Decode the original image, including EXIF orientation.
+2. Detect the dominant text direction and rotate the complete image/page to upright reading orientation.
+3. Verify the normalized orientation from text geometry. Do not run page classification, page splitting, field location, OCR extraction, or persistence on the unnormalized source image.
+4. Detect text-bearing regions on the normalized full page from OCR word boxes/text-density geometry.
+5. Build page and section candidates from those detected text regions. For a facing-page image, keep the normalized full image and create overlapping left/right page candidates around the detected page boundary.
+6. Crop the selected text-bearing page/section region, deskew or correct perspective when needed, and enlarge it until the printed character height is suitable for OCR.
+7. Run OCR on the enlarged crop in multiple rendering modes, then classify sections and extract fields.
+
+Orientation normalization is a hard prerequisite, not an optional repair. Every later crop coordinate must be expressed in the normalized image coordinate system. A stored `orientation_degrees` value, EXIF flag, or earlier OCR orientation result may be used as evidence, but the normalized page must still be verified before extraction.
+
+Text-region detection must drive crop and zoom. Do not rely only on OCR of the complete camera image when the certificate occupies a smaller part of the frame or contains two facing pages. First use a full-page OCR/geometry pass to locate printed text blocks and section anchors; then crop and enlarge the relevant block and OCR it again for authoritative field values. The initial full-page OCR is for orientation, localization, and classification—not final transcription of small fields.
+
 Use the complete OCR-read certificate title from the printed title page as the primary generation signal. Different certificate generations have different titles and section structures; do not assume all land certificates use the old 4-page `II. Thua dat` layout.
 
 Do not accept an abbreviated or truncated title as a standard certificate title. Crop and OCR the printed title independently, join all title lines, and preserve every distinguishing phrase such as `nha o`, `va`, `khac`, or `tai san gan lien voi dat`. Section markers and page layout are supporting evidence for page classification and conflict detection; they must not silently replace a complete title or turn a truncated title into a guessed standard title. If the title remains incomplete or conflicts with the page structure, classify the generation as unknown and request review instead of forcing the nearest known generation.
@@ -60,6 +74,7 @@ Classify page/layout classes within those generations:
 
 For images that show two pages at once, create left/right page candidates after orientation normalization. For single-page images, keep the full page candidate. Classify by OCR markers, not by filename or upload order.
 Normalize every uploaded image and every rendered PDF page to its dominant text orientation before creating field crops. Always keep the normalized full-page candidate. Add overlapping left/right candidates only when the normalized page is wide and OCR geometry indicates a possible two-page spread; never replace the full-page candidate with a blind split.
+When a camera photo is stored in portrait pixels but EXIF or text direction shows a landscape certificate spread, rotate first and only then decide whether it is a two-page spread. Never use raw pixel width/height alone to reject page splitting.
 
 For scanned PDFs, do not use a single Drive OCR text blob as the authoritative source for certificate fields. Render or submit each PDF page to Cloud Vision as page-level OCR, create the same page/region candidates as image uploads, then classify and extract from those regions. A clear scanned PDF must be treated as page images, not as unstructured full-document text.
 When repairing A4 review fields after the review page loads, first try the stored full OCR text for land-certificate files. If the asset has no directly linked files, fall back to OCR results whose text/name clearly contains land-certificate markers. Only then run field-specific image crops.
@@ -74,10 +89,13 @@ Crop/OCR policy:
 - Extract post-issue changes only from `gcn_qsdd_change`, `gcn_qsdd_qsh_nha_o_va_tsk_change`, or `gcn_qsdd_qsh_tsglvd_page_2`.
 - Extract registry number only from the region around `So vao so cap GCN/Giay chung nhan`; never infer it from the printed certificate serial.
 - If no trusted page/region is available, leave the affected field blank and add a manual-review warning instead of falling back to whole-image OCR.
-- For every certificate case, run field-specific enlarged crops for certificate issue date and registry number, whether the current value is blank, printed, or handwritten. Full-page OCR may locate the field but must not be the final authority for these two fields.
-- Locate the issue-date crop from the full printed line containing `ngay ... thang ... nam ...`. Locate the registry crop from the complete `So vao so cap GCN/Giay chung nhan` label and extend through the remaining fill line. A code token is not required before creating the registry crop.
+- For every certificate case, always run field-specific crop-and-zoom OCR for certificate issue date and registry number, whether the current value is blank, populated, structurally valid, printed, or handwritten. This step is mandatory and must not be skipped because full-page OCR already produced a value.
+- Locate the issue-date crop from the full printed line containing `ngay ... thang ... nam ...`. Locate the registry crop from the complete `So vao so cap GCN/Giay chung nhan` label and extend through the entire remaining handwritten/printed value line. A code token is not required before creating the registry crop.
+- Generate both tight and wider crops for issue date and registry number. The tight crop improves character recognition; the wider crop proves that leading/trailing characters were not cut off. Do not accept a shorter tight-crop value when a wider anchored crop contains a plausible longer value.
+- Enlarge critical-field crops according to detected character height, not merely a fixed page scale. Small camera text must be enlarged enough that the OCR input contains clearly resolved character strokes.
 - Treat certificate serial, registry number, and issue date as three independent critical-field pipelines. Locate each field from its own visual anchor on every candidate page; never use the current stored value's length or characters to reject a complete anchored crop result.
 - Render every critical-field crop at enlarged resolution in multiple general forms: original color, grayscale, adaptive black/white, and color-chroma ink separation. Do not assume blue ink; the handwriting may be black, blue, red, or another color. Accept a value only when at least two renderings agree. A vision-model fallback may transcribe the focused crop only and must not infer missing characters.
+- Persist a critical field only after comparing all candidate crops for that anchored line. A complete wider crop outranks a partial tight crop; a tight crop may provide character clarity but must not silently remove prefix/suffix characters.
 
 Review display policy:
 
@@ -149,9 +167,9 @@ Rules:
 - Accept labels with or without `:` because OCR may drop punctuation.
 - Treat `So vao so cap GCN` as including OCR variants of Vietnamese diacritics, including cases where `so` is read for `so/so`.
 - Take the short text region on the same line or immediately after the registry label.
-- Remove the printed dotted fill line only when OCR reads it as a run of dots, for example `........`.
-- Ignore dots only when the OCR line after the registry label contains a long consecutive printed fill line such as `........`. When that fill line crosses/interleaves a handwritten value like `C.N.5.4.2.9`, store `CN5429`.
-- If the value has only one or a few isolated dots and there is no long printed fill line, preserve those dots because they may be real registry-code punctuation. Examples: `CN.5429` stays `CN.5429`; `C.N.5.4.2.9` stays unchanged when no dotted fill line is present.
+- Detect the printed dotted fill line from the focused crop's visual geometry, spacing, color, stroke shape, and continuity—not only from whether OCR returns a literal run such as `........`.
+- When regularly spaced printed guide dots cross or appear between handwritten characters, remove those printed dots from the stored registry code. Example: a visual fill line interleaving `C.H.0.1.7.6.6` is stored as `CH01766`.
+- Preserve punctuation only when the focused crop shows that the mark belongs to the actual written/printed registry code rather than the form's dotted guide. For example, `CN.5429` stays `CN.5429` only when the isolated dot has the same ink/stroke behavior as the code and is not part of the regularly spaced fill line.
 - Preserve a single punctuation mark such as `.`, `/`, or `-` when OCR reads it inside the candidate value; it may be handwritten.
 - Remove internal spaces only. Do not invent punctuation. Examples: `CS 03027` -> `CS03027`; `CL 2017` -> `CL2017`; `CL.2017` -> `CL.2017`.
 - Reject partial numeric-only values such as `027`; leave blank or warn for manual review.
@@ -165,6 +183,7 @@ Rules:
 - Use general color-chroma separation rather than a blue-only rule so handwritten values in different ink colors remain detectable.
 - Prefer tight edge crops around the registry line for rotated certificate spreads. Broad page strips may locate the field but must not outvote a tight crop that contains the handwritten code.
 - Evaluate all focused crops for the page before accepting a registry value. Never stop at the first color/grayscale agreement when a tighter crop of the handwritten line is still available.
+- Also evaluate a wider anchored registry-line crop before accepting a result. Reject a candidate when its prefix or suffix may have been clipped, even if two render modes agree on the clipped text.
 - Persist focused registry OCR as automated extracted data with an `AUTO_OCR` source. Do not store it as a manual override.
 - Never hard-code a corrected registry code for one case or learn a direct character substitution such as `4 -> 1` from a single example.
 
