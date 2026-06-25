@@ -52,6 +52,12 @@
       conflicts: normalized.conflicts || [],
       warnings: normalized.warnings || []
     },
+    processing_metrics: aiData && aiData._openai_processing || {
+      model: CONFIG.OPENAI_MODEL_LOCKED,
+      extraction_usage: {},
+      land_vision_usage: [],
+      total_usage: {}
+    },
     review: {
       status: 'PENDING_REVIEW',
       review_url: '',
@@ -957,7 +963,14 @@ function buildFinalConfirmedData(reviewJson) {
     contract_info: flattenFieldObject_(reviewJson.contract_info),
     secured_parties: (reviewJson.secured_parties || []).map(flattenFieldObject_),
     obligors: (reviewJson.obligors || []).map(flattenFieldObject_),
-    assets: (reviewJson.assets || []).map(flattenFieldObject_),
+    assets: (reviewJson.assets || []).map(function(asset) {
+      const contractAsset = {};
+      Object.keys(asset || {}).forEach(function(key) {
+        if (key === 'certificate_semantic_document') return;
+        contractAsset[key] = asset[key];
+      });
+      return flattenFieldObject_(contractAsset);
+    }),
     validation_status: reviewJson.validation.status,
     missing_fields: reviewJson.validation.missing_fields,
     conflicts: reviewJson.validation.conflicts,
@@ -1154,7 +1167,8 @@ function normalizeAsset_(asset, assetOcrText) {
       issue_date: 'Ng?y c?p ??ng k?',
       issuing_authority: 'C? quan c?p ??ng k?',
       inspection_info: 'Th?ng tin ??ng ki?m'
-    })
+    }),
+    certificate_semantic_document: asset.certificate_semantic_document || null
   };
   enrichAssetFromOcr_(normalized, assetOcrText || '');
   normalizeAssetTypeField_(normalized.asset_type);
@@ -1498,6 +1512,14 @@ function splitLandSemanticPageInputs_(source) {
         return page.source_region === 'left' || page.source_region === 'right';
       });
     }
+    const topBottomPages = deduplicated.filter(function(page) {
+      return page.source_region === 'top' || page.source_region === 'bottom';
+    });
+    const hasTop = topBottomPages.some(function(page) { return page.source_region === 'top'; });
+    const hasBottom = topBottomPages.some(function(page) { return page.source_region === 'bottom'; });
+    if (hasTop && hasBottom && shouldPreferTopBottomLandSemanticRegions_(topBottomPages)) {
+      return topBottomPages;
+    }
     const fullPages = deduplicated.filter(function(page) { return page.source_region === 'full'; });
     return fullPages.length ? fullPages : deduplicated;
   }
@@ -1509,6 +1531,26 @@ function splitLandSemanticPageInputs_(source) {
       source_region: ''
     };
   }).filter(function(page) { return Boolean(page.text); });
+}
+
+function shouldPreferTopBottomLandSemanticRegions_(pages) {
+  const top = (pages || []).filter(function(page) { return page.source_region === 'top'; })[0];
+  const bottom = (pages || []).filter(function(page) { return page.source_region === 'bottom'; })[0];
+  if (!top || !bottom) return false;
+  const topKey = semanticOcrNormalizedText_(top.text);
+  const bottomKey = semanticOcrNormalizedText_(bottom.text);
+  if (!topKey || !bottomKey || topKey === bottomKey) return false;
+  const topLayout = top.layout || classifyLandCertificatePageText_(top.text).layout;
+  const bottomLayout = bottom.layout || classifyLandCertificatePageText_(bottom.text).layout;
+  const distinctTrustedLayouts = topLayout !== 'unknown' && bottomLayout !== 'unknown' && topLayout !== bottomLayout;
+  const topSections = findLandCertificateSectionMatches_(top.text).map(function(section) { return section.semantic; });
+  const bottomSections = findLandCertificateSectionMatches_(bottom.text).map(function(section) { return section.semantic; });
+  const distinctSections = topSections.some(function(section) {
+    return bottomSections.indexOf(section) < 0;
+  }) || bottomSections.some(function(section) {
+    return topSections.indexOf(section) < 0;
+  });
+  return distinctTrustedLayouts || distinctSections;
 }
 
 function parseLandCertificateSemanticPage_(source, pageInfo) {

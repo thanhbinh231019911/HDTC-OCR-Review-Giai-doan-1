@@ -17,6 +17,11 @@ function attachLandCertificateSemanticDocumentsForReview_(data, caseId) {
   const assets = data.assets || [];
   const allowAllAssetTexts = canUseSharedAssetOcr_(assets, { byFileName: fullOcr.assetTextByFileName || {} });
   assets.forEach(function(asset) {
+    if (asset && asset.certificate_semantic_document &&
+        asset.certificate_semantic_document.source === 'OPENAI_VISION_SEMANTIC' &&
+        asset.certificate_semantic_document.model === CONFIG.OPENAI_MODEL_LOCKED) {
+      return;
+    }
     const scopedText = assetOcrTextForSemanticReview_(
       asset,
       fullOcr.assetText || '',
@@ -516,7 +521,7 @@ function ocrLandCriticalFieldCropWithAi(caseId, token, dataUrl, cropType) {
     usage_origin: 'Transcribe only the complete value after the printed usage-origin label. Preserve all wrapped continuations and do not include the next numbered section.'
   };
   const payload = {
-    model: PropertiesService.getScriptProperties().getProperty('OPENAI_MODEL') || CONFIG.OPENAI_MODEL_DEFAULT,
+    model: CONFIG.OPENAI_MODEL_LOCKED,
     input: [{
       role: 'user',
       content: [

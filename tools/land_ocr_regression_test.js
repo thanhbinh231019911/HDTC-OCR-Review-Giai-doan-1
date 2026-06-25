@@ -2111,6 +2111,18 @@ assert.strictEqual(
     .join('|'),
   'usage_origin|area|land_address|land_plot_number|usage_form|usage_purpose'
 );
+const configSource = fs.readFileSync('Config.gs', 'utf8');
+const aiExtractionSource = fs.readFileSync('AIExtractionService.gs', 'utf8');
+const reviewServiceSource = fs.readFileSync('ReviewService.gs', 'utf8');
+assert.ok(configSource.includes("OPENAI_MODEL_LOCKED: 'gpt-5.4-mini'"));
+assert.ok(!aiExtractionSource.includes("getProperty('OPENAI_MODEL')"));
+assert.ok(!reviewServiceSource.includes("getProperty('OPENAI_MODEL')"));
+assert.ok(aiExtractionSource.includes('model: CONFIG.OPENAI_MODEL_LOCKED'));
+assert.ok(reviewServiceSource.includes('model: CONFIG.OPENAI_MODEL_LOCKED'));
+assert.ok(aiExtractionSource.includes("labSkill === 'ocr-bia-dat'"));
+assert.ok(aiExtractionSource.includes("assetType.indexOf('bat dong san')"));
+assert.ok(aiExtractionSource.includes('buildOpenAiProcessingMetrics_'));
+assert.ok(fs.readFileSync('DataMergeService.gs', 'utf8').includes("if (key === 'certificate_semantic_document') return"));
 const reorderedNoisyFields = dataMergeContext.extractRealEstateIndexedLandFields_(reorderedNoisyOldCertificateText);
 assert.strictEqual(reorderedNoisyFields.land_plot_number, '303');
 assert.strictEqual(reorderedNoisyFields.map_sheet_number, '3');
@@ -2190,6 +2202,29 @@ IV. Những thay đổi sau khi cấp Giấy chứng nhận
 assert.strictEqual(splitSemanticDocument.pages.length, 2);
 assert.strictEqual(splitSemanticDocument.pages.map(page => page.source_region).join('|'), 'left|right');
 assert.strictEqual(splitSemanticDocument.items.filter(item => item.semantic_key === 'land_plot_number').length, 1);
+
+const topBottomSemanticDocument = dataMergeContext.parseLandCertificateSemanticDocument_(`
+[LAND_OCR_REGION layout=gcn_qsdd_cover region=full]
+I. Người sử dụng đất
+Ông: Nguyễn Văn A
+IV. Những thay đổi sau khi cấp Giấy chứng nhận
+[/LAND_OCR_REGION]
+[LAND_OCR_REGION layout=gcn_qsdd_cover region=top]
+I. Người sử dụng đất
+Ông: Nguyễn Văn A
+[/LAND_OCR_REGION]
+[LAND_OCR_REGION layout=gcn_qsdd_land region=bottom]
+II. Thửa đất
+a) Thửa đất số: 69
+b) Tờ bản đồ số: 16
+[/LAND_OCR_REGION]
+`);
+assert.strictEqual(topBottomSemanticDocument.pages.length, 2);
+assert.strictEqual(topBottomSemanticDocument.pages.map(page => page.source_region).join('|'), 'top|bottom');
+assert.strictEqual(
+  topBottomSemanticDocument.items.filter(item => item.semantic_key === 'land_plot_number')[0].value,
+  '69'
+);
 
 const normalizedChangeDocument = dataMergeContext.parseLandCertificateSemanticDocument_(`
 IV. Những thay đổi sau khi cấp Giấy chứng nhận

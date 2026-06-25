@@ -737,7 +737,7 @@ async function openAiVision(skill, dataUrl, apiKeyOverride) {
     method: 'POST',
     headers: { 'content-type': 'application/json', authorization: 'Bearer ' + apiKey },
     body: JSON.stringify({
-      model: process.env.OPENAI_VISION_MODEL || process.env.OPENAI_MODEL || 'gpt-5.4-mini',
+      model: 'gpt-5.4-mini',
       input: [{
         role: 'user',
         content: [
@@ -789,7 +789,7 @@ async function openAiStructuredExtraction(ocrResults, apiKeyOverride) {
     method: 'POST',
     headers: { 'content-type': 'application/json', authorization: 'Bearer ' + apiKey },
     body: JSON.stringify({
-      model: process.env.OPENAI_MODEL || process.env.OPENAI_VISION_MODEL || 'gpt-5.4-mini',
+      model: 'gpt-5.4-mini',
       input: [
         { role: 'system', content: aiTools.getAiExtractionPrompt() },
         { role: 'user', content: 'Bóc tách dữ liệu sau thành JSON. JSON input:\n' + JSON.stringify(input, null, 2) }

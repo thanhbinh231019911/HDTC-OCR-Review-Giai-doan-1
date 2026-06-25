@@ -5,7 +5,8 @@
   DEFAULT_OCR_ENGINE: 'CLOUD_VISION', // CLOUD_VISION for images; Drive OCR remains fallback for PDF/Word
   OCR_LANGUAGE: 'vi',
   OPENAI_ENDPOINT: 'https://api.openai.com/v1/responses',
-  OPENAI_MODEL_DEFAULT: 'gpt-5.4-mini',
+  OPENAI_MODEL_LOCKED: 'gpt-5.4-mini',
+  OPENAI_LAND_VISION_MAX_FILE_BYTES: 20 * 1024 * 1024,
   DEFAULT_REVIEW_WEB_APP_URL: 'https://script.google.com/macros/s/AKfycbyXkDTtk4PVPzjdCwy1duKEtbqJrNUHlbsF7TO_jTaMJ1JCCz8PJUf7vzerZijF1KyD/exec',
   MAX_OCR_TEXT_CHARS_PER_REQUEST: 120000,
   MAX_API_RETRIES: 3,

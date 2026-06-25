@@ -206,7 +206,7 @@ KhÃ´ng hard-code API key trong code.
 VÃ o Apps Script > Project Settings > Script properties:
 
 - `OPENAI_API_KEY`: API key OpenAI.
-- `OPENAI_MODEL`: model muá»‘n dÃ¹ng, vÃ­ dá»¥ `gpt-5.4-mini`. Náº¿u khÃ´ng Ä‘áº·t, code dÃ¹ng default trong `Config.gs`.
+- Model OpenAI duoc khoa cung phia server tai `CONFIG.OPENAI_MODEL_LOCKED = gpt-5.4-mini`; Script Property khong the doi sang model cao hon.
 - `REVIEW_WEB_APP_URL`: URL Web App sau khi deploy.
 - Code hiá»‡n Ä‘Ã£ cÃ³ `DEFAULT_REVIEW_WEB_APP_URL` trá» tá»›i deployment Ä‘Ã£ táº¡o báº±ng clasp. Chá»‰ cáº§n Ä‘áº·t `REVIEW_WEB_APP_URL` náº¿u báº¡n deploy láº¡i vÃ  muá»‘n Ã©p dÃ¹ng URL má»›i.
 - `CLOUD_VISION_API_KEY`: chá»‰ cáº§n náº¿u Ä‘á»•i `DEFAULT_OCR_ENGINE` sang `CLOUD_VISION`.
@@ -254,7 +254,7 @@ Checklist test tá»‘i thiá»ƒu:
 - KhÃ´ng nháº­n file upload: tÃªn cÃ¢u há»i Google Form khÃ´ng khá»›p `CONFIG.FORM_FIELDS`.
 - Email khÃ´ng gá»­i: kiá»ƒm tra quyá»n MailApp, quota Gmail/Apps Script, email nháº­n cÃ³ há»£p lá»‡ khÃ´ng.
 - Web App bÃ¡o token sai: link bá»‹ copy thiáº¿u query `caseId` hoáº·c `token`, hoáº·c Ä‘Ã£ Ä‘á»•i row `Review Token Hash`.
-- OpenAI tráº£ lá»—i schema/model: Ä‘á»•i `OPENAI_MODEL` sang model há»— trá»£ Structured Outputs hoáº·c dÃ¹ng schema Ã­t nghiÃªm ngáº·t hÆ¡n.
+- OpenAI tra loi schema/model: kiem tra kha dung cua `gpt-5.4-mini` va JSON schema; he thong khong cho doi hoac fallback sang model cao hon.
 - Review xÃ¡c nháº­n nhÆ°ng váº«n cÃ³ cáº£nh bÃ¡o: náº¿u cÃ²n `missing_fields` hoáº·c `conflicts` vÃ  ngÆ°á»i dÃ¹ng xÃ¡c nháº­n tiáº¿p, tráº¡ng thÃ¡i sáº½ lÃ  `REVIEW_CONFIRMED_WITH_WARNINGS`.
 
 ## 14. Quy táº¯c Æ°u tiÃªn dá»¯ liá»‡u Ä‘Ã£ triá»ƒn khai

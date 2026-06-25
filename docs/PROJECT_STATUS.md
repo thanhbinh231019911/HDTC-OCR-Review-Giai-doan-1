@@ -185,7 +185,7 @@ Bắt buộc:
 
 Nên có:
 
-- `OPENAI_MODEL`: ví dụ `gpt-5.4-mini`. Nếu thiếu, dùng `CONFIG.OPENAI_MODEL_DEFAULT`.
+- Mọi lời gọi OpenAI được khóa cứng phía server bằng `CONFIG.OPENAI_MODEL_LOCKED = gpt-5.4-mini`; Script Property không thể nâng model.
 - `REVIEW_WEB_APP_URL`: URL Web App deploy. Nếu thiếu, dùng `CONFIG.DEFAULT_REVIEW_WEB_APP_URL`.
 - `FORM_ID`, `FORM_EDIT_URL`, `FORM_PUBLIC_URL`: do hàm tạo/cập nhật Form lưu.
 - `CONTRACT_TEMPLATE_CONFIG_JSON`: cấu hình template doc IDs, do `setupPhase2TemplatesFromDriveFolder()` lưu.
