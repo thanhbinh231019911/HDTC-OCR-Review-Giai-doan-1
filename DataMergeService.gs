@@ -1362,52 +1362,650 @@ function shouldReplaceOwnerListField_(field, newValue, expectedCount) {
   return expectedCount > currentCount;
 }
 
-function extractRealEstateIndexedLandFields_(text) {
-  const selected = selectBestLandPlotText_(text);
-  const block = selected.text;
-  const items = extractIndexedCertificateItems_(block || text);
-  const source = block || text;
-  if (selected.layout === 'gcn_qsdd_qsh_tsglvd_page_1' && normalizeCertificateIndexLine_(source).indexOf('2 thong tin thua dat') >= 0) {
-    return extractNewA4RealEstateLandFields_(source, selected);
-  }
-  const landTypeValue = findSemanticLandFieldValue_(source, ['loai dat']);
-  const usagePurposeValue = findSemanticLandFieldValue_(source, ['muc dich su dung']);
-  const semantic = {
-    land_plot_number: findSemanticLandFieldValue_(source, ['thua dat so']),
-    map_sheet_number: findSemanticLandFieldValue_(source, ['to ban do so']),
-    land_address: findSemanticLandFieldValue_(source, ['dia chi']),
-    area: findSemanticLandFieldValue_(source, ['dien tich']),
-    usage_form: findSemanticLandFieldValue_(source, ['hinh thuc su dung']),
-    usage_purpose: landTypeValue || usagePurposeValue,
-    usage_term: findSemanticLandFieldValue_(source, ['thoi han su dung']),
-    usage_origin: findSemanticLandFieldValue_(source, ['nguon goc su dung'])
+function landCertificateSemanticOntology_() {
+  return [
+    { semantic_key: 'land_plot_number', section: 'land_details', label: 'Thửa đất số', aliases: ['thua dat so', 'so thua dat', 'thua so'] },
+    { semantic_key: 'map_sheet_number', section: 'land_details', label: 'Tờ bản đồ số', aliases: ['to ban do so', 'so to ban do'], allow_inline: true },
+    { semantic_key: 'land_address', section: 'land_details', label: 'Địa chỉ', aliases: ['dia chi thua dat', 'dia chi'] },
+    { semantic_key: 'area_in_words', section: 'land_details', label: 'Bằng chữ', aliases: ['bang chu'], allow_inline: true },
+    { semantic_key: 'area', section: 'land_details', label: 'Diện tích', aliases: ['dien tich thua dat', 'dien tich'] },
+    { semantic_key: 'usage_purpose', section: 'land_details', label: 'Mục đích sử dụng', aliases: ['muc dich su dung', 'loai dat'] },
+    { semantic_key: 'usage_term', section: 'land_details', label: 'Thời hạn sử dụng', aliases: ['thoi han su dung'] },
+    { semantic_key: 'usage_form', section: 'land_details', label: 'Hình thức sử dụng', aliases: ['hinh thuc su dung'] },
+    { semantic_key: 'usage_origin', section: 'land_details', label: 'Nguồn gốc sử dụng', aliases: ['nguon goc su dung'] },
+    { semantic_key: 'attached_asset_name', section: 'attached_assets', label: 'Tên tài sản', aliases: ['ten tai san'] },
+    { semantic_key: 'attached_asset_area', section: 'attached_assets', label: 'Diện tích sử dụng', aliases: ['dien tich su dung'] },
+    { semantic_key: 'attached_asset_ownership_form', section: 'attached_assets', label: 'Hình thức sở hữu', aliases: ['hinh thuc so huu'] },
+    { semantic_key: 'attached_asset_ownership_term', section: 'attached_assets', label: 'Thời hạn sở hữu', aliases: ['thoi han so huu'] },
+    { semantic_key: 'house', section: 'other_assets', label: 'Nhà ở', aliases: ['nha o'] },
+    { semantic_key: 'other_construction', section: 'other_assets', label: 'Công trình xây dựng khác', aliases: ['cong trinh xay dung khac'] },
+    { semantic_key: 'production_forest', section: 'other_assets', label: 'Rừng sản xuất là rừng trồng', aliases: ['rung san xuat la rung trong', 'rung san xuat'] },
+    { semantic_key: 'perennial_crops', section: 'other_assets', label: 'Cây lâu năm', aliases: ['cay lau nam'] },
+    { semantic_key: 'certificate_note', section: 'certificate_note', label: 'Ghi chú', aliases: ['ghi chu'] },
+    { semantic_key: 'post_issue_change_content', section: 'post_issue_changes', label: 'Nội dung thay đổi và cơ sở pháp lý', aliases: ['noi dung thay doi va co so phap ly', 'noi dung thay doi'] }
+  ];
+}
+
+function landCertificateSectionOntology_() {
+  return [
+    {
+      semantic: 'owners',
+      label: 'Người sử dụng đất, chủ sở hữu tài sản gắn liền với đất',
+      aliases: [
+        'nguoi su dung dat chu so huu tai san gan lien voi dat',
+        'nguoi su dung dat chu so huu nha o va tai san khac gan lien voi dat'
+      ]
+    },
+    {
+      semantic: 'land_details',
+      label: 'Thông tin thửa đất',
+      aliases: [
+        'thong tin thua dat',
+        'thua dat nha o va tai san khac gan lien voi dat',
+        'thua dat nha o va tai san gan lien voi dat'
+      ]
+    },
+    {
+      semantic: 'attached_assets',
+      label: 'Thông tin tài sản gắn liền với đất',
+      aliases: ['thong tin tai san gan lien voi dat']
+    },
+    {
+      semantic: 'land_diagram',
+      label: 'Sơ đồ thửa đất, tài sản gắn liền với đất',
+      aliases: [
+        'so do thua dat tai san gan lien voi dat',
+        'so do thua dat nha o va tai san khac gan lien voi dat',
+        'so do thua dat'
+      ]
+    },
+    {
+      semantic: 'post_issue_changes',
+      label: 'Những thay đổi sau khi cấp Giấy chứng nhận',
+      aliases: ['nhung thay doi sau khi cap giay chung nhan']
+    }
+  ];
+}
+
+function parseLandCertificateSemanticDocument_(text, options) {
+  options = options || {};
+  const source = String(text || '');
+  const completeTitle = extractKnownCertificateTitleFromText_(options.certificate_title || '') ||
+    extractKnownCertificateTitleFromText_(source);
+  const generation = options.generation ||
+    certificateGenerationFromCompleteTitle_(completeTitle) ||
+    inferLandCertificateGenerationFromLayout_(options.layout || classifyLandCertificatePageText_(source).layout);
+  const pageInputs = splitLandSemanticPageInputs_(source);
+  const document = {
+    generation: generation || 'unknown',
+    pages: [],
+    items: [],
+    unparsed_fragments: []
   };
+  let visualOrder = 0;
+  pageInputs.forEach(function(pageInput, pageIndex) {
+    const page = parseLandCertificateSemanticPage_(pageInput.text, {
+      page_index: pageIndex,
+      layout: pageInput.layout || options.layout || '',
+      source_region: pageInput.source_region || ''
+    });
+    page.items.forEach(function(item) {
+      item.visual_order = visualOrder++;
+      document.items.push(item);
+    });
+    page.unparsed_fragments.forEach(function(fragment) {
+      document.unparsed_fragments.push(fragment);
+    });
+    document.pages.push(page);
+  });
+  return document;
+}
+
+function inferLandCertificateGenerationFromLayout_(layout) {
+  if (/^gcn_qsdd_qsh_tsglvd_/.test(String(layout || ''))) return 'gcn_qsdd_qsh_tsglvd';
+  if (/^gcn_qsdd_qsh_nha_o_va_tsk_/.test(String(layout || ''))) return 'gcn_qsdd_qsh_nha_o_va_tsk';
+  if (/^gcn_qsdd_/.test(String(layout || ''))) return 'gcn_qsdd';
+  return '';
+}
+
+function splitLandSemanticPageInputs_(source) {
+  const marked = [];
+  const marker = /\[LAND_OCR_REGION\s+([^\]]*)\]([\s\S]*?)\[\/LAND_OCR_REGION\]/g;
+  let match;
+  while ((match = marker.exec(String(source || ''))) !== null) {
+    const attrs = parseLandOcrMarkerAttrs_(match[1]);
+    const value = String(match[2] || '').trim();
+    if (!value) continue;
+    marked.push({
+      text: value,
+      layout: attrs.layout || classifyLandCertificatePageText_(value).layout,
+      source_region: attrs.region || ''
+    });
+  }
+  if (marked.length) {
+    const deduplicated = [];
+    const seen = {};
+    marked.forEach(function(page) {
+      const key = semanticOcrNormalizedText_(page.text);
+      if (!key || seen[key]) return;
+      seen[key] = true;
+      deduplicated.push(page);
+    });
+    const hasLeft = deduplicated.some(function(page) { return page.source_region === 'left'; });
+    const hasRight = deduplicated.some(function(page) { return page.source_region === 'right'; });
+    if (hasLeft && hasRight) {
+      return deduplicated.filter(function(page) {
+        return page.source_region === 'left' || page.source_region === 'right';
+      });
+    }
+    const fullPages = deduplicated.filter(function(page) { return page.source_region === 'full'; });
+    return fullPages.length ? fullPages : deduplicated;
+  }
+  return String(source || '').split(/\f+/).map(function(value) {
+    const pageText = String(value || '').trim();
+    return {
+      text: pageText,
+      layout: classifyLandCertificatePageText_(pageText).layout,
+      source_region: ''
+    };
+  }).filter(function(page) { return Boolean(page.text); });
+}
+
+function parseLandCertificateSemanticPage_(source, pageInfo) {
+  source = String(source || '');
+  pageInfo = pageInfo || {};
+  const sectionMatches = findLandCertificateSectionMatches_(source);
+  const labelMatches = findLandCertificateSemanticLabelMatches_(source);
+  const page = {
+    page_index: Number(pageInfo.page_index || 0),
+    layout: pageInfo.layout || classifyLandCertificatePageText_(source).layout,
+    source_region: pageInfo.source_region || '',
+    quality: {
+      semantic_item_count: 0,
+      land_candidate_score: scoreLandPlotTextCandidate_(source)
+    },
+    sections: [],
+    items: [],
+    unparsed_fragments: []
+  };
+  const sectionsBySemantic = {};
+  sectionMatches.forEach(function(sectionMatch) {
+    const section = {
+      semantic: sectionMatch.semantic,
+      marker_raw: sectionMatch.marker_raw,
+      label_raw: sectionMatch.label_raw,
+      label_canonical: sectionMatch.label_canonical,
+      visual_order: sectionMatch.start,
+      items: []
+    };
+    page.sections.push(section);
+    sectionsBySemantic[section.semantic] = section;
+  });
+  labelMatches.forEach(function(labelMatch, index) {
+    let valueEnd = index + 1 < labelMatches.length
+      ? (labelMatches[index + 1].marker_start >= 0 ? labelMatches[index + 1].marker_start : labelMatches[index + 1].start)
+      : source.length;
+    sectionMatches.forEach(function(sectionMatch) {
+      const sectionBoundary = sectionMatch.marker_start >= 0 ? sectionMatch.marker_start : sectionMatch.start;
+      if (sectionBoundary > labelMatch.end && sectionBoundary < valueEnd) valueEnd = sectionBoundary;
+    });
+    const genericBoundary = findNextGenericCertificateFieldBoundary_(source, labelMatch.end, valueEnd);
+    if (genericBoundary >= 0 && genericBoundary < valueEnd) valueEnd = genericBoundary;
+    const sectionSemantic = sectionSemanticAtOffset_(sectionMatches, labelMatch.start) || labelMatch.definition.section;
+    const valueRaw = source.slice(skipSemanticValuePunctuation_(source, labelMatch.end), valueEnd).trim();
+    let value = normalizeSemanticCertificateValue_(valueRaw, labelMatch.definition.semantic_key);
+    if (!value && isOptionalOtherAssetSemanticKey_(labelMatch.definition.semantic_key)) value = '-/-';
+    if (!value && labelMatch.definition.semantic_key !== 'certificate_note') return;
+    const item = {
+      semantic_key: labelMatch.definition.semantic_key,
+      section_semantic: sectionSemantic,
+      marker_raw: labelMatch.marker_raw,
+      label_raw: labelMatch.label_raw,
+      label_canonical: labelMatch.definition.label,
+      value: value,
+      value_raw: valueRaw,
+      visual_order: labelMatch.start,
+      confidence: Math.round(labelMatch.score * 100) / 100,
+      evidence: {
+        match_score: Math.round(labelMatch.score * 1000) / 1000,
+        alias: labelMatch.alias,
+        page_index: page.page_index
+      }
+    };
+    let section = sectionsBySemantic[sectionSemantic];
+    if (!section) {
+      section = {
+        semantic: sectionSemantic,
+        marker_raw: '',
+        label_raw: '',
+        label_canonical: canonicalLandCertificateSectionLabel_(sectionSemantic),
+        visual_order: labelMatch.start,
+        items: []
+      };
+      sectionsBySemantic[sectionSemantic] = section;
+      page.sections.push(section);
+    }
+    section.items.push(item);
+    page.items.push(item);
+  });
+  collectUnknownLandCertificateFragments_(source, sectionMatches, labelMatches).forEach(function(fragment) {
+    const sectionSemantic = sectionSemanticAtOffset_(sectionMatches, fragment.start) || 'unknown';
+    const item = {
+      semantic_key: 'unknown',
+      section_semantic: sectionSemantic,
+      marker_raw: fragment.marker_raw,
+      label_raw: fragment.label_raw,
+      label_canonical: '',
+      value: fragment.value,
+      value_raw: fragment.value_raw,
+      visual_order: fragment.start,
+      confidence: 0,
+      evidence: {
+        match_score: 0,
+        alias: '',
+        page_index: page.page_index
+      }
+    };
+    let section = sectionsBySemantic[sectionSemantic];
+    if (!section) {
+      section = {
+        semantic: sectionSemantic,
+        marker_raw: '',
+        label_raw: '',
+        label_canonical: canonicalLandCertificateSectionLabel_(sectionSemantic),
+        visual_order: fragment.start,
+        items: []
+      };
+      sectionsBySemantic[sectionSemantic] = section;
+      page.sections.push(section);
+    }
+    section.items.push(item);
+    page.items.push(item);
+    page.unparsed_fragments.push(item);
+  });
+  page.sections.sort(function(a, b) { return a.visual_order - b.visual_order; });
+  page.items.sort(function(a, b) { return a.visual_order - b.visual_order; });
+  page.quality.semantic_item_count = page.items.filter(function(item) { return item.semantic_key !== 'unknown'; }).length;
+  return page;
+}
+
+function collectUnknownLandCertificateFragments_(source, sectionMatches, labelMatches) {
+  const out = [];
+  const lines = String(source || '').split(/\r?\n/);
+  let offset = 0;
+  lines.forEach(function(line) {
+    const lineStart = offset;
+    const lineEnd = lineStart + line.length;
+    offset = lineEnd + 1;
+    const trimmed = line.trim();
+    if (!trimmed) return;
+    const overlapsKnown = (sectionMatches || []).concat(labelMatches || []).some(function(match) {
+      return match.start < lineEnd && match.end > lineStart;
+    });
+    if (overlapsKnown) return;
+    let match = trimmed.match(/^((?:[a-z\u0111]|\d+|[ivx]+)\s*[\).:;-])\s*([^:]{1,80}?)\s*[:]\s*(.+)$/i);
+    if (!match) {
+      match = trimmed.match(/^([^:]{2,60})\s*[:]\s*(.+)$/);
+      if (!match) return;
+      match = ['', '', match[1], match[2]];
+    }
+    const value = normalizeSemanticCertificateValue_(match[3], 'unknown');
+    if (!value) return;
+    out.push({
+      start: lineStart + Math.max(0, line.indexOf(trimmed)),
+      marker_raw: String(match[1] || '').trim(),
+      label_raw: String(match[2] || '').trim(),
+      value: value,
+      value_raw: String(match[3] || '').trim()
+    });
+  });
+  return out;
+}
+
+function findNextGenericCertificateFieldBoundary_(source, offset, limit) {
+  source = String(source || '');
+  limit = Math.min(source.length, limit == null ? source.length : Number(limit));
+  if (offset >= limit) return -1;
+  const segment = source.slice(offset, limit);
+  const marker = /(?:^|\n)\s*((?:(?:[a-z\u0111]|\d+|[ivx]+)\s*[\).:;-]|[+\-•])\s+[^:\n]{2,80}:\s*)/ig;
+  let match;
+  while ((match = marker.exec(segment)) !== null) {
+    const absolute = offset + match.index + match[0].indexOf(match[1]);
+    if (absolute > offset) return absolute;
+  }
+  return -1;
+}
+
+function findLandCertificateSectionMatches_(source) {
+  const sections = [];
+  const lines = String(source || '').split(/\r?\n/);
+  let offset = 0;
+  lines.forEach(function(line) {
+    const lineStart = offset;
+    offset += line.length + 1;
+    const normalizedLine = semanticOcrNormalizedText_(line);
+    if (!normalizedLine) return;
+    let best = null;
+    landCertificateSectionOntology_().forEach(function(definition) {
+      (definition.aliases || []).forEach(function(alias) {
+        const aliasTokens = alias.split(/\s+/);
+        const lineTokens = normalizedLine.split(/\s+/);
+        for (let start = 0; start <= Math.min(3, Math.max(0, lineTokens.length - aliasTokens.length)); start++) {
+          const score = semanticTokenSequenceSimilarity_(lineTokens.slice(start, start + aliasTokens.length), aliasTokens);
+          if (score >= semanticPhraseMatchThreshold_(aliasTokens.length, true) && (
+              !best ||
+              score > best.score ||
+              score === best.score && start < best.token_start)) {
+            best = { definition: definition, score: score, token_start: start };
+          }
+        }
+      });
+    });
+    if (!best) return;
+    const labelIndex = findSemanticLabelRawStartInLine_(line);
+    const markerInfo = extractSemanticMarkerInfoBeforeOffset_(line, labelIndex);
+    sections.push({
+      semantic: best.definition.semantic,
+      marker_raw: markerInfo.raw,
+      label_raw: line.slice(labelIndex).trim(),
+      label_canonical: best.definition.label,
+      start: lineStart + labelIndex,
+      marker_start: markerInfo.start >= 0 ? lineStart + markerInfo.start : -1,
+      end: lineStart + line.length,
+      score: best.score
+    });
+  });
+  return removeOverlappingSemanticMatches_(sections);
+}
+
+function findLandCertificateSemanticLabelMatches_(source) {
+  const tokens = tokenizeSemanticOcrText_(source);
+  const candidates = [];
+  landCertificateSemanticOntology_().forEach(function(definition) {
+    (definition.aliases || []).forEach(function(alias) {
+      const aliasTokens = semanticOcrNormalizedText_(alias).split(/\s+/).filter(Boolean);
+      if (!aliasTokens.length) return;
+      for (let i = 0; i + aliasTokens.length <= tokens.length; i++) {
+        const sourceTokens = tokens.slice(i, i + aliasTokens.length);
+        const score = semanticTokenSequenceSimilarity_(sourceTokens.map(function(token) { return token.value; }), aliasTokens);
+        if (score < semanticPhraseMatchThreshold_(aliasTokens.length, false)) continue;
+        const start = sourceTokens[0].start;
+        const end = sourceTokens[sourceTokens.length - 1].end;
+        if (!isPlausibleSemanticLabelPosition_(source, start, score, aliasTokens.length, definition.allow_inline) &&
+            !(definition.section === 'other_assets' && isNoisyOtherAssetLabelAtLineStart_(source, start))) continue;
+        const markerInfo = extractSemanticMarkerInfoBeforeOffset_(source, start);
+        candidates.push({
+          definition: definition,
+          alias: alias,
+          start: start,
+          end: end,
+          score: score,
+          marker_raw: markerInfo.raw,
+          marker_start: markerInfo.start,
+          label_raw: source.slice(start, end)
+        });
+      }
+    });
+  });
+  candidates.sort(function(a, b) {
+    if (a.start !== b.start) return a.start - b.start;
+    if (a.end !== b.end) return b.end - a.end;
+    return b.score - a.score;
+  });
+  const selected = [];
+  candidates.forEach(function(candidate) {
+    const overlapping = selected.some(function(existing) {
+      return candidate.start < existing.end && candidate.end > existing.start;
+    });
+    if (!overlapping) selected.push(candidate);
+  });
+  return selected.sort(function(a, b) { return a.start - b.start; });
+}
+
+function tokenizeSemanticOcrText_(source) {
+  const normalized = removeVietnameseAccents_(String(source || '')).toLowerCase();
+  const tokens = [];
+  const regex = /[a-z0-9]+/g;
+  let match;
+  while ((match = regex.exec(normalized)) !== null) {
+    tokens.push({ value: match[0], start: match.index, end: match.index + match[0].length });
+  }
+  return tokens;
+}
+
+function semanticOcrNormalizedText_(value) {
+  return removeVietnameseAccents_(String(value || ''))
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function semanticTokenSequenceSimilarity_(sourceTokens, aliasTokens) {
+  if (!sourceTokens.length || sourceTokens.length !== aliasTokens.length) return 0;
+  let total = 0;
+  let strongTokens = 0;
+  let minimum = 1;
+  for (let i = 0; i < aliasTokens.length; i++) {
+    const similarity = semanticTokenSimilarity_(sourceTokens[i], aliasTokens[i]);
+    total += similarity;
+    minimum = Math.min(minimum, similarity);
+    if (similarity >= 0.8) strongTokens++;
+  }
+  if (minimum < 0.5 || strongTokens < Math.ceil(aliasTokens.length / 2)) return 0;
+  return total / aliasTokens.length;
+}
+
+function semanticTokenSimilarity_(left, right) {
+  left = String(left || '');
+  right = String(right || '');
+  if (left === right) return 1;
+  const longest = Math.max(left.length, right.length);
+  if (!longest) return 1;
+  return 1 - semanticLevenshteinDistance_(left, right) / longest;
+}
+
+function semanticLevenshteinDistance_(left, right) {
+  const previous = [];
+  const current = [];
+  for (let j = 0; j <= right.length; j++) previous[j] = j;
+  for (let i = 1; i <= left.length; i++) {
+    current[0] = i;
+    for (let j = 1; j <= right.length; j++) {
+      current[j] = Math.min(
+        current[j - 1] + 1,
+        previous[j] + 1,
+        previous[j - 1] + (left.charAt(i - 1) === right.charAt(j - 1) ? 0 : 1)
+      );
+    }
+    for (let k = 0; k <= right.length; k++) previous[k] = current[k];
+  }
+  return previous[right.length];
+}
+
+function semanticPhraseMatchThreshold_(tokenCount, isSection) {
+  if (tokenCount <= 1) return 1;
+  if (isSection) return tokenCount >= 5 ? 0.78 : 0.84;
+  return tokenCount >= 4 ? 0.8 : 0.84;
+}
+
+function isPlausibleSemanticLabelPosition_(source, start, score, tokenCount, allowInline) {
+  const before = String(source || '').slice(Math.max(0, start - 28), start);
+  if (!before.trim()) return true;
+  if (/[\n;]\s*(?:(?:[a-z\u0111]|\d+|[ivx]+)\s*[\).:;-]?\s*)?$/i.test(before)) return true;
+  if (/[\n;]\s*[^a-z0-9]{1,3}\s*$/i.test(before)) return true;
+  if (/(?:^|[\s;])(?:[a-z\u0111]|\d+|[ivx]+)\s*[\).;-]\s*$/i.test(before)) return true;
+  return Boolean(allowInline && score >= 0.96 && tokenCount >= 2);
+}
+
+function extractSemanticMarkerBeforeOffset_(source, start) {
+  return extractSemanticMarkerInfoBeforeOffset_(source, start).raw;
+}
+
+function extractSemanticMarkerInfoBeforeOffset_(source, start) {
+  const before = String(source || '').slice(Math.max(0, start - 24), start);
+  const match = before.match(/(?:^|[\n;])\s*((?:[a-z\u0111]|\d+|[ivx]+)\s*[\).:;-])\s*$/i) ||
+    before.match(/(?:^|[\n;])\s*((?:[a-z\u0111]|\d+|[ivx]+))\s+$/i) ||
+    before.match(/\s((?:[a-z\u0111]|[ivx]+)\s*[\).;-])\s*$/i) ||
+    before.match(/(?:^|[\n;])\s*([^a-z0-9\s]{1,3})\s*$/i);
+  if (!match) return { raw: '', start: -1 };
   return {
-    land_plot_number: extractLandPlotNumberFromContext_(semantic.land_plot_number || items.a || '', source),
-    map_sheet_number: extractMapSheetNumberFromIndexedValue_(semantic.map_sheet_number || items.a || ''),
-    land_address: cleanupLandAddressCertificateValue_(semantic.land_address || items.b || '') || cleanupLandAddressCertificateValue_(extractDislocatedLandAddressFromBlock_(source)),
-    area: normalizeRealEstateAreaValue_(cleanupIndexedCertificateValue_(semantic.area || items.c || '')) || extractRealEstateArea_(source),
-    usage_form: normalizeRealEstateUsageForm_(cleanupIndexedCertificateValue_(semantic.usage_form || '')),
-    usage_purpose: landTypeValue
-      ? normalizeLandTypeAreaUnits_(cleanupIndexedCertificateValue_(semantic.usage_purpose || ''))
-      : cleanupIndexedCertificateValue_(semantic.usage_purpose || ''),
-    usage_term: normalizeRealEstateUsageTerm_(cleanupIndexedCertificateValue_(semantic.usage_term || '')),
-    usage_origin: cleanupUsageOriginCertificateValue_(completeUsageOriginFromContext_(semantic.usage_origin || '', text || source)),
-    _quality: selected
+    raw: match[1].trim(),
+    start: Math.max(0, start - before.length + before.lastIndexOf(match[1]))
   };
 }
 
-function extractNewA4RealEstateLandFields_(source, selected) {
+function findSemanticLabelRawStartInLine_(line) {
+  const match = String(line || '').match(/^\s*(?:(?:[a-z\u0111]|\d+|[ivx]+)\s*[\).:;-]\s*)?/i);
+  return match ? match[0].length : 0;
+}
+
+function skipSemanticValuePunctuation_(source, offset) {
+  while (offset < source.length && /[\s:;.,)\-]/.test(source.charAt(offset))) offset++;
+  return offset;
+}
+
+function sectionSemanticAtOffset_(sectionMatches, offset) {
+  let semantic = '';
+  (sectionMatches || []).forEach(function(section) {
+    if (section.start <= offset) semantic = section.semantic;
+  });
+  return semantic;
+}
+
+function canonicalLandCertificateSectionLabel_(semantic) {
+  const match = landCertificateSectionOntology_().filter(function(section) { return section.semantic === semantic; })[0];
+  if (match) return match.label;
+  if (semantic === 'other_assets') return 'Tài sản khác gắn liền với đất';
+  if (semantic === 'certificate_note') return 'Ghi chú';
+  return '';
+}
+
+function removeOverlappingSemanticMatches_(matches) {
+  const selected = [];
+  (matches || []).sort(function(a, b) {
+    if (a.start !== b.start) return a.start - b.start;
+    return (b.score || 0) - (a.score || 0);
+  }).forEach(function(candidate) {
+    if (selected.some(function(existing) {
+      return candidate.start < existing.end && candidate.end > existing.start;
+    })) return;
+    selected.push(candidate);
+  });
+  return selected.sort(function(a, b) { return a.start - b.start; });
+}
+
+function normalizeSemanticCertificateValue_(value, semanticKey) {
+  let cleaned = normalizeCertificatePunctuationSpacing_(value)
+    .replace(/(\d+(?:[,.]\d+)?)\s*m(?:\u00c2\u00b2|\u00b2|2)?(?=$|[\s;,.):])/gi, '$1 m\u00b2')
+    .replace(/\bCCCP\s+s(?:a|o|\u1ed1)\b(?=\s*[:#-]?\s*\d{9,12}\b)/gi, 'CCCD s\u1ed1')
+    .replace(/\s+/g, ' ')
+    .replace(/^[\s:;.,)\-]+|[\s:;,)\-]+$/g, '')
+    .trim();
+  if (isOptionalOtherAssetSemanticKey_(semanticKey)) {
+    const normalized = semanticOcrNormalizedText_(cleaned);
+    const embeddedOtherAssetLabel = [
+      'nha o',
+      'cong trinh xay dung khac',
+      'rung san xuat la rung trong',
+      'rung san xuat',
+      'cay lau nam',
+      'ghi chu'
+    ].some(function(alias) {
+      const index = normalized.indexOf(alias);
+      if (index <= 0) return false;
+      const prefix = normalized.slice(0, index).trim();
+      return prefix.split(/\s+/).filter(Boolean).length <= 2;
+    });
+    const meaningfulOptionalValue = /\d|\bm2\b|\bm\s|dien tich|cap|tang|mai|ket cau|xay dung|so huu|nha rieng|nha o/.test(normalized);
+    if (!normalized || embeddedOtherAssetLabel ||
+        (normalized.split(/\s+/).filter(Boolean).length <= 4 && !meaningfulOptionalValue)) {
+      return '-/-';
+    }
+  }
+  if (semanticKey === 'certificate_note' && /^kh[o\u00f4]ng\b/i.test(cleaned)) {
+    return 'Không';
+  }
+  return cleaned;
+}
+
+function isOptionalOtherAssetSemanticKey_(semanticKey) {
+  return ['house', 'other_construction', 'production_forest', 'perennial_crops'].indexOf(String(semanticKey || '')) >= 0;
+}
+
+function isNoisyOtherAssetLabelAtLineStart_(source, start) {
+  const linePrefix = String(source || '').slice(Math.max(0, String(source || '').lastIndexOf('\n', start - 1) + 1), start);
+  const normalized = semanticOcrNormalizedText_(linePrefix);
+  if (!normalized) return true;
+  const tokens = normalized.split(/\s+/).filter(Boolean);
+  return tokens.length <= 1 && tokens.join('').length <= 4;
+}
+
+function semanticLandItemValue_(document, semanticKey) {
+  const candidates = (document && document.items || []).filter(function(item) {
+    return item.semantic_key === semanticKey && item.value;
+  }).sort(function(a, b) {
+    const aLand = a.section_semantic === 'land_details' ? 1 : 0;
+    const bLand = b.section_semantic === 'land_details' ? 1 : 0;
+    if (aLand !== bLand) return bLand - aLand;
+    if (a.confidence !== b.confidence) return b.confidence - a.confidence;
+    return a.visual_order - b.visual_order;
+  });
+  return candidates.length ? candidates[0].value : '';
+}
+
+function extractRealEstateIndexedLandFields_(text) {
+  const selected = selectBestLandPlotText_(text);
+  const block = selected.text;
+  const source = block || text;
+  const semanticDocument = parseLandCertificateSemanticDocument_(source, {
+    generation: certificateGenerationFromCompleteTitle_(extractKnownCertificateTitleFromText_(text)),
+    layout: selected.layout
+  });
+  const semantic = {
+    land_plot_number: semanticLandItemValue_(semanticDocument, 'land_plot_number'),
+    map_sheet_number: semanticLandItemValue_(semanticDocument, 'map_sheet_number'),
+    land_address: semanticLandItemValue_(semanticDocument, 'land_address'),
+    area: semanticLandItemValue_(semanticDocument, 'area'),
+    usage_form: semanticLandItemValue_(semanticDocument, 'usage_form'),
+    usage_purpose: semanticLandItemValue_(semanticDocument, 'usage_purpose'),
+    usage_term: semanticLandItemValue_(semanticDocument, 'usage_term'),
+    usage_origin: semanticLandItemValue_(semanticDocument, 'usage_origin')
+  };
+  if (selected.layout === 'gcn_qsdd_qsh_tsglvd_page_1' && normalizeCertificateIndexLine_(source).indexOf('2 thong tin thua dat') >= 0) {
+    const a4Fields = extractNewA4RealEstateLandFields_(source, selected, semanticDocument);
+    a4Fields._document_model = semanticDocument;
+    return a4Fields;
+  }
+  return {
+    land_plot_number: extractLandPlotNumberFromContext_(semantic.land_plot_number || '', source),
+    map_sheet_number: extractMapSheetNumberFromIndexedValue_(semantic.map_sheet_number || ''),
+    land_address: cleanupLandAddressCertificateValue_(semantic.land_address || '') || cleanupLandAddressCertificateValue_(extractDislocatedLandAddressFromBlock_(source)),
+    area: normalizeRealEstateAreaValue_(cleanupIndexedCertificateValue_(semantic.area || '')) || extractRealEstateArea_(source),
+    usage_form: normalizeRealEstateUsageForm_(cleanupIndexedCertificateValue_(semantic.usage_form || '')),
+    usage_purpose: normalizeLandTypeAreaUnits_(cleanupIndexedCertificateValue_(semantic.usage_purpose || '')),
+    usage_term: normalizeRealEstateUsageTerm_(cleanupIndexedCertificateValue_(semantic.usage_term || '')),
+    usage_origin: cleanupUsageOriginCertificateValue_(completeUsageOriginFromContext_(semantic.usage_origin || '', text || source)),
+    _quality: selected,
+    _document_model: semanticDocument
+  };
+}
+
+function extractNewA4RealEstateLandFields_(source, selected, semanticDocument) {
   const landSection = extractNewA4LandSection_(source) || source;
   const attached = extractNewA4AttachedAssetFields_(source);
+  semanticDocument = semanticDocument || parseLandCertificateSemanticDocument_(landSection, {
+    generation: 'gcn_qsdd_qsh_tsglvd',
+    layout: 'gcn_qsdd_qsh_tsglvd_page_1'
+  });
   const semantic = {
-    land_plot_number: findSemanticLandFieldValue_(landSection, ['thua dat so']),
-    map_sheet_number: findSemanticLandFieldValue_(landSection, ['to ban do so']),
-    land_address: findSemanticLandFieldValue_(landSection, ['dia chi']),
-    area: findSemanticLandFieldValue_(landSection, ['dien tich']),
-    land_type: findSemanticLandFieldValue_(landSection, ['loai dat']),
-    usage_form: findSemanticLandFieldValue_(landSection, ['hinh thuc su dung']),
-    usage_term: findSemanticLandFieldValue_(landSection, ['thoi han su dung']),
+    land_plot_number: semanticLandItemValue_(semanticDocument, 'land_plot_number'),
+    map_sheet_number: semanticLandItemValue_(semanticDocument, 'map_sheet_number'),
+    land_address: semanticLandItemValue_(semanticDocument, 'land_address'),
+    area: semanticLandItemValue_(semanticDocument, 'area'),
+    land_type: semanticLandItemValue_(semanticDocument, 'usage_purpose'),
+    usage_form: semanticLandItemValue_(semanticDocument, 'usage_form'),
+    usage_term: semanticLandItemValue_(semanticDocument, 'usage_term'),
     attached_assets: findSemanticLandFieldValue_(source, ['thong tin tai san gan lien voi dat'])
   };
   return {
@@ -2093,8 +2691,8 @@ function extractRealEstateArea_(text) {
 
 function normalizeRealEstateAreaValue_(value) {
   const text = String(value || '').replace(/\s+/g, ' ').trim();
-  const match = text.match(/([0-9]+(?:[,.][0-9]+)?)\s*m(?:2|Â²)?/i);
-  return match ? match[1] + ' mÂ²' : '';
+  const match = text.match(/([0-9]+(?:[,.][0-9]+)?)\s*m(?:2|²|Â²|Ã‚Â²)?/i);
+  return match ? match[1] + ' m\u00b2' : '';
 }
 
 function shouldReplaceAreaValue_(field, candidate) {

@@ -714,7 +714,9 @@
         valueOf(re.certificate_land_raw_text),
         valueOf(re.certificate_attached_raw_text)
       ].filter(Boolean).join('\n');
-      const printedLayout = extractPrintedCertificateLayout(certificateLayoutText, landPlotOcrText);
+      const printedLayout = semanticCertificateDocumentToPrintedLayout_(
+        asset.certificate_semantic_document || null
+      );
       const certificateGeneration = certificateGenerationFromCompleteTitleForReview_(
         certificateTitleForReview_(asset, ocrText)
       );
@@ -802,7 +804,8 @@
             escapeHtml(displayUsageOriginValue(valueOf(re.usage_origin))) + '</div>');
         }
         printedLayout.optional_sections.forEach(function(item) {
-          lines.push('<div class="asset-doc-line"><strong>' + escapeHtml(item.marker + '. ' + item.label) + ':</strong> ' + escapeHtml(item.value) + '</div>');
+          const optionalLabel = (cleanValue(item.marker) ? cleanValue(item.marker) + '. ' : '') + cleanValue(item.label);
+          lines.push('<div class="asset-doc-line"><strong>' + escapeHtml(optionalLabel) + ':</strong> ' + escapeHtml(item.value) + '</div>');
         });
         if (printedLayout.map_heading) {
           lines.push('<div class="asset-doc-line"><strong>' + escapeHtml(printedLayout.map_heading) + '</strong></div>');
@@ -927,160 +930,197 @@
       return '';
     }
 
-    function extractPrintedCertificateLayout(ocrText, landPlotOcrText) {
-      const fullLines = String(ocrText || '').replace(/\\r/g, '\r').replace(/\\n/g, '\n').split(/\r?\n+/).map(line => line.replace(/\s+/g, ' ').trim()).filter(Boolean);
-      const findHeading = function(pattern) {
-        for (let i = 0; i < fullLines.length; i++) {
-          const normalized = removeVietnameseMarks(fullLines[i]).toLowerCase().replace(/[^a-z0-9]+/g, ' ').replace(/\s+/g, ' ').trim();
-          if (pattern.test(normalized)) return fullLines[i].replace(/\s*:\s*$/, '');
-        }
-        return '';
-      };
+    function semanticCertificateDocumentToPrintedLayout_(document) {
       const layout = {
-        owner_heading: findHeading(/^(?:i|1) nguoi su dung dat\b/),
-        land_section_heading: findHeading(/^(?:ii thua dat|2 thong tin thua dat)\b/),
+        owner_heading: '',
+        land_section_heading: '',
         land_heading: '',
         land_fields: [],
         optional_sections: [],
-        attached_heading: findHeading(/^3 thong tin tai san gan lien voi dat\b/),
+        attached_heading: '',
         attached_value: '',
         attached_fields: [],
-        map_heading: findHeading(/^(?:iii|4) so do\b/),
-        note_heading: findHeading(/^5 ghi chu\b/),
+        map_heading: '',
+        note_heading: '',
         note_value: '',
-        change_heading: findHeading(/^(?:iv|6) nhung thay doi\b/)
+        change_heading: ''
       };
-      const source = [landPlotOcrText, ocrText].filter(Boolean).join('\n').replace(/\\r/g, '\r').replace(/\\n/g, '\n');
-      const expandedLines = [];
-      source.split(/\r?\n+/).forEach(function(originalLine) {
-        let line = String(originalLine || '').replace(/\s+/g, ' ').trim();
-        if (!line) return;
-        line = line
-          .replace(/([,;])\s*(?=(?:[a-z\u0111]|[1-9])\s*[\).]\s*\S)/gi, '$1\n')
-          .replace(/\s+(?=(?:[a-z\u0111]|[1-9])\s*[\).]\s*\S)/gi, '\n');
-        line.split('\n').map(part => part.trim()).filter(Boolean).forEach(part => expandedLines.push(part));
+      const pages = document && document.pages || [];
+      if (!pages.length) return layout;
+      const landPage = bestSemanticCertificatePage_(pages, [
+        'land_plot_number', 'map_sheet_number', 'land_address', 'area', 'area_in_words',
+        'usage_form', 'usage_purpose', 'usage_term', 'usage_origin'
+      ], 'land_details');
+      const attachedPage = bestSemanticCertificatePage_(pages, [
+        'attached_asset_name', 'attached_asset_area',
+        'attached_asset_ownership_form', 'attached_asset_ownership_term'
+      ], 'attached_assets') || landPage;
+      const allSections = pages.reduce(function(out, page) {
+        return out.concat(page.sections || []);
+      }, []).sort(function(a, b) {
+        return Number(a.visual_order || 0) - Number(b.visual_order || 0);
       });
-      let current = null;
-      let scope = '';
-      const upsert = function(target, item) {
-        const normalizedLabel = removeVietnameseMarks(item.label || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
-        const existing = target.find(function(entry) {
-          return entry.marker === item.marker &&
-            removeVietnameseMarks(entry.label || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim() === normalizedLabel;
-        });
-        if (!existing) {
-          target.push(item);
-        } else if (String(item.value || '').length > String(existing.value || '').length) {
-          existing.value = item.value;
-        }
-      };
-      const commit = function() {
-        if (!current) return;
-        current.value = normalizeCertificatePunctuationForReview_(current.value);
-        if (current.kind === 'land') upsert(layout.land_fields, current);
-        if (current.kind === 'attached') upsert(layout.attached_fields, current);
-        if (current.kind === 'section') upsert(layout.optional_sections, current);
-        current = null;
-      };
-      for (let i = 0; i < expandedLines.length; i++) {
-        const line = expandedLines[i];
-        const normalized = removeVietnameseMarks(line).toLowerCase().replace(/[^a-z0-9]+/g, ' ').replace(/\s+/g, ' ').trim();
-        if (/^(?:iii so do|iv nhung thay doi)\b/.test(normalized)) {
-          commit();
-          break;
-        }
-        if (/^(?:i nguoi su dung dat|ii thua dat)\b/.test(normalized)) {
-          commit();
-          continue;
-        }
-        const item = line.match(/^([a-z\u0111]|[1-9])\s*[\).]\s*([^:]{1,120}?)(?:\s*:\s*(.*))?$/i);
-        if (!item) {
-          if (current) current.value += (current.value ? ' ' : '') + line;
-          continue;
-        }
-        commit();
-        const marker = item[1];
-        const label = String(item[2] || '').trim();
-        const value = String(item[3] || '').trim();
-        if (/^\d$/.test(marker)) {
-          const normalizedLabel = removeVietnameseMarks(label).toLowerCase().replace(/[^a-z0-9]+/g, ' ').replace(/\s+/g, ' ').trim();
-          const printedHeading = marker + '. ' + label.replace(/\s*:\s*$/, '');
-          if (normalizedLabel.indexOf('nguoi su dung dat') >= 0) {
-            layout.owner_heading = printedHeading;
-            scope = '';
-          } else if (normalizedLabel === 'thua dat' || normalizedLabel.indexOf('thua dat') === 0 && normalizedLabel.indexOf('thong tin') < 0) {
-            layout.land_heading = marker + '. ' + label.replace(/\s*:\s*$/, '');
-            scope = 'land';
-          } else if (normalizedLabel.indexOf('thong tin thua dat') >= 0) {
-            layout.land_section_heading = printedHeading;
-            scope = 'land';
-          } else if (normalizedLabel.indexOf('thong tin tai san gan lien voi dat') >= 0) {
-            layout.attached_heading = printedHeading;
-            layout.attached_value = normalizeCertificatePunctuationForReview_(value);
-            scope = 'attached';
-          } else if (normalizedLabel.indexOf('so do') >= 0) {
-            layout.map_heading = printedHeading;
-            scope = '';
-          } else if (normalizedLabel.indexOf('ghi chu') >= 0 && layout.attached_heading) {
-            layout.note_heading = printedHeading;
-            layout.note_value = normalizeCertificatePunctuationForReview_(value);
-            scope = '';
-          } else if (normalizedLabel.indexOf('nhung thay doi') >= 0) {
-            layout.change_heading = printedHeading;
-            scope = '';
-          } else if (Number(marker) >= 2) {
-            current = { kind: 'section', marker: marker, label: label, value: value };
-            scope = '';
-          }
-        } else {
-          current = {
-            kind: scope === 'attached' ? 'attached' : 'land',
-            marker: marker,
-            label: label,
-            semantic: printedCertificateFieldSemantic_(label),
-            value: value
-          };
-        }
+      const allItems = dedupeSemanticCertificateItems_(pages.reduce(function(out, page) {
+        return out.concat(page.items || []);
+      }, []));
+      function sectionHeading(section) {
+        if (!section) return '';
+        const raw = cleanValue(section.label_raw);
+        const marker = cleanValue(section.marker_raw);
+        if (raw) return marker && raw.indexOf(marker) !== 0 ? marker + ' ' + raw : raw;
+        return [marker, cleanValue(section.label_canonical)].filter(Boolean).join(' ');
       }
-      commit();
-      const markerRank = function(marker) {
-        const normalized = removeVietnameseMarks(String(marker || '')).toLowerCase();
-        if (/^\d+$/.test(normalized)) return Number(normalized);
-        const order = ['a', 'b', 'c', 'd', '\u0111', 'e', 'f', 'g', 'h', 'i', 'k', 'l', 'm', 'n'];
-        const exactIndex = order.indexOf(String(marker || '').toLowerCase());
-        if (exactIndex >= 0) return exactIndex;
-        const normalizedIndex = order.indexOf(normalized);
-        return normalizedIndex >= 0 ? normalizedIndex : 999;
-      };
-      layout.land_fields.sort(function(a, b) { return markerRank(a.marker) - markerRank(b.marker); });
-      layout.attached_fields.sort(function(a, b) { return markerRank(a.marker) - markerRank(b.marker); });
-      layout.optional_sections.sort(function(a, b) { return markerRank(a.marker) - markerRank(b.marker); });
+      function sectionsFor(page, semantic) {
+        return (page && page.sections || []).filter(function(section) {
+          return section.semantic === semantic;
+        }).sort(function(a, b) {
+          return Number(a.visual_order || 0) - Number(b.visual_order || 0);
+        });
+      }
+      const ownerSection = allSections.filter(function(section) { return section.semantic === 'owners'; })[0];
+      const landSections = sectionsFor(landPage, 'land_details');
+      const attachedSection = sectionsFor(attachedPage, 'attached_assets')[0];
+      const mapSection = allSections.filter(function(section) { return section.semantic === 'land_diagram'; })[0];
+      const changeSection = allSections.filter(function(section) { return section.semantic === 'post_issue_changes'; })[0];
+      layout.owner_heading = sectionHeading(ownerSection);
+      layout.land_section_heading = sectionHeading(landSections[0]);
+      layout.land_heading = landSections.length > 1 ? sectionHeading(landSections[1]) : '';
+      layout.attached_heading = sectionHeading(attachedSection);
+      layout.map_heading = sectionHeading(mapSection);
+      layout.change_heading = sectionHeading(changeSection);
+      const landSemanticKeys = [
+        'land_plot_number',
+        'map_sheet_number',
+        'area',
+        'area_in_words',
+        'usage_purpose',
+        'usage_term',
+        'usage_form',
+        'land_address',
+        'usage_origin'
+      ];
+      const landItems = dedupeSemanticCertificateItems_((landPage && landPage.items || []).filter(function(item) {
+        return landSemanticKeys.indexOf(item.semantic_key) >= 0;
+      })).sort(function(a, b) {
+        const ai = landSemanticKeys.indexOf(a.semantic_key);
+        const bi = landSemanticKeys.indexOf(b.semantic_key);
+        if (ai !== bi) return ai - bi;
+        return Number(a.visual_order || 0) - Number(b.visual_order || 0);
+      });
+      layout.land_fields = landItems.map(semanticCertificateItemForDisplay_);
+      const optionalItems = allItems.filter(function(item) {
+        return ['house', 'other_construction', 'production_forest', 'perennial_crops', 'certificate_note'].indexOf(item.semantic_key) >= 0 ||
+          item.section_semantic === 'other_assets';
+      });
+      layout.optional_sections = optionalItems.map(semanticCertificateItemForDisplay_);
+      const attachedSemanticKeys = [
+        'attached_asset_name',
+        'attached_asset_area',
+        'attached_asset_ownership_form',
+        'attached_asset_ownership_term'
+      ];
+      const attachedItems = dedupeSemanticCertificateItems_((attachedPage && attachedPage.items || []).filter(function(item) {
+        return attachedSemanticKeys.indexOf(item.semantic_key) >= 0;
+      })).sort(function(a, b) {
+        const ai = attachedSemanticKeys.indexOf(a.semantic_key);
+        const bi = attachedSemanticKeys.indexOf(b.semantic_key);
+        if (ai !== bi) return ai - bi;
+        return Number(a.visual_order || 0) - Number(b.visual_order || 0);
+      });
+      layout.attached_fields = attachedItems.map(semanticCertificateItemForDisplay_);
+      const noteItem = optionalItems.filter(function(item) { return item.semantic_key === 'certificate_note'; })[0];
+      if (noteItem) {
+        layout.note_heading = semanticCertificateItemLabel_(noteItem);
+        layout.note_value = noteItem.value || '';
+      }
       return layout;
     }
 
-    function printedCertificateFieldSemantic_(label) {
-      const normalized = removeVietnameseMarks(String(label || '')).toLowerCase().replace(/[^a-z0-9]+/g, ' ').replace(/\s+/g, ' ').trim();
-      if (normalized.indexOf('thua dat so') >= 0) return 'plot';
-      if (normalized.indexOf('ten tai san') >= 0) return 'attached_asset_name';
-      if (normalized.indexOf('dien tich su dung') >= 0) return 'attached_asset_area';
-      if (normalized.indexOf('hinh thuc so huu') >= 0) return 'attached_asset_ownership_form';
-      if (normalized.indexOf('thoi han so huu') >= 0) return 'attached_asset_ownership_term';
-      if (normalized.indexOf('dien tich') >= 0) return 'area';
-      if (normalized.indexOf('loai dat') >= 0 || normalized.indexOf('muc dich su dung') >= 0) return 'usage_purpose';
-      if (normalized.indexOf('thoi han su dung') >= 0) return 'usage_term';
-      if (normalized.indexOf('hinh thuc su dung') >= 0) return 'usage_form';
-      if (normalized.indexOf('dia chi') >= 0) return 'land_address';
-      if (normalized.indexOf('nguon goc su dung') >= 0) return 'usage_origin';
-      return '';
+    function bestSemanticCertificatePage_(pages, semanticKeys, sectionSemantic) {
+      let best = null;
+      (pages || []).forEach(function(page) {
+        const unique = {};
+        let confidence = 0;
+        (page.items || []).forEach(function(item) {
+          if (semanticKeys.indexOf(item.semantic_key) < 0) return;
+          unique[item.semantic_key] = true;
+          confidence += Number(item.confidence || 0);
+        });
+        const hasSection = (page.sections || []).some(function(section) {
+          return section.semantic === sectionSemantic;
+        });
+        const layout = cleanValue(page.layout);
+        const layoutBonus = sectionSemantic === 'land_details' &&
+          (/_land$/.test(layout) || /_page_1$/.test(layout)) ? 5 : 0;
+        const score = Object.keys(unique).length * 20 + confidence + (hasSection ? 8 : 0) + layoutBonus;
+        if (!best || score > best.score) best = { page: page, score: score };
+      });
+      return best && best.score > 0 ? best.page : null;
+    }
+
+    function dedupeSemanticCertificateItems_(items) {
+      const byKey = {};
+      (items || []).slice().sort(function(a, b) {
+        return Number(a.visual_order || 0) - Number(b.visual_order || 0);
+      }).forEach(function(item) {
+        const key = [
+          item.semantic_key || 'unknown',
+          cleanValue(item.label_canonical || item.label_raw),
+          cleanValue(item.value)
+        ].join('|');
+        if (!byKey[key]) byKey[key] = item;
+      });
+      return Object.keys(byKey).map(function(key) { return byKey[key]; }).sort(function(a, b) {
+        return Number(a.visual_order || 0) - Number(b.visual_order || 0);
+      });
+    }
+
+    function semanticCertificateItemLabel_(item) {
+      if (!item) return 'Nội dung chưa nhận dạng';
+      const raw = cleanValue(item.label_raw);
+      if (raw && Number(item.confidence || 0) >= 0.99) {
+        return normalizeSemanticDisplayLabel_(raw);
+      }
+      return cleanValue(item.label_canonical || raw) || 'Nội dung chưa nhận dạng';
+    }
+
+    function normalizeSemanticDisplayLabel_(label) {
+      const raw = cleanValue(label);
+      const normalized = removeVietnameseMarks(raw).toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+      if (normalized === 'loai dat') return 'Loại đất';
+      if (normalized === 'muc dich su dung') return 'Mục đích sử dụng';
+      if (normalized === 'thua dat so') return 'Thửa đất số';
+      if (normalized === 'to ban do so') return 'Tờ bản đồ số';
+      if (normalized === 'dien tich') return 'Diện tích';
+      if (normalized === 'bang chu') return 'Bằng chữ';
+      if (normalized === 'hinh thuc su dung') return 'Hình thức sử dụng';
+      if (normalized === 'thoi han su dung') return 'Thời hạn sử dụng';
+      if (normalized === 'dia chi') return 'Địa chỉ';
+      if (normalized === 'nguon goc su dung') return 'Nguồn gốc sử dụng';
+      return raw;
+    }
+
+    function semanticCertificateItemForDisplay_(item) {
+      return {
+        marker: cleanValue(item && item.marker_raw).replace(/[\).:;-]+$/, ''),
+        label: semanticCertificateItemLabel_(item),
+        semantic: cleanValue(item && item.semantic_key),
+        value: cleanValue(item && item.value),
+        confidence: Number(item && item.confidence || 0)
+      };
     }
 
     function pushPrintedCertificateField(lines, item, realEstate, ocrText) {
       const re = realEstate || {};
       let value = item.value || '';
-      if (item.semantic === 'plot') {
-        value = valueOf(re.land_plot_number) + (valueOf(re.map_sheet_number) ? '; ' + t('to ban do so') + ': ' + valueOf(re.map_sheet_number) : '');
+      if (item.semantic === 'land_plot_number') {
+        value = valueOf(re.land_plot_number) || value;
+      } else if (item.semantic === 'map_sheet_number') {
+        value = valueOf(re.map_sheet_number) || value;
       } else if (item.semantic === 'area') {
-        value = formatAreaWithWords(valueOf(re.area), valueOf(re.area_in_words) || extractAreaWordsFromOcr(ocrText)) || value;
+        value = normalizeAreaForDisplay(valueOf(re.area)) || value;
+      } else if (item.semantic === 'area_in_words') {
+        value = valueOf(re.area_in_words) || extractAreaWordsFromOcr(ocrText) || value;
       } else if (item.semantic === 'usage_purpose') {
         value = valueOf(re.usage_purpose) || value;
       } else if (item.semantic === 'usage_term') {
@@ -1100,7 +1140,9 @@
       } else if (item.semantic === 'attached_asset_ownership_term') {
         value = valueOf(re.attached_asset_ownership_term) || value;
       }
-      lines.push('<div class="asset-doc-line">' + escapeHtml(item.marker + '. ' + item.label) + ': ' + escapeHtml(cleanValue(value)) + '</div>');
+      const marker = cleanValue(item.marker);
+      const label = (marker ? marker + '. ' : '') + cleanValue(item.label);
+      lines.push('<div class="asset-doc-line">' + escapeHtml(label) + ': ' + escapeHtml(cleanValue(value)) + '</div>');
     }
 
     function normalizeCertificatePunctuationForReview_(value) {
@@ -1946,35 +1988,35 @@
               key: 'land_plot_number',
               path: 'assets[' + index + '].real_estate.land_plot_number',
               field: re.land_plot_number,
-              missing: needsLabeledLandFieldVerification_(re.land_plot_number),
+              missing: needsSemanticLandFieldCropVerification_(re.land_plot_number, 'land_plot_number'),
               source: 'AUTO_OCR_LAND_LABEL_CROP_V2'
             },
             {
               key: 'map_sheet_number',
               path: 'assets[' + index + '].real_estate.map_sheet_number',
               field: re.map_sheet_number,
-              missing: needsLabeledLandFieldVerification_(re.map_sheet_number),
+              missing: needsSemanticLandFieldCropVerification_(re.map_sheet_number, 'map_sheet_number'),
               source: 'AUTO_OCR_LAND_LABEL_CROP_V2'
             },
             {
               key: 'land_address',
               path: 'assets[' + index + '].real_estate.land_address',
               field: re.land_address,
-              missing: needsLabeledLandFieldVerification_(re.land_address),
+              missing: needsSemanticLandFieldCropVerification_(re.land_address, 'land_address'),
               source: 'AUTO_OCR_LAND_LABEL_CROP_V2'
             },
             {
               key: 'area',
               path: 'assets[' + index + '].real_estate.area',
               field: re.area,
-              missing: needsLabeledLandFieldVerification_(re.area),
+              missing: needsSemanticLandFieldCropVerification_(re.area, 'area'),
               source: 'AUTO_OCR_LAND_LABEL_CROP_V2'
             },
             {
               key: 'area_in_words',
               path: 'assets[' + index + '].real_estate.area_in_words',
               field: re.area_in_words,
-              missing: needsLabeledLandFieldVerification_(re.area_in_words),
+              missing: needsSemanticLandFieldCropVerification_(re.area_in_words, 'area_in_words'),
               source: 'AUTO_OCR_LAND_LABEL_CROP_V2'
             },
             {
@@ -1983,14 +2025,14 @@
               field: re.usage_purpose,
               missing: isNewA4
                 ? needsA4GeometryFieldVerification_(re.usage_purpose, 'usage_purpose')
-                : needsLabeledLandFieldVerification_(re.usage_purpose),
+                : needsSemanticLandFieldCropVerification_(re.usage_purpose, 'usage_purpose'),
               source: isNewA4 ? 'AUTO_OCR_A4_GEOMETRY_CROP_V2' : 'AUTO_OCR_LAND_LABEL_CROP_V2'
             },
             {
               key: 'usage_origin',
               path: 'assets[' + index + '].real_estate.usage_origin',
               field: re.usage_origin,
-              missing: !isNewA4 && needsLabeledLandFieldVerification_(re.usage_origin),
+              missing: !isNewA4 && needsSemanticLandFieldCropVerification_(re.usage_origin, 'usage_origin'),
               source: 'AUTO_OCR_LAND_LABEL_CROP_V2'
             },
             {
@@ -1999,7 +2041,7 @@
               field: re.usage_term,
               missing: isNewA4
                 ? needsA4GeometryFieldVerification_(re.usage_term, 'usage_term')
-                : needsLabeledLandFieldVerification_(re.usage_term),
+                : needsSemanticLandFieldCropVerification_(re.usage_term, 'usage_term'),
               source: isNewA4 ? 'AUTO_OCR_A4_GEOMETRY_CROP_V2' : 'AUTO_OCR_LAND_LABEL_CROP_V2'
             },
             {
@@ -2008,57 +2050,58 @@
               field: re.usage_form,
               missing: isNewA4
                 ? needsA4GeometryFieldVerification_(re.usage_form, 'usage_form')
-                : needsLabeledLandFieldVerification_(re.usage_form),
+                : needsSemanticLandFieldCropVerification_(re.usage_form, 'usage_form'),
               source: isNewA4 ? 'AUTO_OCR_A4_GEOMETRY_CROP_V2' : 'AUTO_OCR_LAND_LABEL_CROP_V2'
             }
           ].filter(job => job.missing && !autoOcrDonePaths[job.path]);
           if (!jobs.length) continue;
-          jobs.forEach(job => { autoOcrDonePaths[job.path] = true; });
           const files = uniqueReviewFiles_(getFilesForObject(asset, 'asset').concat(getLandCertificateFilesFromOcr_()));
           const result = isNewA4
             ? await readA4CertificateFieldsFromFiles_(files, {
                 issueDate: false,
                 landFields: true
               })
-            : await readOldLandCertificateFieldsFromFiles_(files);
-          if (!isNewA4) {
-            for (const job of jobs) {
-              if (cleanValue(result && result[job.key])) continue;
-              const reading = await readLabeledLandFieldFromFiles_(files, job.key);
-              if (!reading || !reading.value) continue;
-              result[job.key] = reading.value;
-              result._sources[job.key] = reading.source || job.source;
-            }
-          }
-          const saveValues = [];
+            : { _sources: {} };
           for (const job of jobs) {
-            const newValue = cleanValue(result && result[job.key]);
-            if (!newValue) continue;
-            const source = result && result._sources && result._sources[job.key] || job.source;
-            saveValues.push({ job: job, fieldPath: job.path, newValue: newValue, source: source });
-          }
-          if (saveValues.length) {
-            const saved = await api('saveAutoOcrA4LandFieldValues', {
-              values: saveValues.map(function(item) {
-                return { fieldPath: item.fieldPath, newValue: item.newValue, source: item.source };
-              })
-            });
-            if (String(CASE_ID || '').indexOf('LAB-') === 0) {
-              autoA4OcrDebug.push({
-                type: 'LAND_LABEL_FIELDS_SAVE',
-                ok: Boolean(saved && saved.ok),
-                reason: saved && saved.reason || '',
-                saved_count: saved && saved.saved ? saved.saved.length : 0
+            autoOcrDonePaths[job.path] = true;
+            try {
+              if (!isNewA4 && !cleanValue(result[job.key])) {
+                const reading = await readLabeledLandFieldFromFiles_(files, job.key);
+                if (reading && reading.value) {
+                  result[job.key] = reading.value;
+                  result._sources[job.key] = reading.source || job.source;
+                }
+              }
+              const newValue = cleanValue(result[job.key]);
+              if (!newValue) {
+                delete autoOcrDonePaths[job.path];
+                continue;
+              }
+              const source = result._sources[job.key] || job.source;
+              const saved = await api('saveAutoOcrA4LandFieldValues', {
+                values: [{ fieldPath: job.path, newValue: newValue, source: source }]
               });
-            }
-            if (saved && saved.ok) {
-              saveValues.forEach(function(item) {
-                item.job.field.ai_value = item.newValue;
-                item.job.field.final_value = item.newValue;
-                item.job.field.source = item.source;
-                item.job.field.confidence = '0.9';
-              });
+              if (String(CASE_ID || '').indexOf('LAB-') === 0) {
+                autoA4OcrDebug.push({
+                  type: 'LAND_LABEL_FIELD_SAVE',
+                  field: job.key,
+                  ok: Boolean(saved && saved.ok),
+                  reason: saved && saved.reason || ''
+                });
+              }
+              if (!saved || !saved.ok) {
+                delete autoOcrDonePaths[job.path];
+                continue;
+              }
+              job.field.ai_value = newValue;
+              job.field.final_value = newValue;
+              job.field.source = source;
+              job.field.confidence = '0.9';
               changed = true;
+              render();
+            } catch (fieldErr) {
+              delete autoOcrDonePaths[job.path];
+              console.warn('Auto OCR land field failed', job.key, fieldErr);
             }
           }
         }
@@ -2077,90 +2120,30 @@
       }
     }
 
-    async function readOldLandCertificateFieldsFromFiles_(files) {
-      const keys = [
-        'land_plot_number',
-        'map_sheet_number',
-        'land_address',
-        'area',
-        'area_in_words',
-        'usage_purpose',
-        'usage_term',
-        'usage_form',
-        'usage_origin'
-      ];
-      const out = { _sources: {} };
-      for (const file of files || []) {
-        if (!file.file_id) continue;
-        await forEachRegistryPageImage_(file, async function(pageImage) {
-          const readings = [];
-          for (const colorMode of ['color', 'adaptive_bw']) {
-            const dataUrl = await cropDataUrlFromImage_(pageImage.data_url, {
-              x: 0,
-              y: 0,
-              width: 100000,
-              height: 100000
-            }, {
-              scale: pageImage.high_resolution ? 1 : 2.5,
-              colorMode: colorMode,
-              enhance: colorMode === 'color'
-            });
-            if (!dataUrl) continue;
-            const read = await api('ocrA4LandCertificateCrop', {
-              dataUrl: dataUrl,
-              cropType: 'land_fields'
-            });
-            const layout = cleanValue(read && read.layout);
-            if (layout !== 'gcn_qsdd_land' && layout !== 'gcn_qsdd_qsh_nha_o_va_tsk_land') continue;
-            readings.push(read || {});
-          }
-          const agreed = chooseA4GeometryFieldConsensus_(readings);
-          keys.forEach(function(key) {
-            const value = cleanValue(agreed[key]);
-            if (!out[key] && isTrustedLandPageRegionFieldValue_(key, value)) {
-              out[key] = value;
-              out._sources[key] = 'AUTO_OCR_LAND_PAGE_REGION_CROP_V2';
-            }
-          });
-          autoA4OcrDebug.push({
-            stage: 'old_land_page_region_crop',
-            page: pageImage.page_index,
-            region: pageImage.page_region || 'full',
-            accepted_modes: readings.length,
-            fields: keys.filter(function(key) { return Boolean(out[key]); })
-          });
-          return true;
-        });
-      }
-      return out;
-    }
-
-    function isTrustedLandPageRegionFieldValue_(fieldKey, value) {
-      const normalized = removeVietnameseMarks(cleanValue(value)).toLowerCase()
+    function needsSemanticLandFieldCropVerification_(field, fieldKey) {
+      if (!field || field.manual_value) return false;
+      const source = cleanValue(field.source);
+      if (source.indexOf('AUTO_OCR_LAND_LABEL_CROP_V2') === 0 ||
+          source.indexOf('AUTO_OCR_LAND_PAGE_REGION_CROP_V2') === 0 ||
+          source.indexOf('AUTO_OCR_A4_GEOMETRY_CROP_V2') === 0) return false;
+      const value = cleanValue(field.final_value || field.ai_value);
+      const normalized = removeVietnameseMarks(value).toLowerCase()
         .replace(/[^a-z0-9]+/g, ' ')
         .replace(/\s+/g, ' ')
         .trim();
-      if (!normalized) return false;
-      if (fieldKey === 'land_plot_number') {
-        return /\d/.test(normalized) && !/\b(?:thua dat|thura|to ban do)\b/.test(normalized);
-      }
-      if (fieldKey === 'map_sheet_number') return /\d/.test(normalized);
+      if (!value) return true;
+      if (Number(field.confidence || 0) > 0 && Number(field.confidence || 0) < 0.8) return true;
+      if (fieldKey === 'land_plot_number') return !/\d/.test(value);
+      if (fieldKey === 'map_sheet_number') return !/[0-9a-z]/i.test(value);
+      if (fieldKey === 'area') return !/\d/.test(value) || /(?:Â|Ã)/.test(value);
+      if (fieldKey === 'area_in_words') return normalized.indexOf('met vuong') < 0;
       if (fieldKey === 'land_address') {
-        return !/\b(?:bang chu|met vuong|mot tram|muoi sau|phay khong|dien tich|hinh thuc su dung)\b/.test(normalized);
+        return /\b(?:bang chu|met vuong|dien tich|hinh thuc su dung|muc dich su dung)\b/.test(normalized);
       }
-      if (fieldKey === 'area') return /\d/.test(normalized) && /\bm(?:2)?\b/.test(normalized);
-      if (fieldKey === 'area_in_words') return /\bmet vuong\b/.test(normalized);
       if (fieldKey === 'usage_origin') {
-        return !/\b(?:2 nha o|3 cong trinh|4 rung|5 cay lau nam|6 ghi chu)\b/.test(normalized);
+        return /\b(?:2 nha o|3 cong trinh|4 rung|5 cay lau nam|6 ghi chu|nha o cong trinh|rung san xuat)\b/.test(normalized);
       }
-      return true;
-    }
-
-    function needsLabeledLandFieldVerification_(field) {
-      if (!field || field.manual_value) return false;
-      return cleanValue(field.source).indexOf('AUTO_OCR_LAND_LABEL_CROP_V2') !== 0 &&
-        cleanValue(field.source).indexOf('AUTO_OCR_LAND_PAGE_REGION_CROP_V2') !== 0 &&
-        cleanValue(field.source).indexOf('AUTO_OCR_A4_GEOMETRY_CROP_V2') !== 0;
+      return false;
     }
 
     async function readLabeledLandFieldFromFiles_(files, fieldKey) {

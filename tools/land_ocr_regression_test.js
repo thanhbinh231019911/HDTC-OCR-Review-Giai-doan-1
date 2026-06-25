@@ -1777,8 +1777,12 @@ vm.runInContext([
   extractClientFunction('canonicalOldCertificateHeadingForReview_'),
   extractClientFunction('inferPrintedCertificateFieldMarker_'),
   extractClientFunction('normalizeCertificatePunctuationForReview_'),
-  extractClientFunction('printedCertificateFieldSemantic_'),
-  extractClientFunction('extractPrintedCertificateLayout'),
+  extractClientFunction('semanticCertificateDocumentToPrintedLayout_'),
+  extractClientFunction('bestSemanticCertificatePage_'),
+  extractClientFunction('dedupeSemanticCertificateItems_'),
+  extractClientFunction('semanticCertificateItemLabel_'),
+  extractClientFunction('normalizeSemanticDisplayLabel_'),
+  extractClientFunction('semanticCertificateItemForDisplay_'),
   extractClientFunction('a4AttachedAssetSectionState'),
   extractClientFunction('getLandCertificateFilesFromOcr_'),
   extractClientFunction('clampCropBox_'),
@@ -1797,12 +1801,15 @@ assert.strictEqual(
   ),
   'gcn_qsdd_qsh_nha_o_va_tsk'
 );
-const variablePrintedLayout = reviewClientContext.extractPrintedCertificateLayout(
-  variableOldCertificateText,
-  variableOldCertificateText
+const variablePrintedLayout = reviewClientContext.semanticCertificateDocumentToPrintedLayout_(
+  JSON.parse(JSON.stringify(dataMergeContext.parseLandCertificateSemanticDocument_(
+    variableOldCertificateText,
+    { certificate_title: 'Giấy chứng nhận quyền sử dụng đất, quyền sở hữu nhà ở và tài sản khác gắn liền với đất' }
+  )))
 );
 assert.strictEqual(variablePrintedLayout.land_fields.map(item => item.label).join('|'), [
   'Thửa đất số',
+  'Tờ bản đồ số',
   'Diện tích',
   'Loại đất',
   'Thời hạn sử dụng',
@@ -1839,9 +1846,11 @@ assert.strictEqual(
   reviewClientContext.normalizeUsageOriginAreaUnitsForReview_('884,9 m²; 544,5 m²'),
   '884,9 m²; 544,5 m²'
 );
-const printedA4Layout = reviewClientContext.extractPrintedCertificateLayout(
-  labeledA4AttachedAssetText,
-  labeledA4AttachedAssetText
+const printedA4Layout = reviewClientContext.semanticCertificateDocumentToPrintedLayout_(
+  JSON.parse(JSON.stringify(dataMergeContext.parseLandCertificateSemanticDocument_(
+    labeledA4AttachedAssetText,
+    { certificate_title: 'Giấy chứng nhận quyền sử dụng đất, quyền sở hữu tài sản gắn liền với đất' }
+  )))
 );
 assert.ok(printedA4Layout.owner_heading.indexOf('1.') === 0);
 assert.ok(printedA4Layout.land_section_heading.indexOf('2.') === 0);
@@ -2050,6 +2059,99 @@ assert.deepStrictEqual(
     normalizedVertices: [{ x: 0.1, y: 0.2 }, { x: 0.3, y: 0.2 }, { x: 0.3, y: 0.4 }, { x: 0.1, y: 0.4 }]
   }, 1000, 2000))),
   { x: 100, y: 400, width: 200, height: 400 }
+);
+
+const reorderedNoisyOldCertificateText = `
+GIẤY CHỨNG NHẬN
+QUYỀN SỬ DỤNG ĐẤT, QUYỀN SỞ HỮU NHÀ Ở VÀ TÀI SẢN KHÁC GẮN LIỀN VỚI ĐẤT
+II. Thửa đất, nhà ở và tài sản khác gắn liền với đất
+1. Thửa đất:
+g) Nguồn gốc sử dụng: Nhà nước giao đất có thu tiền sử dụng đất
++ Diện tích: 116,0mÂ²
+e) Địa chỉ: Khu 1, thị trấn Chi Nê, huyện Lạc Thủy, tỉnh Hòa Bình
+a) Thira dat so: 303; tờ bản đồ số: 3
+d) Hình thirc sử dụng: Sử dụng riêng
+c) Mục đích sử dụng: Đất ở tại đô thị
+h) Quy hoạch: Theo quyết định số 12
+2. Nhà ở: -/-
+`;
+const reorderedSemanticDocument = dataMergeContext.parseLandCertificateSemanticDocument_(
+  reorderedNoisyOldCertificateText,
+  { certificate_title: 'Giấy chứng nhận quyền sử dụng đất, quyền sở hữu nhà ở và tài sản khác gắn liền với đất' }
+);
+assert.strictEqual(reorderedSemanticDocument.generation, 'gcn_qsdd_qsh_nha_o_va_tsk');
+assert.strictEqual(reorderedSemanticDocument.items.filter(item => item.semantic_key === 'land_plot_number')[0].value, '303');
+assert.strictEqual(reorderedSemanticDocument.items.filter(item => item.semantic_key === 'area')[0].value, '116,0 m²');
+assert.strictEqual(reorderedSemanticDocument.items.filter(item => item.semantic_key === 'area')[0].marker_raw, '+');
+assert.strictEqual(reorderedSemanticDocument.items.filter(item => item.semantic_key === 'unknown')[0].label_raw, 'Quy hoạch');
+assert.strictEqual(reorderedSemanticDocument.unparsed_fragments[0].value, 'Theo quyết định số 12');
+assert.strictEqual(
+  reorderedSemanticDocument.items
+    .filter(item => ['usage_origin', 'area', 'land_address', 'land_plot_number', 'usage_form', 'usage_purpose'].includes(item.semantic_key))
+    .map(item => item.semantic_key)
+    .join('|'),
+  'usage_origin|area|land_address|land_plot_number|usage_form|usage_purpose'
+);
+const reorderedNoisyFields = dataMergeContext.extractRealEstateIndexedLandFields_(reorderedNoisyOldCertificateText);
+assert.strictEqual(reorderedNoisyFields.land_plot_number, '303');
+assert.strictEqual(reorderedNoisyFields.map_sheet_number, '3');
+assert(/^116,0 m/.test(reorderedNoisyFields.area));
+assert.strictEqual(reorderedNoisyFields.usage_form, 'Sử dụng riêng');
+assert.strictEqual(reorderedNoisyFields.usage_purpose, 'Đất ở tại đô thị');
+assert.strictEqual(reorderedNoisyFields.usage_origin, 'Nhà nước giao đất có thu tiền sử dụng đất');
+
+const splitSemanticDocument = dataMergeContext.parseLandCertificateSemanticDocument_(`
+[LAND_OCR_REGION layout=gcn_qsdd_qsh_nha_o_va_tsk_land region=full]
+II. Thửa đất, nhà ở và tài sản khác gắn liền với đất
+a) Thửa đất số: 303
+III. Sơ đồ thửa đất
+[/LAND_OCR_REGION]
+[LAND_OCR_REGION layout=gcn_qsdd_qsh_nha_o_va_tsk_land region=left]
+II. Thửa đất, nhà ở và tài sản khác gắn liền với đất
+a) Thửa đất số: 303
+[/LAND_OCR_REGION]
+[LAND_OCR_REGION layout=gcn_qsdd_qsh_nha_o_va_tsk_change region=right]
+III. Sơ đồ thửa đất
+IV. Những thay đổi sau khi cấp Giấy chứng nhận
+[/LAND_OCR_REGION]
+`);
+assert.strictEqual(splitSemanticDocument.pages.length, 2);
+assert.strictEqual(splitSemanticDocument.pages.map(page => page.source_region).join('|'), 'left|right');
+assert.strictEqual(splitSemanticDocument.items.filter(item => item.semantic_key === 'land_plot_number').length, 1);
+
+const normalizedChangeDocument = dataMergeContext.parseLandCertificateSemanticDocument_(`
+IV. Những thay đổi sau khi cấp Giấy chứng nhận
+Nội dung thay đổi và cơ sở pháp lý: Chuyển nhượng cho ông A, CCCP sa 036080024419
+`);
+assert.strictEqual(
+  normalizedChangeDocument.items.filter(item => item.semantic_key === 'post_issue_change_content')[0].value,
+  'Chuyển nhượng cho ông A, CCCD số 036080024419'
+);
+
+const noisyAbsentOptionalDocument = dataMergeContext.parseLandCertificateSemanticDocument_(`
+II. Thửa đất, nhà ở và tài sản khác gắn liền với đất
+g ) Nguồn gốc sử dụng : Nhà nước giao đất có thu tiền sử dụng đất
+2 Nhà ở nghĩa
+dung be song
+* Công trình xây dựng khác .
+chi Rừng sản xuất là rừng trồng
+5. Cây lâu năm
+6. Ghi chú : Không
+III. Sơ đồ thửa đất
+`);
+const noisyAbsentOptionalValues = {};
+noisyAbsentOptionalDocument.items.forEach(item => {
+  if (['house', 'other_construction', 'production_forest', 'perennial_crops'].includes(item.semantic_key)) {
+    noisyAbsentOptionalValues[item.semantic_key] = item.value;
+  }
+});
+assert.strictEqual(noisyAbsentOptionalValues.house, '-/-');
+assert.strictEqual(noisyAbsentOptionalValues.other_construction, '-/-');
+assert.strictEqual(noisyAbsentOptionalValues.production_forest, '-/-');
+assert.strictEqual(noisyAbsentOptionalValues.perennial_crops, '-/-');
+assert.strictEqual(
+  noisyAbsentOptionalDocument.items.filter(item => item.semantic_key === 'certificate_note')[0].value,
+  'Không'
 );
 
 console.log('OK land OCR regression');

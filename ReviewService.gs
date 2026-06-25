@@ -7,7 +7,66 @@ function getReviewPayload(caseId, token) {
   repairReviewDataFromFullOcr_(data, caseId);
   data = applyTemplateDecisionToReviewJson(data);
   data = validateReviewJson(data);
+  attachLandCertificateSemanticDocumentsForReview_(data, caseId);
   return makeReviewPayloadForClient_(data);
+}
+
+function attachLandCertificateSemanticDocumentsForReview_(data, caseId) {
+  if (!data || typeof parseLandCertificateSemanticDocument_ !== 'function') return data;
+  const fullOcr = getFullOcrTextMapsForCase_(caseId, data);
+  const assets = data.assets || [];
+  const allowAllAssetTexts = canUseSharedAssetOcr_(assets, { byFileName: fullOcr.assetTextByFileName || {} });
+  assets.forEach(function(asset) {
+    const scopedText = assetOcrTextForSemanticReview_(
+      asset,
+      fullOcr.assetText || '',
+      fullOcr.assetTextByFileName || {},
+      allowAllAssetTexts
+    );
+    if (!scopedText) return;
+    const title = String(
+      asset && asset.certificate_title &&
+      (asset.certificate_title.final_value || asset.certificate_title.ai_value) || ''
+    ).trim();
+    asset.certificate_semantic_document = parseLandCertificateSemanticDocument_(scopedText, {
+      certificate_title: title,
+      source: 'FULL_ASSET_OCR'
+    });
+  });
+  return data;
+}
+
+function assetOcrTextForSemanticReview_(asset, fullAssetOcrText, assetTextByFileName, allowAllFiles) {
+  const byFileName = assetTextByFileName || {};
+  const fileNames = Object.keys(byFileName);
+  if (allowAllFiles) return fileNames.map(function(name) { return byFileName[name]; }).filter(Boolean).join('\n\n');
+  const sourceFiles = [];
+  if (typeof collectAiSourceFiles_ === 'function') collectAiSourceFiles_(asset, sourceFiles);
+  const matched = [];
+  sourceFiles.forEach(function(fileName) {
+    if (byFileName[fileName] && matched.indexOf(byFileName[fileName]) < 0) matched.push(byFileName[fileName]);
+  });
+  if (matched.length) return matched.join('\n\n');
+  const realEstate = asset && asset.real_estate || {};
+  const certificate = normalizeCertificateCodeValue_(
+    realEstate.certificate_number &&
+    (realEstate.certificate_number.final_value || realEstate.certificate_number.ai_value) || ''
+  );
+  const registry = normalizeRegistryCodeValue_(
+    realEstate.registry_number &&
+    (realEstate.registry_number.final_value || realEstate.registry_number.ai_value) || ''
+  );
+  fileNames.forEach(function(fileName) {
+    const text = String(byFileName[fileName] || '');
+    const compact = removeVietnameseAccents_(text).replace(/[^a-z0-9]+/gi, '').toUpperCase();
+    if ((certificate && compact.indexOf(certificate.toUpperCase()) >= 0) ||
+        (registry && compact.indexOf(registry.replace(/[^A-Z0-9]/gi, '').toUpperCase()) >= 0)) {
+      if (matched.indexOf(text) < 0) matched.push(text);
+    }
+  });
+  if (matched.length) return matched.join('\n\n');
+  if (fileNames.length === 1) return byFileName[fileNames[0]];
+  return '';
 }
 
 function saveManualOverride(caseId, token, fieldPath, newValue, reason) {
