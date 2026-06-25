@@ -1000,19 +1000,25 @@
         'usage_origin'
       ];
       const landItems = dedupeSemanticCertificateItems_((landPage && landPage.items || []).filter(function(item) {
-        return landSemanticKeys.indexOf(item.semantic_key) >= 0;
+        return item.section_semantic === 'land_details' && landSemanticKeys.indexOf(item.semantic_key) >= 0;
       })).sort(function(a, b) {
-        const ai = landSemanticKeys.indexOf(a.semantic_key);
-        const bi = landSemanticKeys.indexOf(b.semantic_key);
-        if (ai !== bi) return ai - bi;
         return Number(a.visual_order || 0) - Number(b.visual_order || 0);
       });
-      layout.land_fields = landItems.map(semanticCertificateItemForDisplay_);
+      layout.land_fields = combineInlineSemanticCertificateFields_(
+        landItems.map(semanticCertificateItemForDisplay_),
+        document.generation || ''
+      );
       const optionalItems = allItems.filter(function(item) {
         return ['house', 'other_construction', 'production_forest', 'perennial_crops', 'certificate_note'].indexOf(item.semantic_key) >= 0 ||
           item.section_semantic === 'other_assets';
       });
-      layout.optional_sections = optionalItems.map(semanticCertificateItemForDisplay_);
+      layout.optional_sections = optionalItems
+        .sort(function(a, b) { return Number(a.visual_order || 0) - Number(b.visual_order || 0); })
+        .map(function(item) {
+          const display = semanticCertificateItemForDisplay_(item);
+          display.marker = display.marker || inferredOldCertificateMarker_(display.semantic, document.generation || '');
+          return display;
+        });
       const attachedSemanticKeys = [
         'attached_asset_name',
         'attached_asset_area',
@@ -1102,7 +1108,7 @@
 
     function semanticCertificateItemForDisplay_(item) {
       return {
-        marker: cleanValue(item && item.marker_raw).replace(/[\).:;-]+$/, ''),
+        marker: normalizePrintedMarkerForReview_(item && item.marker_raw),
         label: semanticCertificateItemLabel_(item),
         semantic: cleanValue(item && item.semantic_key),
         value: cleanValue(item && item.value),
@@ -1110,36 +1116,80 @@
       };
     }
 
+    function normalizePrintedMarkerForReview_(marker) {
+      marker = cleanValue(marker).replace(/\s+/g, '');
+      if (!marker) return '';
+      const normalized = removeVietnameseMarks(marker).toLowerCase().replace(/[\).:;-]+$/g, '');
+      if (/^(?:\d+|[a-z]|d|iv|v|vi|ix|x)$/.test(normalized)) return normalized === 'd' && /đ/i.test(marker) ? '\u0111' : normalized;
+      return '';
+    }
+
+    function inferredOldCertificateMarker_(semantic, generation) {
+      if (generation !== 'gcn_qsdd_qsh_nha_o_va_tsk' && generation !== 'gcn_qsdd') return '';
+      const markers = {
+        area: 'c',
+        house: '2',
+        other_construction: '3',
+        production_forest: '4',
+        perennial_crops: '5',
+        certificate_note: '6'
+      };
+      return markers[semantic] || '';
+    }
+
+    function combineInlineSemanticCertificateFields_(items, generation) {
+      const out = [];
+      const list = items || [];
+      for (let i = 0; i < list.length; i++) {
+        const item = Object.assign({}, list[i]);
+        const next = list[i + 1] || null;
+        if (item.semantic === 'land_plot_number' && next && next.semantic === 'map_sheet_number' && !cleanValue(next.marker)) {
+          item.inline_fields = [{ label: next.label, value: next.value, semantic: next.semantic }];
+          i++;
+        } else if (item.semantic === 'area' && next && next.semantic === 'area_in_words' && !cleanValue(next.marker)) {
+          item.area_words = next.value;
+          i++;
+        }
+        if (!item.marker) item.marker = inferredOldCertificateMarker_(item.semantic, generation);
+        out.push(item);
+      }
+      return out;
+    }
+
     function pushPrintedCertificateField(lines, item, realEstate, ocrText) {
       const re = realEstate || {};
-      let value = item.value || '';
+      let value = cleanValue(item.value);
       if (item.semantic === 'land_plot_number') {
-        value = valueOf(re.land_plot_number) || value;
+        value = value || valueOf(re.land_plot_number);
       } else if (item.semantic === 'map_sheet_number') {
-        value = valueOf(re.map_sheet_number) || value;
+        value = value || valueOf(re.map_sheet_number);
       } else if (item.semantic === 'area') {
-        value = normalizeAreaForDisplay(valueOf(re.area)) || value;
+        value = formatAreaWithWords(value || valueOf(re.area), cleanValue(item.area_words) || valueOf(re.area_in_words) || extractAreaWordsFromOcr(ocrText));
       } else if (item.semantic === 'area_in_words') {
-        value = valueOf(re.area_in_words) || extractAreaWordsFromOcr(ocrText) || value;
+        value = value || valueOf(re.area_in_words) || extractAreaWordsFromOcr(ocrText);
       } else if (item.semantic === 'usage_purpose') {
-        value = valueOf(re.usage_purpose) || value;
+        value = value || valueOf(re.usage_purpose);
       } else if (item.semantic === 'usage_term') {
-        value = valueOf(re.usage_term) || value;
+        value = value || valueOf(re.usage_term);
       } else if (item.semantic === 'usage_form') {
-        value = valueOf(re.usage_form) || value;
+        value = value || valueOf(re.usage_form);
       } else if (item.semantic === 'land_address') {
-        value = oneLineCertificateValue(valueOf(re.land_address)) || value;
+        value = oneLineCertificateValue(value) || oneLineCertificateValue(valueOf(re.land_address));
       } else if (item.semantic === 'usage_origin') {
-        value = displayUsageOriginValue(valueOf(re.usage_origin)) || value;
+        value = displayUsageOriginValue(value) || displayUsageOriginValue(valueOf(re.usage_origin));
       } else if (item.semantic === 'attached_asset_name') {
-        value = valueOf(re.attached_asset_name) || value;
+        value = value || valueOf(re.attached_asset_name);
       } else if (item.semantic === 'attached_asset_area') {
-        value = normalizeAreaForDisplay(valueOf(re.attached_asset_area)) || value;
+        value = normalizeAreaForDisplay(value || valueOf(re.attached_asset_area));
       } else if (item.semantic === 'attached_asset_ownership_form') {
-        value = valueOf(re.attached_asset_ownership_form) || value;
+        value = value || valueOf(re.attached_asset_ownership_form);
       } else if (item.semantic === 'attached_asset_ownership_term') {
-        value = valueOf(re.attached_asset_ownership_term) || value;
+        value = value || valueOf(re.attached_asset_ownership_term);
       }
+      (item.inline_fields || []).forEach(function(inline) {
+        if (!cleanValue(inline.value)) return;
+        value += ', ' + cleanValue(inline.label) + ': ' + cleanValue(inline.value);
+      });
       const marker = cleanValue(item.marker);
       const label = (marker ? marker + '. ' : '') + cleanValue(item.label);
       lines.push('<div class="asset-doc-line">' + escapeHtml(label) + ': ' + escapeHtml(cleanValue(value)) + '</div>');

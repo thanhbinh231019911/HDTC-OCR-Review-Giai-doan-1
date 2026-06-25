@@ -560,6 +560,9 @@ function ocrLandCriticalFieldCropWithAi(caseId, token, dataUrl, cropType) {
   if (cropType === 'land_plot_number') value = extractLandPlotNumberFromIndexedValue_(value);
   if (cropType === 'map_sheet_number') value = extractMapSheetNumberFromIndexedValue_(value);
   if (cropType === 'land_address') value = cleanupLandAddressCertificateValue_(value);
+  if (cropType === 'land_address' && isUnsafeLandAddressValue_(value)) {
+    return { ok: false, reason: 'UNSAFE_LAND_ADDRESS_CONTEXT' };
+  }
   if (cropType === 'area') value = normalizeRealEstateAreaValue_(value);
   if (cropType === 'usage_purpose') value = cleanupIndexedCertificateValue_(value);
   if (cropType === 'usage_term') value = normalizeRealEstateUsageTerm_(cleanupIndexedCertificateValue_(value));
@@ -1026,6 +1029,7 @@ function saveAutoOcrA4LandFieldValues(caseId, token, values) {
     if (fieldKey === 'usage_form') newValue = normalizeRealEstateUsageForm_(newValue);
     if (fieldKey === 'usage_origin') newValue = cleanupUsageOriginCertificateValue_(newValue);
     if (!newValue) return;
+    if (fieldKey === 'land_address' && isUnsafeLandAddressValue_(newValue)) return;
     field.ai_value = newValue;
     field.final_value = newValue;
     field.manual_value = '';

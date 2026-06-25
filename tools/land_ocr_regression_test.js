@@ -1315,6 +1315,23 @@ assert.strictEqual(
   'Chuyển nhượng cho Nguyễn Văn A'
 );
 assert.strictEqual(
+  dataMergeContext.cleanPostIssueChangesCandidate_(
+    'Nội dung thay đổi và cơ sở pháp lý: chuyển nhượng cho ông Mai Lê Thành , CCCP sa 036080024419'
+  ),
+  'chuyển nhượng cho ông Mai Lê Thành, CCCD số 036080024419'
+);
+assert.strictEqual(
+  dataMergeContext.cleanPostIssueChangesCandidate_(
+    [
+      'Nội dung thay đổi và cơ sở pháp lý: chuyển nhượng cho ông Mai Lê Thành , CCCP sa 036080024419',
+      'KT. CHỦ TỊCH PHÓ CHỦ TỊCH',
+      '26/7/2022',
+      'HUYỆN LẠC THỦY'
+    ].join('\n')
+  ),
+  'chuyển nhượng cho ông Mai Lê Thành, CCCD số 036080024419'
+);
+assert.strictEqual(
   dataMergeContext.extractPostIssueChangesFromCertificateText_(
     'IV. Những thay đổi sau khi cấp Giấy chứng nhận Chuyển nhượng cho Nguyễn Văn A'
   ).value,
@@ -1782,6 +1799,9 @@ vm.runInContext([
   extractClientFunction('dedupeSemanticCertificateItems_'),
   extractClientFunction('semanticCertificateItemLabel_'),
   extractClientFunction('normalizeSemanticDisplayLabel_'),
+  extractClientFunction('normalizePrintedMarkerForReview_'),
+  extractClientFunction('inferredOldCertificateMarker_'),
+  extractClientFunction('combineInlineSemanticCertificateFields_'),
   extractClientFunction('semanticCertificateItemForDisplay_'),
   extractClientFunction('a4AttachedAssetSectionState'),
   extractClientFunction('getLandCertificateFilesFromOcr_'),
@@ -1809,7 +1829,6 @@ const variablePrintedLayout = reviewClientContext.semanticCertificateDocumentToP
 );
 assert.strictEqual(variablePrintedLayout.land_fields.map(item => item.label).join('|'), [
   'Thửa đất số',
-  'Tờ bản đồ số',
   'Diện tích',
   'Loại đất',
   'Thời hạn sử dụng',
@@ -2082,7 +2101,7 @@ const reorderedSemanticDocument = dataMergeContext.parseLandCertificateSemanticD
 assert.strictEqual(reorderedSemanticDocument.generation, 'gcn_qsdd_qsh_nha_o_va_tsk');
 assert.strictEqual(reorderedSemanticDocument.items.filter(item => item.semantic_key === 'land_plot_number')[0].value, '303');
 assert.strictEqual(reorderedSemanticDocument.items.filter(item => item.semantic_key === 'area')[0].value, '116,0 m²');
-assert.strictEqual(reorderedSemanticDocument.items.filter(item => item.semantic_key === 'area')[0].marker_raw, '+');
+assert.strictEqual(reorderedSemanticDocument.items.filter(item => item.semantic_key === 'area')[0].marker_raw, '');
 assert.strictEqual(reorderedSemanticDocument.items.filter(item => item.semantic_key === 'unknown')[0].label_raw, 'Quy hoạch');
 assert.strictEqual(reorderedSemanticDocument.unparsed_fragments[0].value, 'Theo quyết định số 12');
 assert.strictEqual(
@@ -2099,6 +2118,59 @@ assert(/^116,0 m/.test(reorderedNoisyFields.area));
 assert.strictEqual(reorderedNoisyFields.usage_form, 'Sử dụng riêng');
 assert.strictEqual(reorderedNoisyFields.usage_purpose, 'Đất ở tại đô thị');
 assert.strictEqual(reorderedNoisyFields.usage_origin, 'Nhà nước giao đất có thu tiền sử dụng đất');
+
+const liveLikeOldCertificateText = `
+GIẤY CHỨNG NHẬN
+QUYỀN SỬ DỤNG ĐẤT, QUYỀN SỞ HỮU NHÀ Ở VÀ TÀI SẢN KHÁC GẮN LIỀN VỚI ĐẤT
+I. Người sử dụng đất, chủ sở hữu nhà ở và tài sản khác gắn liền với đất
+Ông: Vương Đặng Hưng
+Năm sinh: 1990, CCCD số: 001090013443
+Địa chỉ thường trú: Lê Lợi, Vân Đình, Ứng Hòa, Hà Nội.
+II. Thửa đất, nhà ở và tài sản khác gắn liền với đất
+1. Thửa đất:
+a) Thửa đất số: 303, tờ bản đồ số: 3
+b) Địa chỉ: Khu 1, thị trấn Chi Nê, huyện Lạc Thủy, tỉnh Hòa Bình
++ Diện tích: 116,0mÂ² ", (bằng chữ: một trăm mười sáu phẩy không mét vuông)
+d) Hình thức sử dụng: Sử dụng riêng
+d) Mục đích sử dụng: Đất ở tại đô thị
+e) Thời hạn sử dụng: Lâu dài
+g) Nguồn gốc sử dụng: Nhà nước giao đất có thu tiền sử dụng đất
+2. Nhà ở: -/-
+* Công trình xây dựng khác: -/-
+Rừng sản xuất là rừng trồng: -/-
+5. Cây lâu năm: -/-
+6. Ghi chú: Không
+III. Sơ đồ thửa đất, nhà ở và tài sản khác gắn liền với đất
+IV. Những thay đổi sau khi cấp Giấy chứng nhận
+Nội dung thay đổi và cơ sở pháp lý: chuyển nhượng cho ông Mai Lê Thành, CCCP sa 036080024419
+`;
+const liveLikeDocument = dataMergeContext.parseLandCertificateSemanticDocument_(
+  liveLikeOldCertificateText,
+  { certificate_title: 'Giấy chứng nhận quyền sử dụng đất, quyền sở hữu nhà ở và tài sản khác gắn liền với đất' }
+);
+const liveLikeLayout = reviewClientContext.semanticCertificateDocumentToPrintedLayout_(
+  JSON.parse(JSON.stringify(liveLikeDocument))
+);
+assert.strictEqual(
+  liveLikeLayout.land_fields.map(item => item.label).join('|'),
+  'Thửa đất số|Địa chỉ|Diện tích|Hình thức sử dụng|Mục đích sử dụng|Thời hạn sử dụng|Nguồn gốc sử dụng'
+);
+assert.strictEqual(liveLikeLayout.land_fields[0].marker, 'a');
+assert.strictEqual(liveLikeLayout.land_fields[0].value, '303');
+assert.strictEqual(liveLikeLayout.land_fields[0].inline_fields[0].label, 'Tờ bản đồ số');
+assert.strictEqual(liveLikeLayout.land_fields[0].inline_fields[0].value, '3');
+assert.strictEqual(liveLikeLayout.land_fields[1].value, 'Khu 1, thị trấn Chi Nê, huyện Lạc Thủy, tỉnh Hòa Bình');
+assert(!/thuong tru/i.test(dataMergeContext.removeVietnameseAccents_(liveLikeLayout.land_fields[1].value)));
+assert.strictEqual(liveLikeLayout.land_fields[2].marker, 'c');
+assert.strictEqual(liveLikeLayout.land_fields[2].area_words, 'một trăm mười sáu phẩy không mét vuông');
+assert.strictEqual(
+  liveLikeLayout.optional_sections.map(item => item.marker + ':' + item.label).join('|'),
+  '2:Nhà ở|3:Công trình xây dựng khác|4:Rừng sản xuất là rừng trồng|5:Cây lâu năm|6:Ghi chú'
+);
+assert.strictEqual(
+  liveLikeDocument.items.filter(item => item.semantic_key === 'post_issue_change_content')[0].value,
+  'chuyển nhượng cho ông Mai Lê Thành, CCCD số 036080024419'
+);
 
 const splitSemanticDocument = dataMergeContext.parseLandCertificateSemanticDocument_(`
 [LAND_OCR_REGION layout=gcn_qsdd_qsh_nha_o_va_tsk_land region=full]

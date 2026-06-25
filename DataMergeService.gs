@@ -560,8 +560,7 @@ function replaceFromTrustedLandBlock_(field, replacement) {
 }
 
 function clearUnsafeLandField_(reviewJson, field, fieldPath, predicate, replacement) {
-  if (!field || !field.hasOwnProperty('final_value') || field.manual_value ||
-      isVerifiedA4GeometryField_(field) || isVerifiedLandLabelField_(field)) return;
+  if (!field || !field.hasOwnProperty('final_value') || field.manual_value) return;
   const current = String(field.final_value || field.ai_value || '').trim();
   if (!current || !predicate(current)) return;
   if (replacement && !predicate(replacement)) {
@@ -571,6 +570,7 @@ function clearUnsafeLandField_(reviewJson, field, fieldPath, predicate, replacem
     field.confidence = Math.max(Number(field.confidence || 0), 0.86);
     return;
   }
+  if (isVerifiedA4GeometryField_(field) || isVerifiedLandLabelField_(field)) return;
   field.ai_value = '';
   field.final_value = '';
   field.source = 'OCR_REJECTED_UNTRUSTED_LAND_CONTEXT';
@@ -647,10 +647,10 @@ function repairAssetLandAddressInReviewJson(reviewJson, fullAssetOcrText, assetT
     const address = cleanupLandAddressCertificateValue_(indexed.land_address || '');
     if (!address) return;
     const current = String(field.final_value || field.ai_value || '').trim();
-    if (current && !isBetterLandAddress_(current, address)) return;
+    if (current && !isUnsafeLandAddressValue_(current) && !isBetterLandAddress_(current, address)) return;
     field.ai_value = address;
     field.final_value = address;
-    field.source = field.source || 'OCR_INDEXED_ASSET_TEXT';
+    field.source = 'OCR_INDEXED_ASSET_TEXT';
     field.confidence = Math.max(Number(field.confidence || 0), 0.86);
   });
   return reviewJson;
@@ -1846,9 +1846,15 @@ function extractSemanticMarkerInfoBeforeOffset_(source, start) {
   const before = String(source || '').slice(Math.max(0, start - 24), start);
   const match = before.match(/(?:^|[\n;])\s*((?:[a-z\u0111]|\d+|[ivx]+)\s*[\).:;-])\s*$/i) ||
     before.match(/(?:^|[\n;])\s*((?:[a-z\u0111]|\d+|[ivx]+))\s+$/i) ||
-    before.match(/\s((?:[a-z\u0111]|[ivx]+)\s*[\).;-])\s*$/i) ||
-    before.match(/(?:^|[\n;])\s*([^a-z0-9\s]{1,3})\s*$/i);
-  if (!match) return { raw: '', start: -1 };
+    before.match(/\s((?:[a-z\u0111]|[ivx]+)\s*[\).;-])\s*$/i);
+  if (!match) {
+    const noisy = before.match(/(?:^|[\n;])\s*([+\-•*]+)\s*$/i);
+    if (!noisy) return { raw: '', start: -1 };
+    return {
+      raw: '',
+      start: Math.max(0, start - before.length + before.lastIndexOf(noisy[1]))
+    };
+  }
   return {
     raw: match[1].trim(),
     start: Math.max(0, start - before.length + before.lastIndexOf(match[1]))
@@ -2935,20 +2941,39 @@ function extractPostIssueChangesFromPlainText_(text) {
 }
 
 function cleanPostIssueChangesCandidate_(value) {
-  return String(value || '')
+  const lines = [];
+  String(value || '')
     .split(/\r?\n/)
     .map(function(line) { return stripPostIssueHeadingPrefix_(line.replace(/\s+/g, ' ').trim()); })
-    .filter(function(line) {
+    .some(function(line) {
       const normalized = removeVietnameseAccents_(line).toLowerCase().replace(/[^a-z0-9]+/g, ' ').replace(/\s+/g, ' ').trim();
       if (!normalized) return false;
+      if (isPostIssueSignatureBoundary_(normalized)) return true;
       if (/^(ngay|thang|nam)\b/.test(normalized)) return false;
       if (normalized.indexOf('nguyen') >= 0 && normalized.indexOf('giam doc') >= 0) return false;
       if (normalized.indexOf('phone') >= 0 || normalized.indexOf('bank') >= 0 || normalized.indexOf('hamdoc') >= 0) return false;
-      return true;
-    })
+      lines.push(line);
+      return false;
+    });
+  return lines
     .join('\n')
+    .replace(/\bCCCP\s+s(?:a|o|\u1ed1)\b(?=\s*[:#-]?\s*\d{9,12}\b)/gi, 'CCCD s\u1ed1')
+    .replace(/,\s*\n\s*/g, ', ')
+    .replace(/\s+([,.;:])/g, '$1')
     .replace(/\n{3,}/g, '\n\n')
     .trim();
+}
+
+function isPostIssueSignatureBoundary_(normalizedLine) {
+  const line = String(normalizedLine || '').trim();
+  if (!line) return false;
+  if (line.indexOf('xac nhan cua co quan') >= 0) return true;
+  if (line.indexOf('co quan co tham quyen') >= 0) return true;
+  if (/^(?:kt|tl|tm)\s+(?:chu tich|giam doc|uy ban)\b/.test(line)) return true;
+  if (/^(?:chu tich|pho chu tich|giam doc|pho giam doc|truong phong)\b/.test(line)) return true;
+  if (/^(?:uy ban nhan dan|ubnd|van phong dang ky|so tai nguyen)\b/.test(line)) return true;
+  if (/^\d{1,2}\s*[\/.\-]\s*\d{1,2}\s*[\/.\-]\s*\d{4}$/.test(line)) return true;
+  return false;
 }
 
 function stripPostIssueHeadingPrefix_(value) {
