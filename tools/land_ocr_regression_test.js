@@ -2023,6 +2023,7 @@ vm.runInContext([
   extractClientFunction('appendSemanticTranscriptLine_'),
   extractClientFunction('semanticSectionHeadingForReview_'),
   extractClientFunction('cleanSemanticTranscriptLine_'),
+  extractClientFunction('isStandaloneCertificateSerialTranscriptLine_'),
   extractClientFunction('semanticLinesEquivalent_'),
   extractClientFunction('semanticLineLooksLikeHeading_'),
   extractClientFunction('semanticDocumentItemValue_'),
@@ -2032,6 +2033,7 @@ vm.runInContext([
   extractClientFunction('certificateSerialForReview_'),
   extractClientFunction('certificateSerialFromSemanticPrintedLines_'),
   extractClientFunction('normalizeCertificateSerialForReview_'),
+  extractClientFunction('normalizeRegistryForReview'),
   extractClientFunction('bestSemanticCertificatePage_'),
   extractClientFunction('dedupeSemanticCertificateItems_'),
   extractClientFunction('semanticCertificateItemLabel_'),
@@ -2541,7 +2543,7 @@ const printedLineTranscript = reviewClientContext.semanticCertificateDocumentToT
     sections: []
   }]
 }).map(line => line.text);
-assert(printedLineTranscript.includes('BĐ 151871'));
+assert(!printedLineTranscript.includes('BĐ 151871'));
 assert(printedLineTranscript.includes('a) Thửa đất số: 69; tờ bản đồ số: 16'));
 assert(!printedLineTranscript.includes('Tờ bản đồ số: 16'));
 assert(printedLineTranscript.includes('II. Thửa đất, nhà ở và tài sản khác gắn liền với đất'));
@@ -2551,6 +2553,66 @@ assert(printedLineTranscript.includes('Số phát hành GCN: BĐ151871'));
 assert(printedLineTranscript.includes('Số vào sổ cấp GCN: CH00344'));
 assert(!printedLineTranscript.includes('Số phát hành GCN: BĐ 51871'));
 assert(!printedLineTranscript.includes('Số vào sổ cấp GCN: C# 00144'));
+const huongCoverTranscript = reviewClientContext.semanticCertificateDocumentToTranscriptLines_({
+  items: [
+    {
+      semantic_key: 'registry_number',
+      value: 'CS.02994',
+      value_raw: 'Số vào sổ cấp GCN: CS.02994.',
+      confidence: 0.97,
+      evidence: { source: 'OPENAI_VISION_SEMANTIC' }
+    },
+    {
+      semantic_key: 'registry_number',
+      label_raw: 'Số vào sổ cấp GCN',
+      value: 'CS02991',
+      value_normalized: 'CS02991',
+      confidence: 0.99,
+      evidence: { source: 'AUTO_OCR_LAND_REGISTRY_ANCHORED_PAGE_CROP_CONSENSUS_V5' }
+    },
+    {
+      semantic_key: 'certificate_number',
+      label_raw: 'Số GCN',
+      value: 'BQ258292',
+      confidence: 0.99,
+      evidence: { source: 'AUTO_OCR_LAND_CERTIFICATE_NUMBER_ANCHORED_CROP_CONSENSUS' }
+    }
+  ],
+  pages: [
+    {
+      page_index: 1,
+      printed_lines: [
+        'I. Người sử dụng đất, chủ sở hữu nhà ở và tài sản khác gắn liền với đất',
+        'Ông: Trần Minh Đức',
+        'Năm sinh: 1982, CCCD số: 036082012721',
+        'Địa chỉ thường trú: Tổ 5, phường Tân Hòa, thành phố Hòa Bình, tỉnh Hòa Bình.',
+        'BQ 258292'
+      ],
+      sections: []
+    },
+    {
+      page_index: 2,
+      printed_lines: [
+        'IV. Những thay đổi sau khi cấp Giấy chứng nhận',
+        'Số vào sổ cấp GCN: CS.02994.'
+      ],
+      sections: []
+    }
+  ]
+}).map(line => line.text);
+assert(huongCoverTranscript.includes('I. Người sử dụng đất, chủ sở hữu nhà ở và tài sản khác gắn liền với đất'));
+assert(huongCoverTranscript.includes('Ông: Trần Minh Đức'));
+assert(!huongCoverTranscript.includes('BQ 258292'));
+assert(huongCoverTranscript.includes('Số vào sổ cấp GCN: CS02991'));
+assert(!huongCoverTranscript.includes('Số vào sổ cấp GCN: CS.02994.'));
+assert.strictEqual(
+  reviewClientContext.normalizeRegistryForReview('CN.5429'),
+  'CN.5429'
+);
+assert.strictEqual(
+  reviewClientContext.normalizeRegistryForReview('CN.5.4.2.9'),
+  'CN5429'
+);
 assert.strictEqual(
   reviewClientContext.certificateSerialForReview_(
     { real_estate: { certificate_number: { final_value: 'BD151871' } } },

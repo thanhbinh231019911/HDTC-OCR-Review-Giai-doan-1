@@ -731,7 +731,7 @@
       const important = [
         [t('Loai GCN'), certificateTitleForReview_(asset, ocrText)],
         [t('So GCN'), certificateSerialForReview_(asset, ocrText)],
-        [t('So vao so'), normalizeRegistryForReview(semanticDocumentItemValue_(asset.certificate_semantic_document, ['registry_number']) || valueOf(re.registry_number) || inferRegistryNumberFromText(ocrText))],
+        [t('So vao so'), normalizeRegistryForReview(valueOf(re.registry_number) || semanticDocumentItemValue_(asset.certificate_semantic_document, ['registry_number']) || inferRegistryNumberFromText(ocrText))],
         [t('Ngay cap'), semanticDocumentItemValue_(asset.certificate_semantic_document, ['issue_date']) || valueOf(re.issue_date)],
         [t('Noi cap'), titleCaseAgency(semanticDocumentItemValue_(asset.certificate_semantic_document, ['issuing_authority']) || valueOf(re.issuing_authority))]
       ];
@@ -1116,6 +1116,7 @@
     function appendSemanticTranscriptLine_(out, line, heading) {
       const clean = cleanSemanticTranscriptLine_(line);
       if (!clean) return;
+      if (isStandaloneCertificateSerialTranscriptLine_(clean)) return;
       const last = out.length ? out[out.length - 1].text : '';
       if (semanticLinesEquivalent_(last, clean)) return;
       out.push({ text: clean, heading: Boolean(heading) });
@@ -1136,6 +1137,12 @@
         .replace(/\bCCCP\s+sa\b/ig, 'CCCD số')
         .replace(/\bBD(?=\s*\d{5,9}\b)/g, 'BĐ')
         .trim();
+    }
+
+    function isStandaloneCertificateSerialTranscriptLine_(line) {
+      const compact = cleanValue(line).toUpperCase().replace(/\s+/g, '');
+      if (/^(?:CS|CT|CN|CH|CL|HX|VP|DC|DL)[-.]?[0-9A-Z.\/-]{2,24}$/.test(compact)) return false;
+      return /^[^\d:;,.\/-]{1,5}\d{6,9}$/.test(compact);
     }
 
     function combineStandaloneMapSheetTranscriptLines_(lines) {
@@ -1180,13 +1187,23 @@
       (document && document.items || []).forEach(function(item) {
         const label = removeVietnameseMarks(item && (item.label_raw || item.label_canonical) || '').toLowerCase();
         if (item.semantic_key !== 'registry_number' && label.indexOf('so vao so') < 0) return;
-        const compact = cleanValue(item.value).toUpperCase().replace(/[^A-Z0-9]/g, '');
-        if (/^CH\d{3,}$/.test(compact)) {
-          candidates.push({ value: compact, confidence: Number(item.confidence || 0) });
+        const raw = cleanValue(item.value_normalized || item.value);
+        const source = String(item && item.evidence && item.evidence.source || item.source || '');
+        const focused = /^AUTO_OCR_LAND_REGISTRY/i.test(source);
+        const value = focused
+          ? normalizeRegistryForReview(raw)
+          : normalizeRegistryForReview(raw, /\.{4,}/.test(String(item.value_raw || raw || '')));
+        const validation = String(value || '').replace(/\s+/g, '').replace(/^C\.([NSHT])\./i, 'C$1');
+        if (/^(?:CS|CT|CN|CH|CL|HX|VP|DC|DL)[-.]?[0-9A-Z.\/-]{2,24}$/i.test(validation)) {
+          candidates.push({
+            value: value,
+            confidence: Number(item.confidence || 0),
+            focused: focused
+          });
         }
       });
       candidates.sort(function(a, b) {
-        return b.confidence - a.confidence || b.value.length - a.value.length;
+        return Number(b.focused) - Number(a.focused) || b.confidence - a.confidence || b.value.length - a.value.length;
       });
       return candidates.length ? candidates[0].value : '';
     }
