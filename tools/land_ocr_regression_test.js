@@ -663,6 +663,33 @@ assert.strictEqual(postIssueReviewEntries.length, 2);
 assert.strictEqual(postIssueReviewEntries[0].content, 'Đổi địa chỉ thửa đất từ tổ 10 thành tổ 8. Theo hồ sơ');
 assert.strictEqual(postIssueReviewEntries[1].date, '20/5/2020');
 assert.ok(postIssueReviewEntries[1].content.indexOf('201512020') < 0);
+const openBookPostIssueEntries = dataMergeContext.extractPostIssueReviewEntries_([
+  '[LAND_OCR_PDF_PAGE page=1]',
+  'Nội dung thay đổi và cơ sở pháp lý',
+  'Chuyển nhượng cho ông Bùi Minh Anh, CCCD số 017095000560',
+  'Xác nhận của cơ quan có thẩm quyền ngày 16/6/2021',
+  'GIẤY CHỨNG NHẬN QUYỀN SỬ DỤNG ĐẤT',
+  '[/LAND_OCR_PDF_PAGE]',
+  '[LAND_OCR_PDF_PAGE page=2]',
+  'II. Thửa đất, nhà ở và tài sản khác gắn liền với đất',
+  'III. Sơ đồ thửa đất, nhà ở và tài sản khác gắn liền với đất',
+  'IV. Những thay đổi sau khi cấp Giấy chứng nhận',
+  'Nội dung thay đổi và cơ sở pháp lý',
+  'Đổi địa chỉ thửa đất từ tổ 10 thành tổ 8. Theo hồ sơ',
+  'Chuyển nhượng cho ông Nguyễn Xuân Nghĩa, sinh năm 1994, CMND số 113331134',
+  'Xác nhận của cơ quan có thẩm quyền ngày 20/5/2020',
+  '[/LAND_OCR_PDF_PAGE]',
+  '[LAND_OCR_PDF_PAGE page=3]',
+  'TRANG BỔ SUNG GIẤY CHỨNG NHẬN',
+  'Nội dung thay đổi và cơ sở pháp lý',
+  'Thế chấp bằng quyền sử dụng đất tại Ngân hàng BIDV',
+  '[/LAND_OCR_PDF_PAGE]'
+].join('\n'));
+const openBookPostIssueText = openBookPostIssueEntries.map(entry => entry.content).join('\n');
+assert.ok(openBookPostIssueText.indexOf('Đổi địa chỉ') >= 0);
+assert.ok(openBookPostIssueText.indexOf('Nguyễn Xuân Nghĩa') > openBookPostIssueText.indexOf('Đổi địa chỉ'));
+assert.ok(openBookPostIssueText.indexOf('Bùi Minh Anh') > openBookPostIssueText.indexOf('Nguyễn Xuân Nghĩa'));
+assert.ok(openBookPostIssueText.indexOf('BIDV') > openBookPostIssueText.indexOf('Bùi Minh Anh'));
 assert.strictEqual(
   dataMergeContext.normalizeRealEstateUsageForm_('Sử dụng riêng 2 Đường bê tông'),
   'Sử dụng riêng'

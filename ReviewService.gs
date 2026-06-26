@@ -453,6 +453,7 @@ function buildPostIssueReviewTranscriptLines_(re, sourceText) {
 function extractPostIssueReviewEntries_(sourceText) {
   const pages = extractPostIssueReviewPageTexts_(sourceText);
   const entries = [];
+  pages.sort(comparePostIssueReviewPages_);
   pages.forEach(function(page) {
     extractPostIssueReviewEntriesFromPage_(page.text).forEach(function(entry) {
       entries.push(entry);
@@ -475,6 +476,36 @@ function extractPostIssueReviewPageTexts_(sourceText) {
   }
   if (!pages.length && isPostIssueReviewPageText_(source)) pages.push({ pageIndex: 0, text: source });
   return pages;
+}
+
+function comparePostIssueReviewPages_(a, b) {
+  const keyA = postIssueReviewPageOrderKey_(a);
+  const keyB = postIssueReviewPageOrderKey_(b);
+  if (keyA !== keyB) return keyA - keyB;
+  return Number(a && a.pageIndex || 0) - Number(b && b.pageIndex || 0);
+}
+
+function postIssueReviewPageOrderKey_(page) {
+  const text = String(page && page.text || '');
+  const normalized = removeVietnameseAccents_(text).toLowerCase().replace(/[.:)\-]+/g, ' ').replace(/\s+/g, ' ').trim();
+  const pageIndex = Number(page && page.pageIndex || 0);
+  const hasChangeTable = normalized.indexOf('iv nhung thay doi') >= 0 ||
+    normalized.indexOf('noi dung thay doi') >= 0 ||
+    normalized.indexOf('xac nhan cua co quan co tham quyen') >= 0;
+  const hasLandOrMapPage = normalized.indexOf('ii thua dat') >= 0 ||
+    normalized.indexOf('1 thua dat') >= 0 ||
+    normalized.indexOf('iii so do') >= 0 ||
+    normalized.indexOf('ty le') >= 0 && normalized.indexOf('so do') >= 0;
+  const hasSupplementPage = normalized.indexOf('trang bo sung giay chung nhan') >= 0 ||
+    normalized.indexOf('trang bo sung nay') >= 0;
+  const hasCoverPage = normalized.indexOf('giay chung nhan') >= 0 ||
+    normalized.indexOf('i nguoi su dung') >= 0 ||
+    normalized.indexOf('quyen su dung dat') >= 0;
+  if (hasLandOrMapPage && hasChangeTable) return 1000 + pageIndex;
+  if (hasChangeTable && hasCoverPage && !hasSupplementPage) return 2000 + pageIndex;
+  if (hasSupplementPage) return 3000 + pageIndex;
+  if (hasChangeTable) return 4000 + pageIndex;
+  return 5000 + pageIndex;
 }
 
 function isPostIssueReviewPageText_(text) {
