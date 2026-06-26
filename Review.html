@@ -732,7 +732,7 @@
         [t('Loai GCN'), certificateTitleForReview_(asset, ocrText)],
         [t('So GCN'), certificateSerialForReview_(asset, ocrText)],
         [t('So vao so'), normalizeRegistryForReview(valueOf(re.registry_number) || semanticDocumentItemValue_(asset.certificate_semantic_document, ['registry_number']) || inferRegistryNumberFromText(ocrText))],
-        [t('Ngay cap'), semanticDocumentItemValue_(asset.certificate_semantic_document, ['issue_date']) || valueOf(re.issue_date)],
+        [t('Ngay cap'), valueOf(re.issue_date) || semanticDocumentItemValue_(asset.certificate_semantic_document, ['issue_date'])],
         [t('Noi cap'), titleCaseAgency(semanticDocumentItemValue_(asset.certificate_semantic_document, ['issuing_authority']) || valueOf(re.issuing_authority))]
       ];
       const lines = [];
@@ -1197,6 +1197,7 @@
     function repairCertificateReferenceTranscriptLines_(lines, document) {
       const serial = certificateSerialFromSemanticPrintedLines_(document);
       const registry = registryNumberFromSemanticDocument_(document);
+      const issueDate = issueDateFromSemanticDocument_(document);
       return (lines || []).map(function(line) {
         let text = cleanSemanticTranscriptLine_(line && line.text);
         const normalized = removeVietnameseMarks(text).toLowerCase().replace(/\s+/g, ' ').trim();
@@ -1206,8 +1207,49 @@
         if (registry && normalized.indexOf('so vao so cap gcn') >= 0) {
           text = text.replace(/(:\s*).+$/i, '$1' + registry);
         }
+        if (issueDate && isCertificateIssueDateTranscriptLine_(text)) {
+          text = replaceCertificateIssueDateTranscriptLine_(text, issueDate);
+        }
         return { text: text, heading: Boolean(line && line.heading) };
       });
+    }
+
+    function issueDateFromSemanticDocument_(document) {
+      const candidates = [];
+      (document && document.items || []).forEach(function(item) {
+        if (item.semantic_key !== 'issue_date') return;
+        const raw = cleanValue(item.value_normalized || item.value || item.value_raw);
+        const value = normalizeReviewDateValue_(raw);
+        if (!value) return;
+        const source = String(item && item.evidence && item.evidence.source || item.source || '');
+        candidates.push({
+          value: value,
+          confidence: Number(item.confidence || 0),
+          focused: /^AUTO_OCR_LAND_ISSUE_DATE/i.test(source)
+        });
+      });
+      candidates.sort(function(a, b) {
+        return Number(b.focused) - Number(a.focused) || b.confidence - a.confidence;
+      });
+      return candidates.length ? candidates[0].value : '';
+    }
+
+    function isCertificateIssueDateTranscriptLine_(line) {
+      const normalized = removeVietnameseMarks(line).toLowerCase().replace(/\s+/g, ' ').trim();
+      return normalized.indexOf('ngay') >= 0 &&
+        normalized.indexOf('thang') >= 0 &&
+        normalized.indexOf('nam') >= 0 &&
+        normalized.indexOf('thoi han') < 0 &&
+        normalized.indexOf('den ngay') < 0;
+    }
+
+    function replaceCertificateIssueDateTranscriptLine_(line, issueDate) {
+      const match = normalizeReviewDateValue_(issueDate).match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+      if (!match) return line;
+      return String(line || '').replace(
+        /(ngày|ngay)\s*\S{1,12}\s*(tháng|thang)\s*\S{1,8}\s*(năm|nam)\s*\d{4}/i,
+        '$1 ' + String(Number(match[1])) + ' $2 ' + String(Number(match[2])) + ' $3 ' + match[3]
+      );
     }
 
     function registryNumberFromSemanticDocument_(document) {
@@ -2363,7 +2405,7 @@
           if (saved && saved.ok) {
             job.field.ai_value = verification.issue_date;
             job.field.final_value = verification.issue_date;
-            job.field.source = 'AUTO_OCR_LAND_ISSUE_DATE_CROP_CONSENSUS_V2';
+            job.field.source = 'AUTO_OCR_LAND_ISSUE_DATE_CROP_CONSENSUS_V3';
             job.field.confidence = '0.92';
             render();
           }
@@ -2377,7 +2419,7 @@
 
     function needsLandIssueDateCropVerification_(field) {
       if (!field || field.manual_value) return false;
-      return cleanValue(field.source).indexOf('AUTO_OCR_LAND_ISSUE_DATE_CROP_CONSENSUS_V2') !== 0;
+      return cleanValue(field.source).indexOf('AUTO_OCR_LAND_ISSUE_DATE_CROP_CONSENSUS_V3') !== 0;
     }
 
     async function autoRepairA4CertificateFieldsFromCrops() {
@@ -3009,9 +3051,9 @@
             if (consensusDate) {
               found = {
                 issue_date: consensusDate,
-                readings: readings
+                readings: readings,
+                source: 'ocr'
               };
-              return false;
             }
           }
           const aiCrop = suggestedCrop || crops.find(function(crop) {
@@ -3030,11 +3072,13 @@
               if (date) aiReadings.push(date);
             }
             const aiConsensusDate = sameCropValueConsensus_(aiReadings);
-            if (aiConsensusDate) {
-              found = { issue_date: aiConsensusDate, readings: aiReadings };
+            const chosenIssueDate = chooseLandIssueDateCropConsensus_(found && found.readings, aiReadings);
+            if (chosenIssueDate) {
+              found = { issue_date: chosenIssueDate, readings: chosenIssueDate === aiConsensusDate ? aiReadings : found.readings };
               return false;
             }
           }
+          if (found && found.issue_date) return false;
           return true;
         });
         if (found) return found;
@@ -3247,6 +3291,12 @@
       if (!ranked.length || counts[ranked[0]] < 2) return '';
       if (ranked.length > 1 && counts[ranked[0]] === counts[ranked[1]]) return '';
       return ranked[0];
+    }
+
+    function chooseLandIssueDateCropConsensus_(ocrReadings, aiReadings) {
+      const aiConsensus = sameCropValueConsensus_(aiReadings || []);
+      if (aiConsensus) return aiConsensus;
+      return sameCropValueConsensus_(ocrReadings || []);
     }
 
     function criticalFieldColorModes_() {

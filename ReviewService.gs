@@ -1925,13 +1925,13 @@ function saveAutoOcrIssueDateValue(caseId, token, fieldPath, newValue, currentVa
   if (expectedCurrent && storedCurrent && expectedCurrent !== storedCurrent) {
     return { ok: false, reason: 'STALE_ISSUE_DATE_VALUE' };
   }
-  if (String(field.source || '').indexOf('AUTO_OCR_LAND_ISSUE_DATE_CROP_CONSENSUS_V2') === 0 && storedCurrent === candidate) {
+  if (String(field.source || '').indexOf('AUTO_OCR_LAND_ISSUE_DATE_CROP_CONSENSUS_V3') === 0 && storedCurrent === candidate) {
     return { ok: true, field_path: fieldPath, new_value: candidate, consensus_count: consensus.count };
   }
   field.ai_value = candidate;
   field.final_value = candidate;
   field.manual_value = '';
-  field.source = 'AUTO_OCR_LAND_ISSUE_DATE_CROP_CONSENSUS_V2';
+  field.source = 'AUTO_OCR_LAND_ISSUE_DATE_CROP_CONSENSUS_V3';
   field.confidence = 0.92;
   field.confirmed = false;
   field.evidence = 'Normalized high-resolution issue-date crop consensus across multiple color renderings';

@@ -2032,11 +2032,17 @@ vm.runInContext([
   extractClientFunction('semanticDocumentItemValue_'),
   extractClientFunction('combineStandaloneMapSheetTranscriptLines_'),
   extractClientFunction('repairCertificateReferenceTranscriptLines_'),
+  extractClientFunction('issueDateFromSemanticDocument_'),
+  extractClientFunction('isCertificateIssueDateTranscriptLine_'),
+  extractClientFunction('replaceCertificateIssueDateTranscriptLine_'),
   extractClientFunction('registryNumberFromSemanticDocument_'),
   extractClientFunction('certificateSerialForReview_'),
   extractClientFunction('certificateSerialFromSemanticPrintedLines_'),
   extractClientFunction('normalizeCertificateSerialForReview_'),
   extractClientFunction('normalizeRegistryForReview'),
+  extractClientFunction('normalizeReviewDateValue_'),
+  extractClientFunction('isValidReviewDate_'),
+  extractClientFunction('isLeapYearReview_'),
   extractClientFunction('bestSemanticCertificatePage_'),
   extractClientFunction('dedupeSemanticCertificateItems_'),
   extractClientFunction('semanticCertificateItemLabel_'),
@@ -2054,6 +2060,7 @@ vm.runInContext([
   extractClientFunction('normalizeRegistryCropReading_'),
   extractClientFunction('registrySameCropConsensus_'),
   extractClientFunction('sameCropValueConsensus_'),
+  extractClientFunction('chooseLandIssueDateCropConsensus_'),
   extractClientFunction('sameCropTextConsensus_'),
   extractClientFunction('chooseFocusedRegistryCandidate_')
 ].join('\n'), reviewClientContext);
@@ -2206,6 +2213,20 @@ assert.strictEqual(
 assert.strictEqual(
   reviewClientContext.registrySameCropConsensus_(['CN5024', 'CN5024', 'CN5O24']),
   'CN5024'
+);
+assert.strictEqual(
+  reviewClientContext.chooseLandIssueDateCropConsensus_(
+    ['04/03/2022', '04/03/2022', '04/03/2022'],
+    ['18/03/2022', '18/03/2022']
+  ),
+  '18/03/2022'
+);
+assert.strictEqual(
+  reviewClientContext.chooseLandIssueDateCropConsensus_(
+    ['04/03/2022', '04/03/2022'],
+    ['18/03/2022']
+  ),
+  '04/03/2022'
 );
 assert.strictEqual(
   reviewClientContext.registrySameCropConsensus_(['CN5024', 'CN5029']),
@@ -2579,6 +2600,20 @@ const huongCoverTranscript = reviewClientContext.semanticCertificateDocumentToTr
       value: 'BQ258292',
       confidence: 0.99,
       evidence: { source: 'AUTO_OCR_LAND_CERTIFICATE_NUMBER_ANCHORED_CROP_CONSENSUS' }
+    },
+    {
+      semantic_key: 'issue_date',
+      value: '04/03/2022',
+      value_raw: 'Hòa Bình, ngày 4 tháng 3 năm 2022',
+      confidence: 0.93,
+      evidence: { source: 'OPENAI_VISION_SEMANTIC' }
+    },
+    {
+      semantic_key: 'issue_date',
+      value: '18/03/2022',
+      value_normalized: '18/03/2022',
+      confidence: 0.99,
+      evidence: { source: 'AUTO_OCR_LAND_ISSUE_DATE_CROP_CONSENSUS_V3' }
     }
   ],
   pages: [
@@ -2602,6 +2637,7 @@ const huongCoverTranscript = reviewClientContext.semanticCertificateDocumentToTr
       page_index: 2,
       printed_lines: [
         'IV. Những thay đổi sau khi cấp Giấy chứng nhận',
+        'Hòa Bình, ngày 4 tháng 3 năm 2022',
         'Số vào sổ cấp GCN: CS.02994.'
       ],
       sections: []
@@ -2617,6 +2653,8 @@ assert(!huongCoverTranscript.includes('QUYỀN SỞ HỮU NHÀ Ở VÀ TÀI SẢ
 assert(!huongCoverTranscript.includes('BQ 258292'));
 assert(huongCoverTranscript.includes('Số vào sổ cấp GCN: CS02991'));
 assert(!huongCoverTranscript.includes('Số vào sổ cấp GCN: CS.02994.'));
+assert(huongCoverTranscript.includes('Hòa Bình, ngày 18 tháng 3 năm 2022'));
+assert(!huongCoverTranscript.includes('Hòa Bình, ngày 4 tháng 3 năm 2022'));
 assert.strictEqual(
   reviewClientContext.normalizeRegistryForReview('CN.5429'),
   'CN.5429'
