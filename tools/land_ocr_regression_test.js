@@ -2217,6 +2217,8 @@ assert.ok(aiExtractionSource.includes('raw_lines'));
 assert.ok(aiExtractionSource.includes("certificate_number', 'registry_number', 'issue_date', 'issuing_authority"));
 assert.ok(aiExtractionSource.includes('signature_seal'));
 assert.ok(fs.readFileSync('Review.html', 'utf8').includes('semanticCertificateDocumentToTranscriptLines_'));
+assert.ok(fs.readFileSync('Review.html', 'utf8').includes('semanticCertificateDocumentHasTranscriptEvidence_'));
+assert.ok(fs.readFileSync('Review.html', 'utf8').includes('pushOldCertificateFallbackLandFields_'));
 assert.ok(reviewWebAppSource.includes("action === 'reprocessLabCaseForSelfCheck'"));
 assert.ok(reviewWebAppSource.includes("indexOf('LAB-') !== 0"));
 assert.ok(fs.readFileSync('DataMergeService.gs', 'utf8').includes("if (key === 'certificate_semantic_document') return"));

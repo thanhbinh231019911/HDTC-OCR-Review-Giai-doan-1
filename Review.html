@@ -714,11 +714,13 @@
         valueOf(re.certificate_land_raw_text),
         valueOf(re.certificate_attached_raw_text)
       ].filter(Boolean).join('\n');
+      const semanticDocument = asset.certificate_semantic_document || null;
+      const semanticHasTranscriptEvidence = semanticCertificateDocumentHasTranscriptEvidence_(semanticDocument);
       const printedLayout = semanticCertificateDocumentToPrintedLayout_(
-        asset.certificate_semantic_document || null
+        semanticHasTranscriptEvidence ? semanticDocument : null
       );
       const semanticTranscriptLines = semanticCertificateDocumentToTranscriptLines_(
-        asset.certificate_semantic_document || null
+        semanticHasTranscriptEvidence ? semanticDocument : null
       );
       const certificateGeneration = certificateGenerationFromCompleteTitleForReview_(
         certificateTitleForReview_(asset, ocrText)
@@ -800,21 +802,33 @@
         if (printedLayout.land_heading) {
           lines.push('<div class="asset-doc-line"><strong>' + escapeHtml(printedLayout.land_heading) + '</strong></div>');
         }
+        const renderedLandFieldSemantics = {};
         printedLayout.land_fields.forEach(function(item) {
+          renderedLandFieldSemantics[item.semantic] = true;
           pushPrintedCertificateField(lines, item, re, ocrText);
         });
+        if (!printedLayout.land_fields.length && oldA3Certificate) {
+          const fallbackSemantics = pushOldCertificateFallbackLandFields_(lines, re, certificateGeneration);
+          fallbackSemantics.forEach(function(semantic) {
+            renderedLandFieldSemantics[semantic] = true;
+          });
+        }
         if (valueOf(re.usage_origin) &&
-            !printedLayout.land_fields.some(function(item) { return item.semantic === 'usage_origin'; })) {
+            !renderedLandFieldSemantics.usage_origin) {
           const originMarker = inferPrintedCertificateFieldMarker_(certificateLayoutText, 'usage_origin');
           const displayedOriginMarker = originMarker || (oldA3Certificate ? 'g' : '');
           const originLabel = (displayedOriginMarker ? displayedOriginMarker + ') ' : '') + t('Nguon goc su dung');
           lines.push('<div class="asset-doc-line">' + escapeHtml(originLabel) + ': ' +
             escapeHtml(displayUsageOriginValue(valueOf(re.usage_origin))) + '</div>');
         }
-        printedLayout.optional_sections.forEach(function(item) {
-          const optionalLabel = (cleanValue(item.marker) ? cleanValue(item.marker) + '. ' : '') + cleanValue(item.label);
-          lines.push('<div class="asset-doc-line"><strong>' + escapeHtml(optionalLabel) + ':</strong> ' + escapeHtml(item.value) + '</div>');
-        });
+        if (printedLayout.optional_sections.length) {
+          printedLayout.optional_sections.forEach(function(item) {
+            const optionalLabel = (cleanValue(item.marker) ? cleanValue(item.marker) + '. ' : '') + cleanValue(item.label);
+            lines.push('<div class="asset-doc-line"><strong>' + escapeHtml(optionalLabel) + ':</strong> ' + escapeHtml(item.value) + '</div>');
+          });
+        } else if (oldHouseCertificate) {
+          pushOldHouseOptionalSectionFallback_(lines, re);
+        }
         if (printedLayout.map_heading) {
           lines.push('<div class="asset-doc-line"><strong>' + escapeHtml(printedLayout.map_heading) + '</strong></div>');
         }
@@ -1050,6 +1064,15 @@
       return layout;
     }
 
+    function semanticCertificateDocumentHasTranscriptEvidence_(document) {
+      return (document && document.pages || []).some(function(page) {
+        if ((page.printed_lines || []).length) return true;
+        return (page.sections || []).some(function(section) {
+          return (section.raw_lines || []).length;
+        });
+      });
+    }
+
     function semanticCertificateDocumentToTranscriptLines_(document) {
       const pages = document && document.pages || [];
       if (!pages.length) return [];
@@ -1184,6 +1207,105 @@
         return true;
       }
       return false;
+    }
+
+    function pushOldCertificateFallbackLandFields_(lines, re, generation) {
+      const rendered = [];
+      function pushLine(marker, label, value, semantic) {
+        value = cleanValue(value);
+        if (!value || isUnclearReviewValue_(value)) return;
+        const prefix = marker ? marker + ') ' : '';
+        const text = label ? prefix + label + ': ' + value : prefix + value;
+        lines.push('<div class="asset-doc-line">' + escapeHtml(text) + '</div>');
+        if (semantic) rendered.push(semantic);
+      }
+      const plot = safeReviewFieldValue_(valueOf(re.land_plot_number));
+      const map = safeReviewFieldValue_(valueOf(re.map_sheet_number));
+      if (plot || map) {
+        const inline = [plot ? 'Thửa đất số: ' + plot : '', map ? 'tờ bản đồ số: ' + map : ''].filter(Boolean).join('; ');
+        pushLine('a', '', inline, 'land_plot_number');
+        if (map) rendered.push('map_sheet_number');
+      }
+      pushLine('b', 'Địa chỉ', displayOldCertificateLandAddress_(valueOf(re.land_address)), 'land_address');
+      const area = safeReviewFieldValue_(valueOf(re.area));
+      const areaWords = safeReviewFieldValue_(valueOf(re.area_in_words));
+      if (area || areaWords) {
+        pushLine('c', 'Diện tích', formatAreaWithWords(area, areaWords), 'area');
+        if (areaWords) rendered.push('area_in_words');
+      }
+      pushLine('d', 'Hình thức sử dụng', safeReviewFieldValue_(valueOf(re.usage_form)), 'usage_form');
+      pushLine('đ', 'Mục đích sử dụng', safeReviewFieldValue_(valueOf(re.usage_purpose)), 'usage_purpose');
+      pushLine('e', 'Thời hạn sử dụng', safeReviewFieldValue_(valueOf(re.usage_term)), 'usage_term');
+      pushLine('g', 'Nguồn gốc sử dụng', displayUsageOriginValue(safeReviewFieldValue_(valueOf(re.usage_origin))), 'usage_origin');
+      return rendered;
+    }
+
+    function pushOldHouseOptionalSectionFallback_(lines, re) {
+      const attached = safeReviewFieldValue_(valueOf(re.attached_assets));
+      const houseFields = [
+        ['a) Địa chỉ', safeReviewFieldValue_(valueOf(re.attached_asset_name))],
+        ['b) Diện tích xây dựng', safeReviewFieldValue_(valueOf(re.attached_asset_area))],
+        ['d) Hình thức sở hữu', safeReviewFieldValue_(valueOf(re.attached_asset_ownership_form))],
+        ['h) Thời hạn sở hữu', safeReviewFieldValue_(valueOf(re.attached_asset_ownership_term))]
+      ].filter(function(item) { return Boolean(item[1]); });
+      if (attached || houseFields.length) {
+        lines.push('<div class="asset-doc-line"><strong>2. Nhà ở:</strong>' + (attached ? ' ' + escapeHtml(attached) : '') + '</div>');
+        houseFields.forEach(function(item) {
+          lines.push('<div class="asset-doc-line">' + escapeHtml(item[0] + ': ' + item[1]) + '</div>');
+        });
+      } else {
+        lines.push('<div class="asset-doc-line"><strong>2. Nhà ở:</strong> -/-</div>');
+      }
+      lines.push('<div class="asset-doc-line"><strong>3. Công trình xây dựng khác:</strong> -/-</div>');
+      lines.push('<div class="asset-doc-line"><strong>4. Rừng sản xuất là rừng trồng:</strong> -/-</div>');
+      lines.push('<div class="asset-doc-line"><strong>5. Cây lâu năm:</strong> -/-</div>');
+      const note = safeCertificateNoteForReview_(valueOf(re.certificate_note));
+      lines.push('<div class="asset-doc-line"><strong>6. Ghi chú:</strong>' + (note ? ' ' + escapeHtml(note) : '') + '</div>');
+    }
+
+    function displayOldCertificateLandAddress_(value) {
+      let text = safeReviewFieldValue_(value);
+      if (!text) return '';
+      text = text.replace(/["']?\s*-\s*\/\s*-\s*["']?\s*$/g, '').trim();
+      const half = Math.floor(text.length / 2);
+      if (text.length > 20 && text.length % 2 === 0 && text.slice(0, half) === text.slice(half)) {
+        text = text.slice(0, half).trim();
+      }
+      const normalized = removeVietnameseMarks(text).toLowerCase();
+      const parts = text.split(/(?=Tổ\s+\d+\s+Phường)/i).map(function(part) { return part.trim(); }).filter(Boolean);
+      if (parts.length > 1) {
+        const seen = {};
+        text = parts.filter(function(part) {
+          const key = removeVietnameseMarks(part).toLowerCase();
+          if (seen[key]) return false;
+          seen[key] = true;
+          return true;
+        }).join(' ');
+      }
+      return text;
+    }
+
+    function safeReviewFieldValue_(value) {
+      value = cleanValue(value);
+      if (!value || isUnclearReviewValue_(value)) return '';
+      return value;
+    }
+
+    function isUnclearReviewValue_(value) {
+      const raw = String(value || '');
+      const normalized = removeVietnameseMarks(raw).toLowerCase();
+      return raw.indexOf('KhÃ') >= 0 ||
+        normalized.indexOf('khong ro') >= 0 ||
+        normalized.indexOf('de nghi') >= 0;
+    }
+
+    function safeCertificateNoteForReview_(value) {
+      const text = safeReviewFieldValue_(value);
+      if (!text) return '';
+      const normalized = removeVietnameseMarks(text).toLowerCase();
+      if (normalized.indexOf('hang muc') >= 0 && normalized.indexOf('so vao so') >= 0) return '';
+      if (normalized.indexOf('thua dat so') >= 0 && normalized.indexOf('cong trinh xay dung khac') >= 0) return '';
+      return text;
     }
 
     function semanticDocumentItemValue_(document, keys) {
