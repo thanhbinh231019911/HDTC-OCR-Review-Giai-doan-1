@@ -184,13 +184,230 @@ function extractLandCertificateSemanticFileWithVision_(ocrResult, apiKey) {
   }, CONFIG.MAX_API_RETRIES);
   const parsed = parseOpenAiJsonResponse_(response);
   const document = normalizeLandVisionSemanticDocument_(parsed);
+  const documentSignatureFields = extractLandVisionSignatureFields_(document);
+  let signatureFields = documentSignatureFields;
+  if (!signatureFields.issue_date || !signatureFields.issuing_authority) {
+    try {
+      signatureFields = extractLandCertificateSignatureFieldsWithVision_(file, bytes, mime, ocrResult, apiKey);
+    } catch (err) {
+      signatureFields.warning = String(err && err.message ? err.message : err);
+    }
+  }
+  if (signatureFields.issue_date || signatureFields.issuing_authority) {
+    appendLandVisionSignatureFieldsToDocument_(document, signatureFields);
+  }
   return {
     file_id: ocrResult.file_id,
     file_name: ocrResult.file_name || file.getName(),
     document: document,
+    signature_fields: signatureFields,
     warnings: parsed.warnings || [],
     usage: response.usage || {}
   };
+}
+
+function extractLandCertificateSignatureFieldsWithVision_(file, bytes, mime, ocrResult, apiKey) {
+  const evidence = extractLandVisionSignatureEvidenceText_(ocrResult && ocrResult.text || '');
+  if (!evidence) return { issue_date: '', issuing_authority: '', raw_lines: [], confidence: 0, warning: '' };
+  const content = [{
+    type: 'input_text',
+    text: getLandSignatureVisionPrompt_() +
+      '\n\nGOOGLE VISION OCR CANDIDATE CONTEXT (may misread handwriting/rotation; use the original PDF/image as truth):\n' +
+      evidence
+  }];
+  const base64 = Utilities.base64Encode(bytes);
+  if (String(mime || '').toLowerCase() === 'application/pdf') {
+    content.unshift({
+      type: 'input_file',
+      filename: file.getName(),
+      file_data: 'data:application/pdf;base64,' + base64
+    });
+  } else {
+    content.unshift({
+      type: 'input_image',
+      image_url: 'data:' + (mime || 'image/jpeg') + ';base64,' + base64,
+      detail: 'high'
+    });
+  }
+  const payload = {
+    model: CONFIG.OPENAI_MODEL_LOCKED,
+    input: [{ role: 'user', content: content }],
+    text: {
+      format: {
+        type: 'json_schema',
+        name: 'land_certificate_signature_seal',
+        strict: true,
+        schema: getLandSignatureVisionJsonSchema_()
+      }
+    }
+  };
+  const response = withRetry('OpenAI land certificate signature seal ' + file.getName(), function() {
+    const res = UrlFetchApp.fetch(CONFIG.OPENAI_ENDPOINT, {
+      method: 'post',
+      contentType: 'application/json',
+      headers: { Authorization: 'Bearer ' + apiKey },
+      payload: JSON.stringify(payload),
+      muteHttpExceptions: true
+    });
+    if (res.getResponseCode() >= 300) throw new Error(res.getContentText());
+    return JSON.parse(res.getContentText());
+  }, CONFIG.MAX_API_RETRIES);
+  return normalizeLandSignatureVisionResult_(parseOpenAiJsonResponse_(response));
+}
+
+function getLandSignatureVisionPrompt_() {
+  return [
+    'Inspect the original Vietnamese land-certificate PDF/image and extract only the issue signature/seal block.',
+    'Find the physical page/region that contains the main certificate land/house/attached-asset content, usually section II or labels for thửa đất, nhà ở, công trình, rừng, cây lâu năm.',
+    'On that same page/region, find the first issue signature/seal block: locality + ngày/tháng/năm, TM. ỦY BAN NHÂN DÂN, title, seal, signer.',
+    'Do not use dates or seals in section IV, trang bổ sung, nội dung thay đổi, thế chấp, xóa thế chấp, chuyển nhượng, or xác nhận sau cấp giấy.',
+    'Read from the image/PDF, not from OCR when OCR disagrees. OCR text is only a locator.',
+    'Return issue_date as DD/MM/YYYY only if day, month, and year are visible. Return issuing_authority from the seal/authority block, including the administrative level if visible or clear from the seal, e.g. Ủy ban nhân dân thành phố Hòa Bình.',
+    'If a value is not visible enough, return an empty string and explain briefly in warning.'
+  ].join('\n');
+}
+
+function getLandSignatureVisionJsonSchema_() {
+  return {
+    type: 'object',
+    additionalProperties: false,
+    properties: {
+      issue_date: { type: 'string' },
+      issuing_authority: { type: 'string' },
+      raw_lines: {
+        type: 'array',
+        items: { type: 'string' }
+      },
+      confidence: { type: 'number' },
+      warning: { type: 'string' }
+    },
+    required: ['issue_date', 'issuing_authority', 'raw_lines', 'confidence', 'warning']
+  };
+}
+
+function normalizeLandSignatureVisionResult_(parsed) {
+  const issueDate = normalizeDateValue_(parsed && parsed.issue_date || '');
+  const authority = normalizeVietnameseAgencyNameClean_(parsed && parsed.issuing_authority || '');
+  return {
+    issue_date: isStrictDateValue_(issueDate) ? issueDate : '',
+    issuing_authority: authority,
+    raw_lines: normalizeLandVisionLines_(parsed && parsed.raw_lines || []),
+    confidence: Number(parsed && parsed.confidence || 0),
+    warning: String(parsed && parsed.warning || '')
+  };
+}
+
+function extractLandVisionSignatureEvidenceText_(text) {
+  const raw = String(text || '');
+  if (!raw) return '';
+  const blocks = [];
+  const markers = ['LAND_OCR_AUTHORITY_REGION', 'LAND_OCR_REGION'];
+  markers.forEach(function(marker) {
+    extractLandVisionMarkedRegionTexts_(raw, marker).forEach(function(region) {
+      const plain = removeVietnameseAccents_(region).toLowerCase();
+      const hasMainContent = plain.indexOf('ii') >= 0 && plain.indexOf('thua dat') >= 0 ||
+        plain.indexOf('nha o') >= 0 ||
+        plain.indexOf('cong trinh') >= 0 ||
+        plain.indexOf('to ban do') >= 0;
+      const hasSignatureCue = plain.indexOf('uy ban nhan dan') >= 0 ||
+        plain.indexOf('chu tich') >= 0 ||
+        plain.indexOf('ngay') >= 0 && plain.indexOf('thang') >= 0 && plain.indexOf('nam') >= 0;
+      const hasPostIssueCue = plain.indexOf('noi dung thay doi') >= 0 ||
+        plain.indexOf('trang bo sung') >= 0 ||
+        plain.indexOf('the chap') >= 0 ||
+        plain.indexOf('xoa the chap') >= 0;
+      if (hasMainContent && hasSignatureCue) {
+        blocks.push({
+          score: (hasPostIssueCue ? 0 : 6) + (plain.indexOf('uy ban nhan dan') >= 0 ? 4 : 0) + (plain.indexOf('chu tich') >= 0 ? 2 : 0),
+          text: region
+        });
+      }
+    });
+  });
+  if (!blocks.length) {
+    const plainAll = removeVietnameseAccents_(raw).toLowerCase();
+    ['uy ban nhan dan', 'chu tich', 'ngay', 'nam'].forEach(function(needle) {
+      const index = plainAll.indexOf(needle);
+      if (index >= 0) {
+        blocks.push({ score: 1, text: raw.slice(Math.max(0, index - 1800), Math.min(raw.length, index + 2600)) });
+      }
+    });
+  }
+  blocks.sort(function(a, b) {
+    return b.score - a.score || b.text.length - a.text.length;
+  });
+  const seen = {};
+  return blocks.slice(0, 3).map(function(block) {
+    const value = String(block.text || '').slice(0, 5000);
+    const key = value.slice(0, 500);
+    if (seen[key]) return '';
+    seen[key] = true;
+    return value;
+  }).filter(Boolean).join('\n\n--- candidate block ---\n\n').slice(0, 12000);
+}
+
+function extractLandVisionMarkedRegionTexts_(text, markerName) {
+  const escaped = String(markerName || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const regex = new RegExp('\\[' + escaped + '[^\\]]*\\]([\\s\\S]*?)\\[\\/' + escaped + '\\]', 'g');
+  const out = [];
+  let match;
+  while ((match = regex.exec(String(text || ''))) !== null) {
+    const value = String(match[1] || '').trim();
+    if (value) out.push(value);
+  }
+  return out;
+}
+
+function appendLandVisionSignatureFieldsToDocument_(document, signatureFields) {
+  if (!document || !signatureFields) return document;
+  const lines = normalizeLandVisionLines_(signatureFields.raw_lines || []);
+  let pages = document.pages || [];
+  let target = pages.filter(function(page) { return isLandVisionPrimaryCertificatePage_(page); })[0];
+  if (!target) {
+    target = { page_index: pages.length, layout: 'signature_seal', source_region: 'signature_seal', printed_lines: [], sections: [] };
+    pages.push(target);
+    document.pages = pages;
+  }
+  target.sections = target.sections || [];
+  if (lines.length && !target.sections.some(function(section) { return section.semantic === 'signature_seal'; })) {
+    target.sections.push({
+      semantic: 'signature_seal',
+      marker_raw: '',
+      label_raw: '',
+      label_canonical: 'Khối ký và đóng dấu cấp giấy',
+      raw_lines: lines
+    });
+  }
+  document.items = document.items || [];
+  if (signatureFields.issue_date) {
+    document.items.push({
+      semantic_key: 'issue_date',
+      section_semantic: 'signature_seal',
+      marker_raw: '',
+      label_raw: 'Ngày cấp',
+      label_canonical: 'Ngày cấp',
+      value_raw: signatureFields.issue_date,
+      value_normalized: signatureFields.issue_date,
+      confidence: Math.max(Number(signatureFields.confidence || 0), 0.9),
+      source: 'OPENAI_VISION_SIGNATURE_SEAL',
+      evidence: lines.join('\n')
+    });
+  }
+  if (signatureFields.issuing_authority) {
+    document.items.push({
+      semantic_key: 'issuing_authority',
+      section_semantic: 'signature_seal',
+      marker_raw: '',
+      label_raw: 'Cơ quan cấp',
+      label_canonical: 'Cơ quan cấp',
+      value_raw: signatureFields.issuing_authority,
+      value_normalized: signatureFields.issuing_authority,
+      confidence: Math.max(Number(signatureFields.confidence || 0), 0.88),
+      source: 'OPENAI_VISION_SIGNATURE_SEAL',
+      evidence: lines.join('\n')
+    });
+  }
+  return document;
 }
 
 function getLandCertificateVisionPrompt_() {
@@ -207,6 +424,9 @@ function getLandCertificateVisionPrompt_() {
     'Với dòng có nhiều trường in cùng dòng, ví dụ "a) Thửa đất số ...; tờ bản đồ số ...", giữ nguyên một dòng trong raw_lines/printed_lines. Không tự tách tờ bản đồ thành marker mới.',
     'Mục I phải ghi lại đầy đủ các dòng đọc được trong raw_lines, kể cả thông tin chủ, năm sinh/giấy tờ, địa chỉ thường trú hoặc dòng mô tả khác. Không rút gọn chỉ còn các nhãn chuẩn.',
     'Mục IV phải transcript lại chữ in/chữ viết tay đọc được trong raw_lines, dù OCR có thể sai; chỉ bỏ phần chữ ký/dấu xác nhận khi nó không thuộc nội dung thay đổi.',
+    'Luôn tìm signature_seal trên trang/vùng bìa chính có thông tin thửa đất/nhà ở/tài sản. Đây là cụm ký + đóng dấu bên dưới dòng ngày cấp, thường có "ngày ... tháng ... năm ...", "TM. ỦY BAN NHÂN DÂN", chức danh, con dấu và tên người ký.',
+    'Chỉ lấy signature_seal đầu tiên thuộc trang/vùng có land_details hoặc attached_assets. Không lấy dấu/ngày ở mục IV, trang bổ sung, đăng ký thế chấp, xóa thế chấp hoặc xác nhận sau cấp giấy.',
+    'Từ signature_seal, nếu đọc được ngày cấp thì trả item issue_date dạng DD/MM/YYYY. Nếu dòng ký chỉ ghi "TM. ỦY BAN NHÂN DÂN" còn con dấu có địa danh, dùng con dấu để trả issuing_authority đầy đủ, ví dụ "Ủy ban nhân dân thành phố Hòa Bình".',
     'Mỗi item phải thuộc đúng section_semantic. Chỉ dùng semantic_key trong danh sách schema; nội dung chưa ánh xạ dùng unknown.',
     'Với bảng thay đổi sau cấp giấy, chỉ lấy cột nội dung thay đổi và cơ sở pháp lý, bỏ tiêu đề cột, chữ ký và cơ quan xác nhận.',
     'Kết quả phải phản ánh ảnh/PDF; OCR Google chỉ là bằng chứng phụ để đối chiếu.'
@@ -218,7 +438,7 @@ function getLandCertificateVisionJsonSchema_() {
     type: 'object',
     additionalProperties: false,
     properties: {
-      semantic: { type: 'string', enum: ['owners', 'land_details', 'attached_assets', 'other_assets', 'land_diagram', 'certificate_note', 'post_issue_changes', 'unknown'] },
+      semantic: { type: 'string', enum: ['owners', 'land_details', 'attached_assets', 'other_assets', 'signature_seal', 'land_diagram', 'certificate_note', 'post_issue_changes', 'unknown'] },
       marker_raw: { type: 'string' },
       label_raw: { type: 'string' },
       label_canonical: { type: 'string' },
@@ -243,7 +463,7 @@ function getLandCertificateVisionJsonSchema_() {
           'perennial_crops', 'certificate_note', 'post_issue_change_content', 'unknown'
         ]
       },
-      section_semantic: { type: 'string', enum: ['owners', 'land_details', 'attached_assets', 'other_assets', 'land_diagram', 'certificate_note', 'post_issue_changes', 'unknown'] },
+      section_semantic: { type: 'string', enum: ['owners', 'land_details', 'attached_assets', 'other_assets', 'signature_seal', 'land_diagram', 'certificate_note', 'post_issue_changes', 'unknown'] },
       marker_raw: { type: 'string' },
       label_raw: { type: 'string' },
       label_canonical: { type: 'string' },
@@ -424,6 +644,16 @@ function applyLandVisionSemanticsToAiData_(aiData, results) {
       applyLandVisionAiField_(asset, 'certificate_title', result.document.certificate_title, 0.95, result.file_name);
       applyLandVisionAiField_(asset.real_estate, 'certificate_title', result.document.certificate_title, 0.95, result.file_name);
     }
+    const signatureFields = (result.signature_fields &&
+      (result.signature_fields.issue_date || result.signature_fields.issuing_authority))
+      ? result.signature_fields
+      : extractLandVisionSignatureFields_(result.document);
+    if (signatureFields.issue_date) {
+      applyLandVisionAiField_(asset.real_estate, 'issue_date', signatureFields.issue_date, 0.92, result.file_name);
+    }
+    if (signatureFields.issuing_authority) {
+      applyLandVisionAiField_(asset.real_estate, 'issuing_authority', signatureFields.issuing_authority, 0.9, result.file_name);
+    }
     const fieldMap = {
       certificate_number: 'certificate_number',
       registry_number: 'registry_number',
@@ -511,6 +741,216 @@ function isExpectedLandVisionSection_(item) {
   };
   if (expected[item.semantic_key] === 'any') return true;
   return expected[item.semantic_key] === item.section_semantic;
+}
+
+function extractLandVisionSignatureFields_(document) {
+  const candidates = collectLandVisionSignatureRegions_(document);
+  for (let i = 0; i < candidates.length; i++) {
+    const text = candidates[i].lines.join('\n');
+    const issueDate = extractLandVisionIssueDateFromSignatureText_(text);
+    const issuingAuthority = extractLandVisionIssuingAuthorityFromSignatureText_(text);
+    if (issueDate || issuingAuthority) {
+      return {
+        issue_date: issueDate,
+        issuing_authority: issuingAuthority
+      };
+    }
+  }
+  return { issue_date: '', issuing_authority: '' };
+}
+
+function collectLandVisionSignatureRegions_(document) {
+  const out = [];
+  const pages = (document && document.pages || []).slice().sort(function(a, b) {
+    return Number(a.page_index || 0) - Number(b.page_index || 0);
+  });
+  pages.forEach(function(page) {
+    if (!isLandVisionPrimaryCertificatePage_(page)) return;
+    (page.sections || []).forEach(function(section) {
+      if (section.semantic === 'signature_seal' && (section.raw_lines || []).length) {
+        out.push({ page_index: page.page_index, source: 'section', lines: section.raw_lines || [] });
+      }
+    });
+    const printed = page.printed_lines || [];
+    const signatureLines = extractLandVisionSignatureWindow_(printed);
+    if (signatureLines.length) {
+      out.push({ page_index: page.page_index, source: 'printed_lines', lines: signatureLines });
+    }
+  });
+  return out;
+}
+
+function isLandVisionPrimaryCertificatePage_(page) {
+  const sections = page && page.sections || [];
+  const hasMainLandContent = sections.some(function(section) {
+    return section.semantic === 'land_details' || section.semantic === 'attached_assets';
+  });
+  if (!hasMainLandContent) return false;
+  const hasPostIssue = sections.some(function(section) {
+    return section.semantic === 'post_issue_changes';
+  });
+  const layout = String(page && page.layout || '');
+  if (hasPostIssue && /change/i.test(layout)) return false;
+  const printed = removeVietnameseAccents_(String((page && page.printed_lines || []).join(' '))).toLowerCase();
+  if (printed.indexOf('trang bo sung') >= 0) return false;
+  return true;
+}
+
+function extractLandVisionSignatureWindow_(lines) {
+  const clean = (lines || []).map(function(line) {
+    return String(line || '').replace(/\s+/g, ' ').trim();
+  }).filter(Boolean);
+  let start = -1;
+  for (let i = 0; i < clean.length; i++) {
+    const normalized = removeVietnameseAccents_(clean[i]).toLowerCase();
+    if (normalized.indexOf('noi dung thay doi') >= 0 ||
+        normalized.indexOf('xac nhan cua co quan') >= 0 ||
+        normalized.indexOf('trang bo sung') >= 0) {
+      break;
+    }
+    if (normalized.indexOf('ngay') >= 0 && normalized.indexOf('thang') >= 0 && normalized.indexOf('nam') >= 0 ||
+        normalized.indexOf('tm uy ban nhan dan') >= 0 ||
+        normalized.indexOf('uy ban nhan dan') >= 0 && normalized.indexOf('chu tich') >= 0) {
+      start = Math.max(0, i - 1);
+      break;
+    }
+  }
+  if (start < 0) return [];
+  const out = [];
+  for (let j = start; j < clean.length && out.length < 12; j++) {
+    const normalized = removeVietnameseAccents_(clean[j]).toLowerCase();
+    if (j > start && (
+        normalized.indexOf('noi dung thay doi') >= 0 ||
+        normalized.indexOf('xac nhan cua co quan') >= 0 ||
+        /^iv\s*[\).]?\s+/.test(normalized) ||
+        normalized.indexOf('trang bo sung') >= 0)) {
+      break;
+    }
+    out.push(clean[j]);
+  }
+  return out;
+}
+
+function extractLandVisionIssueDateFromSignatureText_(text) {
+  const normalized = removeVietnameseAccents_(String(text || '')).toLowerCase().replace(/\s+/g, ' ');
+  const match = normalized.match(/\bngay\s*([0-9]{1,2})\s*thang\s*([0-9]{1,2})\s*nam\s*([0-9]{4})\b/);
+  if (!match) return '';
+  const day = Number(match[1]);
+  const month = Number(match[2]);
+  const year = Number(match[3]);
+  if (day < 1 || day > 31 || month < 1 || month > 12 || year < 1900 || year > 2100) return '';
+  return (day < 10 ? '0' : '') + day + '/' + (month < 10 ? '0' : '') + month + '/' + year;
+}
+
+function extractLandVisionIssuingAuthorityFromSignatureText_(text) {
+  const lineAuthority = extractLandVisionIssuingAuthorityFromSealLines_(text);
+  if (lineAuthority) return lineAuthority;
+  const raw = String(text || '').replace(/\s+/g, ' ').trim();
+  const normalized = removeVietnameseAccents_(raw).toLowerCase();
+  const matches = [];
+  const regex = /uy ban nhan dan\b/g;
+  let match;
+  while ((match = regex.exec(normalized)) !== null) {
+    const after = normalized.slice(match.index + match[0].length).replace(/^[\s:;.,-]+/, '');
+    const levelMatch = after.match(/^(tp|thanh pho|huyen|quan|thi xa|tinh)\s+([a-z\s]{2,50}?)(?=\s+(?:tm|chu tich|pho chu tich|ngay|cong hoa|$))/);
+    if (levelMatch) {
+      matches.push({
+        level: levelMatch[1],
+        place: cleanupLandVisionAuthorityPlace_(levelMatch[2]),
+        score: 10
+      });
+      continue;
+    }
+    const loose = after.match(/^([a-z\s]{2,50}?)(?=\s+(?:tm|chu tich|pho chu tich|ngay|cong hoa|$))/);
+    if (loose) {
+      const place = cleanupLandVisionAuthorityPlace_(loose[1]);
+      if (place) matches.push({
+        level: inferLandVisionAuthorityLevel_(place),
+        place: place,
+        score: inferLandVisionAuthorityLevel_(place) ? 6 : 3
+      });
+    }
+  }
+  matches.sort(function(a, b) {
+    return b.score - a.score || b.place.length - a.place.length;
+  });
+  const best = matches[0];
+  if (!best) return normalized.indexOf('uy ban nhan dan') >= 0 ? '\u1ee6y ban nh\u00e2n d\u00e2n' : '';
+  if (!best.place) return best.level ? titleCaseLandVisionAuthority_('\u1ee6y ban nh\u00e2n d\u00e2n ' + expandLandVisionAuthorityLevel_(best.level)) : '\u1ee6y ban nh\u00e2n d\u00e2n';
+  const expanded = expandLandVisionAuthorityLevel_(best.level || inferLandVisionAuthorityLevel_(best.place));
+  return titleCaseLandVisionAuthority_(['\u1ee6y ban nh\u00e2n d\u00e2n', expanded, restoreLandVisionAuthorityPlace_(best.place)].filter(Boolean).join(' '));
+}
+
+function extractLandVisionIssuingAuthorityFromSealLines_(text) {
+  const lines = String(text || '').split(/\r?\n/);
+  const candidates = [];
+  lines.forEach(function(line) {
+    const normalized = removeVietnameseAccents_(line).toLowerCase().replace(/\s+/g, ' ').trim();
+    const match = normalized.match(/\buy ban nhan dan\s+(tp|thanh pho|huyen|quan|thi xa|tinh)\s+(.+)$/);
+    if (!match) return;
+    const place = cleanupLandVisionAuthorityPlace_(match[2]);
+    if (!place) return;
+    candidates.push({
+      level: match[1],
+      place: place,
+      score: 12
+    });
+  });
+  candidates.sort(function(a, b) {
+    return b.score - a.score || b.place.length - a.place.length;
+  });
+  const best = candidates[0];
+  if (!best) return '';
+  return titleCaseLandVisionAuthority_([
+    '\u1ee6y ban nh\u00e2n d\u00e2n',
+    expandLandVisionAuthorityLevel_(best.level),
+    restoreLandVisionAuthorityPlace_(best.place)
+  ].filter(Boolean).join(' '));
+}
+
+function cleanupLandVisionAuthorityPlace_(place) {
+  const words = String(place || '').split(/\s+/).filter(Boolean);
+  const stop = ['tm', 'chu', 'tich', 'pho', 'ngay', 'thang', 'nam', 'cong', 'xa', 'hoi', 'viet'];
+  const out = [];
+  for (let i = 0; i < words.length; i++) {
+    if (stop.indexOf(words[i]) >= 0) break;
+    out.push(words[i]);
+  }
+  return out.join(' ').trim();
+}
+
+function restoreLandVisionAuthorityPlace_(place) {
+  const raw = String(place || '').replace(/\s+/g, ' ').trim();
+  const normalized = removeVietnameseAccents_(raw).toLowerCase();
+  const knownPlaces = {
+    'hoa binh': 'H\u00f2a B\u00ecnh'
+  };
+  return knownPlaces[normalized] || raw;
+}
+
+function inferLandVisionAuthorityLevel_(place) {
+  const normalized = removeVietnameseAccents_(place).toLowerCase();
+  if (normalized.indexOf('hoa binh') >= 0) return 'thanh pho';
+  return '';
+}
+
+function expandLandVisionAuthorityLevel_(level) {
+  const normalized = removeVietnameseAccents_(level).toLowerCase().replace(/\s+/g, ' ').trim();
+  if (normalized === 'tp' || normalized === 'thanh pho') return 'th\u00e0nh ph\u1ed1';
+  if (normalized === 'huyen') return 'huy\u1ec7n';
+  if (normalized === 'quan') return 'qu\u1eadn';
+  if (normalized === 'thi xa') return 'th\u1ecb x\u00e3';
+  if (normalized === 'tinh') return 't\u1ec9nh';
+  return '';
+}
+
+function titleCaseLandVisionAuthority_(value) {
+  const lowerWords = ['th\u00e0nh', 'ph\u1ed1', 'huy\u1ec7n', 'qu\u1eadn', 't\u1ec9nh', 'th\u1ecb', 'x\u00e3'];
+  return String(value || '').split(/\s+/).filter(Boolean).map(function(word, index) {
+    const lower = word.toLocaleLowerCase('vi-VN');
+    if (index < 4 || lowerWords.indexOf(lower) >= 0) return lower;
+    return lower.charAt(0).toLocaleUpperCase('vi-VN') + lower.slice(1);
+  }).join(' ').replace(/^\u1ee7y/, '\u1ee6y');
 }
 
 function applyLandVisionAiField_(target, key, value, confidence, sourceFile) {

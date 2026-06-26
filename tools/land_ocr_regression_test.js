@@ -1284,6 +1284,15 @@ assert.strictEqual(
   '19/07/2018'
 );
 assert.strictEqual(
+  dataMergeContext.extractRealEstateIssueDateFromPlainText_('Hòa Bình, Ngày / 4k .tháng5..năm 2011 TM. ỦY BAN NHÂN DÂN'),
+  '16/05/2011'
+);
+assert.strictEqual(dataMergeContext.normalizeCertificateSerialValue_('BD151871'), 'BĐ151871');
+assert.strictEqual(
+  dataMergeContext.normalizeVietnameseAgencyNameClean_('ỦY BAN NHÂN DÂN THÀNH PHỐ HÒA BÌNH'),
+  'Ủy ban nhân dân thành phố Hòa Bình'
+);
+assert.strictEqual(
   dataMergeContext.shouldReplaceRealEstateIssueDate_(
     {
       final_value: '19/07/2018',
@@ -2140,10 +2149,82 @@ assert.ok(aiExtractionSource.includes('buildOpenAiProcessingMetrics_'));
 assert.ok(aiExtractionSource.includes('printed_lines'));
 assert.ok(aiExtractionSource.includes('raw_lines'));
 assert.ok(aiExtractionSource.includes("certificate_number', 'registry_number', 'issue_date', 'issuing_authority"));
+assert.ok(aiExtractionSource.includes('signature_seal'));
 assert.ok(fs.readFileSync('Review.html', 'utf8').includes('semanticCertificateDocumentToTranscriptLines_'));
 assert.ok(reviewWebAppSource.includes("action === 'reprocessLabCaseForSelfCheck'"));
 assert.ok(reviewWebAppSource.includes("indexOf('LAB-') !== 0"));
 assert.ok(fs.readFileSync('DataMergeService.gs', 'utf8').includes("if (key === 'certificate_semantic_document') return"));
+
+const aiExtractionContext = {
+  CONFIG: { OPENAI_MODEL_LOCKED: 'gpt-5.4-mini' },
+  removeVietnameseAccents_: removeVietnameseAccents_
+};
+vm.createContext(aiExtractionContext);
+vm.runInContext(aiExtractionSource, aiExtractionContext);
+const signatureFields = aiExtractionContext.extractLandVisionSignatureFields_({
+  pages: [
+    {
+      page_index: 0,
+      layout: 'gcn_qsdd_qsh_nha_o_va_tsk_cover',
+      printed_lines: [
+        'I. Người sử dụng đất',
+        'Xác nhận của cơ quan có thẩm quyền ngày 16/6/2021'
+      ],
+      sections: [{ semantic: 'owners', raw_lines: [] }]
+    },
+    {
+      page_index: 1,
+      layout: 'gcn_qsdd_qsh_nha_o_va_tsk_land',
+      printed_lines: [],
+      sections: [
+        { semantic: 'land_details', raw_lines: ['1. Thửa đất:', 'a) Thửa đất số: 69'] },
+        { semantic: 'attached_assets', raw_lines: ['2. Nhà ở'] },
+        {
+          semantic: 'signature_seal',
+          raw_lines: [
+            'Hòa Bình, Ngày 16 tháng 5 năm 2011',
+            'TM. ỦY BAN NHÂN DÂN',
+            'CHỦ TỊCH',
+            'ỦY BAN NHÂN DÂN TP HÒA BÌNH',
+            'Quách Tùng Dương'
+          ]
+        }
+      ]
+    },
+    {
+      page_index: 2,
+      layout: 'gcn_qsdd_qsh_nha_o_va_tsk_change',
+      printed_lines: [
+        'IV. Những thay đổi sau khi cấp Giấy chứng nhận',
+        'Hòa Bình, ngày 26 tháng 9 năm 2012',
+        'Xác nhận của cơ quan có thẩm quyền'
+      ],
+      sections: [
+        { semantic: 'post_issue_changes', raw_lines: ['Xóa nội dung đăng ký thế chấp ngày 26/9/2012'] }
+      ]
+    }
+  ]
+});
+assert.strictEqual(signatureFields.issue_date, '16/05/2011');
+assert.strictEqual(signatureFields.issuing_authority, 'Ủy ban nhân dân thành phố Hòa Bình');
+
+const printedSignatureFields = aiExtractionContext.extractLandVisionSignatureFields_({
+  pages: [{
+    page_index: 0,
+    layout: 'gcn_qsdd_qsh_nha_o_va_tsk_land',
+    sections: [{ semantic: 'land_details', raw_lines: ['1. Thửa đất:'] }],
+    printed_lines: [
+      'II. Thửa đất, nhà ở và tài sản khác gắn liền với đất',
+      '1. Thửa đất:',
+      'Hòa Bình, Ngày 16 tháng 5 năm 2011',
+      'TM. ỦY BAN NHÂN DÂN',
+      'CHỦ TỊCH',
+      'ỦY BAN NHÂN DÂN TP HÒA BÌNH'
+    ]
+  }]
+});
+assert.strictEqual(printedSignatureFields.issue_date, '16/05/2011');
+assert.strictEqual(printedSignatureFields.issuing_authority, 'Ủy ban nhân dân thành phố Hòa Bình');
 
 const transcriptFirstDocument = {
   source: 'OPENAI_VISION_SEMANTIC',
