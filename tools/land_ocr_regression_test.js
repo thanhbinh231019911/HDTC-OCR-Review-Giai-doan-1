@@ -630,9 +630,12 @@ assert.ok(oldHouseReviewTranscript.includes('cấp ngày 13/12/1999 tại Công 
 assert.ok(oldHouseReviewTranscript.includes('d) Hình thức sử dụng: Riêng: Đất ở 45,10 m²\nChung: Đất ở Không m²'));
 assert.ok(oldHouseReviewTranscript.includes('Riêng: Đất ở 45,10 m²'));
 assert.ok(oldHouseReviewTranscript.includes('Chung: Đất ở Không m²'));
-assert.ok(oldHouseReviewTranscript.includes('đ) Mục đích sử dụng: Đất ở: 45,10 m²'));
-assert.ok(oldHouseReviewTranscript.includes('e) Thời hạn sử dụng: Đất ở: Lâu dài'));
-assert.ok(oldHouseReviewTranscript.includes('g) Nguồn gốc sử dụng: "Công nhận QSDĐ như giao đất không thu tiền sử dụng đất"'));
+assert.ok(oldHouseReviewTranscript.includes('đ) Mục đích sử dụng: Đất ở'));
+assert.ok(!oldHouseReviewTranscript.includes('đ) Mục đích sử dụng: Đất ở: 45,10 m²'));
+assert.ok(oldHouseReviewTranscript.includes('e) Thời hạn sử dụng: Lâu dài'));
+assert.ok(!oldHouseReviewTranscript.includes('e) Thời hạn sử dụng: Đất ở: Lâu dài'));
+assert.ok(oldHouseReviewTranscript.includes('g) Nguồn gốc sử dụng: Công nhận QSDĐ như giao đất không thu tiền sử dụng đất'));
+assert.ok(!oldHouseReviewTranscript.includes('g) Nguồn gốc sử dụng: "Công nhận QSDĐ như giao đất không thu tiền sử dụng đất"'));
 assert.ok(oldHouseReviewTranscript.includes('2. Nhà ở:'));
 assert.ok(oldHouseReviewTranscript.includes('a) Địa chỉ: Tổ 10 Phường Tân Hòa, Thành phố Hòa Bình, Tỉnh Hòa Bình'));
 assert.ok(oldHouseReviewTranscript.includes('b) Diện tích xây dựng: 40,0 m²'));
@@ -644,6 +647,87 @@ const oldHouseBlock = oldHouseReviewTranscript.slice(
 );
 assert.ok(!oldHouseBlock.includes('Nguồn gốc sử dụng'));
 assert.ok(!oldHouseBlock.includes('Công nhận QSDĐ'));
+const doanVanMinhReviewAsset = {
+  certificate_title: {
+    final_value: 'Giấy chứng nhận quyền sử dụng đất, quyền sở hữu nhà ở và tài sản khác gắn liền với đất'
+  },
+  real_estate: {
+    certificate_owner_raw_text: { final_value: 'Bà: Đặng Thị Thu Huyền' },
+    certificate_land_raw_text: { final_value: [
+      'II. Thửa đất, nhà ở và tài sản khác gắn liên với đất',
+      '1. Thửa đất:',
+      'a) Thửa đất số:',
+      '440',
+      '·, tờ bản đồ số:',
+      '19',
+      'b) Địa chỉ: Tổ 12, phường Hữu Nghị, thành phố Hòa Bình, tỉnh Hòa Bình',
+      'c) Diện tích: 93,4m2, (bằng chữ: chín mươi ba phẩy bốn mét vuông)',
+      'd) Hình thức sử dụng: Sử dụng riêng',
+      'đ) Mục đích sử dụng: Đất ở tại đô thị',
+      'e) Thời hạn sử dụng: Lâu dài',
+      'g) Nguồn gốc sử dụng: Nhận chuyển nhượng đất được Nhà nước giao đất có thu tiền sử dụng đất',
+      '2. Nhà ở:',
+      'a) Loại nhà ở:',
+      'Nhà ở riêng lẻ',
+      '87,7m2.',
+      'b) Diện tích xây dựng:',
+      'd) Hình thức sở hữu:',
+      'đ) Cấp (Hạng): Cấp 3',
+      'Sở hữu riêng',
+      'c) Diện tích sàn: 304,8m2',
+      ', e) Thời hạn sở hữu: -/-',
+      '4. Rừng sản xuất là rừng trồng:-/-',
+      '3. Công trình xây dựng khác: -/-',
+      '5. Cây lâu năm: -/-',
+      '6. Ghi chú: Không.'
+    ].join('\n') },
+    certificate_attached_raw_text: { final_value: '' },
+    land_plot_number: { final_value: '440' },
+    map_sheet_number: { final_value: '19' },
+    land_address: { final_value: 'Tổ 12, phường Hữu Nghị, thành phố Hòa Bình, tỉnh Hòa Bình' },
+    area: { final_value: '93,4 m²' },
+    area_in_words: { final_value: 'chín mươi ba phẩy bốn mét vuông' },
+    usage_form: { final_value: 'Sử dụng riêng' },
+    usage_purpose: { final_value: 'Đất ở tại đô thị' },
+    usage_term: { final_value: 'Lâu dài' },
+    usage_origin: { final_value: 'Nhận chuyển nhượng đất được Nhà nước giao đất có thu tiền sử dụng đất' },
+    certificate_note: { final_value: 'Không . 4. Rừng sản xuất là rừng trồng : - / - 440 Sở hữu riêng Nhà ở riêng lẻ 87,7m² . , e ) Thời hạn sở hữu : - / - g ) Nguồn gốc sử dụng : Nhận chuyển nhượng đất được Nhà nước giao đất có thu tiền sử b ) Địa chỉ : Tổ 12' }
+  }
+};
+const doanVanMinhSource = [
+  'I. Người sử dụng đất, chủ sở hữu nhà ở và tài sản khác gắn liền với đất',
+  'Bà : Đặng Thị Thu Huyền',
+  'Năm sinh : 1984 , CMND số : 017184000014',
+  'Địa chỉ thường trú : Căn hộ 1806 , tháp B , tòa nhà New Skyline , khu đô thị mới Văn Quán , Yên Phúc , Văn Quán , quận Hà Đông , thành phố Hà Nội .',
+  'Xác nhận của cơ quan có thẩm quyền',
+  '19/5/2012',
+  'Nội dung thay đổi và cơ sở pháp lý',
+  'Kent theo quay ching whois way to thang he szeg số 01',
+  'II. Thửa đất, nhà ở và tài sản khác gắn liền với đất',
+  '" noise from another region "'
+].join('\n');
+const doanVanMinhTranscript = dataMergeContext.buildLandCertificateReviewTranscriptForAsset_(doanVanMinhReviewAsset, doanVanMinhSource).join('\n');
+const doanVanMinhOwnerBlock = doanVanMinhTranscript.slice(0, doanVanMinhTranscript.indexOf('II. Thửa đất'));
+assert.ok(doanVanMinhTranscript.includes('I. Người sử dụng đất'));
+assert.ok(doanVanMinhTranscript.includes('Năm sinh : 1984'));
+assert.ok(doanVanMinhTranscript.includes('CMND số : 017184000014'));
+assert.ok(doanVanMinhTranscript.includes('Địa chỉ thường trú : Căn hộ 1806'));
+assert.ok(!doanVanMinhOwnerBlock.includes('Xác nhận của cơ quan có thẩm quyền'));
+assert.ok(!doanVanMinhOwnerBlock.includes('Nội dung thay đổi và cơ sở pháp lý'));
+assert.ok(doanVanMinhTranscript.includes('đ) Mục đích sử dụng: Đất ở tại đô thị'));
+assert.ok(!doanVanMinhTranscript.includes('đ) Mục đích sử dụng: Đất ở tại đô thị: 93,4 m²'));
+assert.ok(doanVanMinhTranscript.includes('e) Thời hạn sử dụng: Lâu dài'));
+assert.ok(!doanVanMinhTranscript.includes('e) Thời hạn sử dụng: Đất ở tại đô thị: Lâu dài'));
+assert.ok(doanVanMinhTranscript.includes('g) Nguồn gốc sử dụng: Nhận chuyển nhượng đất được Nhà nước giao đất có thu tiền sử dụng đất'));
+assert.ok(!doanVanMinhTranscript.includes('g) Nguồn gốc sử dụng: "Nhận chuyển nhượng đất được Nhà nước giao đất có thu tiền sử dụng đất"'));
+assert.ok(doanVanMinhTranscript.includes('b) Diện tích xây dựng: 87,7m2.'));
+assert.ok(doanVanMinhTranscript.includes('d) Hình thức sở hữu: Sở hữu riêng'));
+assert.ok(!doanVanMinhTranscript.includes('b) Diện tích xây dựng:\n'));
+assert.ok(!doanVanMinhTranscript.includes('d) Hình thức sở hữu:\n'));
+assert.ok(doanVanMinhTranscript.includes('6. Ghi chú: Không'));
+assert.ok(!doanVanMinhTranscript.includes('6. Ghi chú: Không . 4. Rừng'));
+assert.ok(!doanVanMinhTranscript.includes(', e) Thời hạn sở hữu'));
+assert.ok(doanVanMinhTranscript.includes('e) Thời hạn sở hữu: -/-'));
 assert.strictEqual(dataMergeContext.correctUsageTermOcrTypos_('Lầu dài'), 'Lâu dài');
 assert.strictEqual(dataMergeContext.correctUsageTermOcrTypos_('Lấu dìa'), 'Lâu dài');
 assert.strictEqual(dataMergeContext.correctUsageTermOcrTypos_('Đất ở Lấu dìa'), 'Đất ở Lâu dài');
