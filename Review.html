@@ -1081,7 +1081,7 @@
         return Number(a.page_index || 0) - Number(b.page_index || 0);
       }).forEach(function(page) {
         if ((page.printed_lines || []).length) {
-          page.printed_lines.forEach(function(line) {
+          semanticPrintedLinesForTranscript_(page.printed_lines).forEach(function(line) {
             appendSemanticTranscriptLine_(out, line, semanticLineLooksLikeHeading_(line));
           });
           return;
@@ -1143,6 +1143,34 @@
       const compact = cleanValue(line).toUpperCase().replace(/\s+/g, '');
       if (/^(?:CS|CT|CN|CH|CL|HX|VP|DC|DL)[-.]?[0-9A-Z.\/-]{2,24}$/.test(compact)) return false;
       return /^[^\d:;,.\/-]{1,5}\d{6,9}$/.test(compact);
+    }
+
+    function semanticPrintedLinesForTranscript_(printedLines) {
+      const lines = (printedLines || []).map(cleanSemanticTranscriptLine_).filter(Boolean);
+      const ownerIndex = lines.findIndex(isOwnerSectionHeadingTranscriptLine_);
+      if (ownerIndex <= 0) return lines;
+      const beforeOwner = lines.slice(0, ownerIndex);
+      return beforeOwner.every(isCertificateCoverPreambleTranscriptLine_)
+        ? lines.slice(ownerIndex)
+        : lines;
+    }
+
+    function isOwnerSectionHeadingTranscriptLine_(line) {
+      const normalized = removeVietnameseMarks(line).toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+      return /^(?:i|1)\s+nguoi su dung dat\b/.test(normalized) ||
+        /^(?:i|1)\s+nguoi su dung dat chu so huu\b/.test(normalized);
+    }
+
+    function isCertificateCoverPreambleTranscriptLine_(line) {
+      const normalized = removeVietnameseMarks(line).toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+      if (!normalized) return true;
+      if (isStandaloneCertificateSerialTranscriptLine_(line)) return true;
+      return normalized.indexOf('cong hoa xa hoi chu nghia viet nam') >= 0 ||
+        normalized.indexOf('doc lap tu do hanh phuc') >= 0 ||
+        normalized === 'giay chung nhan' ||
+        normalized.indexOf('quyen su dung dat') >= 0 ||
+        normalized.indexOf('quyen so huu') >= 0 ||
+        normalized.indexOf('tai san gan lien voi dat') >= 0;
     }
 
     function combineStandaloneMapSheetTranscriptLines_(lines) {

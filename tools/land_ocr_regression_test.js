@@ -2024,6 +2024,9 @@ vm.runInContext([
   extractClientFunction('semanticSectionHeadingForReview_'),
   extractClientFunction('cleanSemanticTranscriptLine_'),
   extractClientFunction('isStandaloneCertificateSerialTranscriptLine_'),
+  extractClientFunction('semanticPrintedLinesForTranscript_'),
+  extractClientFunction('isOwnerSectionHeadingTranscriptLine_'),
+  extractClientFunction('isCertificateCoverPreambleTranscriptLine_'),
   extractClientFunction('semanticLinesEquivalent_'),
   extractClientFunction('semanticLineLooksLikeHeading_'),
   extractClientFunction('semanticDocumentItemValue_'),
@@ -2582,6 +2585,11 @@ const huongCoverTranscript = reviewClientContext.semanticCertificateDocumentToTr
     {
       page_index: 1,
       printed_lines: [
+        'CỘNG HÒA XÃ HỘI CHỦ NGHĨA VIỆT NAM',
+        'Độc lập - Tự do - Hạnh phúc',
+        'GIẤY CHỨNG NHẬN',
+        'QUYỀN SỬ DỤNG ĐẤT',
+        'QUYỀN SỞ HỮU NHÀ Ở VÀ TÀI SẢN KHÁC GẮN LIỀN VỚI ĐẤT',
         'I. Người sử dụng đất, chủ sở hữu nhà ở và tài sản khác gắn liền với đất',
         'Ông: Trần Minh Đức',
         'Năm sinh: 1982, CCCD số: 036082012721',
@@ -2602,6 +2610,10 @@ const huongCoverTranscript = reviewClientContext.semanticCertificateDocumentToTr
 }).map(line => line.text);
 assert(huongCoverTranscript.includes('I. Người sử dụng đất, chủ sở hữu nhà ở và tài sản khác gắn liền với đất'));
 assert(huongCoverTranscript.includes('Ông: Trần Minh Đức'));
+assert(!huongCoverTranscript.includes('CỘNG HÒA XÃ HỘI CHỦ NGHĨA VIỆT NAM'));
+assert(!huongCoverTranscript.includes('GIẤY CHỨNG NHẬN'));
+assert(!huongCoverTranscript.includes('QUYỀN SỬ DỤNG ĐẤT'));
+assert(!huongCoverTranscript.includes('QUYỀN SỞ HỮU NHÀ Ở VÀ TÀI SẢN KHÁC GẮN LIỀN VỚI ĐẤT'));
 assert(!huongCoverTranscript.includes('BQ 258292'));
 assert(huongCoverTranscript.includes('Số vào sổ cấp GCN: CS02991'));
 assert(!huongCoverTranscript.includes('Số vào sổ cấp GCN: CS.02994.'));
