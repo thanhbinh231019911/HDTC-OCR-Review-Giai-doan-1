@@ -203,6 +203,10 @@ function getLandCertificateVisionPrompt_() {
     'Không ghép nội dung sơ đồ, chữ ký, cơ quan xác nhận hoặc tọa độ vào mục thay đổi sau cấp giấy.',
     'Chỉ sửa lỗi OCR hiển nhiên trong cùng ngữ cảnh, ví dụ mÂ²/m2 thành m² hoặc CCCP sa thành CCCD số khi nhãn và số định danh hỗ trợ rõ ràng.',
     'Nếu không đọc rõ giá trị thì để trống và thêm warning. Không suy diễn tên, mã, số hoặc địa chỉ còn thiếu.',
+    'Luôn trả printed_lines cho từng vùng/trang và raw_lines cho từng section: đây là transcript hiển thị lại trên review, phải giữ nguyên dòng, nhãn, marker, thứ tự, và các mục trống như 3/4/5/6 nếu có trên giấy.',
+    'Với dòng có nhiều trường in cùng dòng, ví dụ "a) Thửa đất số ...; tờ bản đồ số ...", giữ nguyên một dòng trong raw_lines/printed_lines. Không tự tách tờ bản đồ thành marker mới.',
+    'Mục I phải ghi lại đầy đủ các dòng đọc được trong raw_lines, kể cả thông tin chủ, năm sinh/giấy tờ, địa chỉ thường trú hoặc dòng mô tả khác. Không rút gọn chỉ còn các nhãn chuẩn.',
+    'Mục IV phải transcript lại chữ in/chữ viết tay đọc được trong raw_lines, dù OCR có thể sai; chỉ bỏ phần chữ ký/dấu xác nhận khi nó không thuộc nội dung thay đổi.',
     'Mỗi item phải thuộc đúng section_semantic. Chỉ dùng semantic_key trong danh sách schema; nội dung chưa ánh xạ dùng unknown.',
     'Với bảng thay đổi sau cấp giấy, chỉ lấy cột nội dung thay đổi và cơ sở pháp lý, bỏ tiêu đề cột, chữ ký và cơ quan xác nhận.',
     'Kết quả phải phản ánh ảnh/PDF; OCR Google chỉ là bằng chứng phụ để đối chiếu.'
@@ -218,9 +222,10 @@ function getLandCertificateVisionJsonSchema_() {
       marker_raw: { type: 'string' },
       label_raw: { type: 'string' },
       label_canonical: { type: 'string' },
+      raw_lines: { type: 'array', items: { type: 'string' } },
       visual_order: { type: 'number' }
     },
-    required: ['semantic', 'marker_raw', 'label_raw', 'label_canonical', 'visual_order']
+    required: ['semantic', 'marker_raw', 'label_raw', 'label_canonical', 'raw_lines', 'visual_order']
   };
   const item = {
     type: 'object',
@@ -229,6 +234,8 @@ function getLandCertificateVisionJsonSchema_() {
       semantic_key: {
         type: 'string',
         enum: [
+          'certificate_number', 'registry_number', 'issue_date', 'issuing_authority',
+          'owner_line', 'owner_raw_text',
           'land_plot_number', 'map_sheet_number', 'land_address', 'area', 'area_in_words',
           'usage_purpose', 'usage_term', 'usage_form', 'usage_origin',
           'attached_asset_name', 'attached_asset_area', 'attached_asset_ownership_form',
@@ -265,10 +272,11 @@ function getLandCertificateVisionJsonSchema_() {
         ]
       },
       source_region: { type: 'string' },
+      printed_lines: { type: 'array', items: { type: 'string' } },
       sections: { type: 'array', items: section },
       items: { type: 'array', items: item }
     },
-    required: ['page_index', 'layout', 'source_region', 'sections', 'items']
+    required: ['page_index', 'layout', 'source_region', 'printed_lines', 'sections', 'items']
   };
   return {
     type: 'object',
@@ -310,10 +318,12 @@ function normalizeLandVisionSemanticDocument_(parsed) {
           marker_raw: String(rawSection.marker_raw || ''),
           label_raw: String(rawSection.label_raw || ''),
           label_canonical: String(rawSection.label_canonical || ''),
+          raw_lines: normalizeLandVisionLines_(rawSection.raw_lines || []),
           visual_order: Number(rawSection.visual_order || 0),
           items: []
         };
       }),
+      printed_lines: normalizeLandVisionLines_(rawPage.printed_lines || []),
       items: [],
       unparsed_fragments: []
     };
@@ -357,6 +367,14 @@ function normalizeLandVisionSemanticDocument_(parsed) {
   return document;
 }
 
+function normalizeLandVisionLines_(lines) {
+  return (lines || []).map(function(line) {
+    return String(line || '').replace(/\r/g, '\n').replace(/\s+/g, ' ').trim();
+  }).filter(function(line) {
+    return Boolean(line);
+  });
+}
+
 function landVisionSummaryForExtraction_(results, fileId) {
   const match = (results || []).filter(function(result) {
     return result.file_id === fileId;
@@ -366,6 +384,19 @@ function landVisionSummaryForExtraction_(results, fileId) {
     model: CONFIG.OPENAI_MODEL_LOCKED,
     generation: match.document.generation,
     certificate_title: match.document.certificate_title,
+    sections: match.document.pages.reduce(function(out, page) {
+      return out.concat((page.sections || []).map(function(section) {
+        const heading = [section.marker_raw, section.label_raw || section.label_canonical]
+          .filter(Boolean)
+          .join(' ')
+          .trim();
+        return {
+          semantic: section.semantic,
+          heading: heading,
+          raw_lines: section.raw_lines || []
+        };
+      }));
+    }, []),
     items: match.document.items.map(function(item) {
       return {
         semantic_key: item.semantic_key,
@@ -394,6 +425,12 @@ function applyLandVisionSemanticsToAiData_(aiData, results) {
       applyLandVisionAiField_(asset.real_estate, 'certificate_title', result.document.certificate_title, 0.95, result.file_name);
     }
     const fieldMap = {
+      certificate_number: 'certificate_number',
+      registry_number: 'registry_number',
+      issue_date: 'issue_date',
+      issuing_authority: 'issuing_authority',
+      owner_line: 'certificate_owner_raw_text',
+      owner_raw_text: 'certificate_owner_raw_text',
       land_plot_number: 'land_plot_number',
       map_sheet_number: 'map_sheet_number',
       land_address: 'land_address',
@@ -450,6 +487,12 @@ function findAiAssetForLandVisionResult_(assets, result) {
 
 function isExpectedLandVisionSection_(item) {
   const expected = {
+    certificate_number: 'any',
+    registry_number: 'any',
+    issue_date: 'any',
+    issuing_authority: 'any',
+    owner_line: 'owners',
+    owner_raw_text: 'owners',
     land_plot_number: 'land_details',
     map_sheet_number: 'land_details',
     land_address: 'land_details',
@@ -466,6 +509,7 @@ function isExpectedLandVisionSection_(item) {
     certificate_note: 'certificate_note',
     post_issue_change_content: 'post_issue_changes'
   };
+  if (expected[item.semantic_key] === 'any') return true;
   return expected[item.semantic_key] === item.section_semantic;
 }
 

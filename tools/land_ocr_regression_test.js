@@ -1795,6 +1795,14 @@ vm.runInContext([
   extractClientFunction('inferPrintedCertificateFieldMarker_'),
   extractClientFunction('normalizeCertificatePunctuationForReview_'),
   extractClientFunction('semanticCertificateDocumentToPrintedLayout_'),
+  extractClientFunction('semanticCertificateDocumentToTranscriptLines_'),
+  extractClientFunction('appendSemanticTranscriptSection_'),
+  extractClientFunction('appendSemanticTranscriptLine_'),
+  extractClientFunction('semanticSectionHeadingForReview_'),
+  extractClientFunction('cleanSemanticTranscriptLine_'),
+  extractClientFunction('semanticLinesEquivalent_'),
+  extractClientFunction('semanticLineLooksLikeHeading_'),
+  extractClientFunction('semanticDocumentItemValue_'),
   extractClientFunction('bestSemanticCertificatePage_'),
   extractClientFunction('dedupeSemanticCertificateItems_'),
   extractClientFunction('semanticCertificateItemLabel_'),
@@ -2122,7 +2130,86 @@ assert.ok(reviewServiceSource.includes('model: CONFIG.OPENAI_MODEL_LOCKED'));
 assert.ok(aiExtractionSource.includes("labSkill === 'ocr-bia-dat'"));
 assert.ok(aiExtractionSource.includes("assetType.indexOf('bat dong san')"));
 assert.ok(aiExtractionSource.includes('buildOpenAiProcessingMetrics_'));
+assert.ok(aiExtractionSource.includes('printed_lines'));
+assert.ok(aiExtractionSource.includes('raw_lines'));
+assert.ok(aiExtractionSource.includes("certificate_number', 'registry_number', 'issue_date', 'issuing_authority"));
+assert.ok(fs.readFileSync('Review.html', 'utf8').includes('semanticCertificateDocumentToTranscriptLines_'));
 assert.ok(fs.readFileSync('DataMergeService.gs', 'utf8').includes("if (key === 'certificate_semantic_document') return"));
+
+const transcriptFirstDocument = {
+  source: 'OPENAI_VISION_SEMANTIC',
+  model: 'gpt-5.4-mini',
+  generation: 'gcn_qsdd_qsh_nha_o_va_tsk',
+  certificate_title: 'Giấy chứng nhận quyền sử dụng đất, quyền sở hữu nhà ở và tài sản khác gắn liền với đất',
+  pages: [{
+    page_index: 0,
+    layout: 'gcn_qsdd_qsh_nha_o_va_tsk_land',
+    source_region: 'bottom',
+    printed_lines: [],
+    sections: [
+      {
+        semantic: 'owners',
+        marker_raw: 'I.',
+        label_raw: 'Người sử dụng đất, chủ sở hữu nhà ở và tài sản khác gắn liền với đất',
+        label_canonical: '',
+        visual_order: 1,
+        raw_lines: [
+          'Ông: Vũ Văn Đức, Số CMND 172128567, Địa chỉ: Khu 5 TT Mường Khến Huyện Tân Lạc, Tỉnh Hòa Bình',
+          'Thông tin khác trên bìa vẫn phải giữ'
+        ]
+      },
+      {
+        semantic: 'land_details',
+        marker_raw: 'II.',
+        label_raw: 'Thửa đất, nhà ở và tài sản khác gắn liền với đất',
+        label_canonical: '',
+        visual_order: 2,
+        raw_lines: [
+          '1. Thửa đất:',
+          'a. Thửa đất số: 69; tờ bản đồ số: 16',
+          'b. Địa chỉ: Tổ 10 Phường Tân Hòa, Thành phố Hòa Bình, Tỉnh Hòa Bình',
+          'c. Diện tích: 45,10 m² (Bằng chữ: Bốn lăm phẩy một mét vuông)',
+          'd. Hình thức sử dụng: riêng; Mục đích sử dụng: Đất ở',
+          'e. Thời hạn sử dụng: Lâu dài',
+          'g. Nguồn gốc sử dụng: "Công nhận QSDĐ như giao đất không thu tiền sử dụng đất"',
+          '2. Nhà ở: Nhà cấp 4',
+          '3. Công trình xây dựng khác: -/-',
+          '4. Rừng sản xuất là rừng trồng: -/-',
+          '5. Cây lâu năm: -/-',
+          '6. Ghi chú:'
+        ]
+      },
+      {
+        semantic: 'post_issue_changes',
+        marker_raw: 'IV.',
+        label_raw: 'Những thay đổi sau khi cấp Giấy chứng nhận',
+        label_canonical: '',
+        visual_order: 3,
+        raw_lines: [
+          'Xóa nội dung đăng ký thế chấp ngày 26/9/2012 theo hồ sơ số 002526. XT.002.'
+        ]
+      }
+    ],
+    items: [
+      { semantic_key: 'certificate_number', value: 'BĐ151871', confidence: 0.96 },
+      { semantic_key: 'registry_number', value: 'CH00344', confidence: 0.96 }
+    ]
+  }],
+  items: [
+    { semantic_key: 'certificate_number', value: 'BĐ151871', confidence: 0.96 },
+    { semantic_key: 'registry_number', value: 'CH00344', confidence: 0.96 }
+  ]
+};
+const transcriptLines = reviewClientContext.semanticCertificateDocumentToTranscriptLines_(transcriptFirstDocument).map(line => line.text);
+assert(transcriptLines.includes('I. Người sử dụng đất, chủ sở hữu nhà ở và tài sản khác gắn liền với đất'));
+assert(transcriptLines.includes('Thông tin khác trên bìa vẫn phải giữ'));
+assert(transcriptLines.includes('a. Thửa đất số: 69; tờ bản đồ số: 16'));
+assert(!transcriptLines.includes('b. Tờ bản đồ số: 16'));
+assert(transcriptLines.includes('3. Công trình xây dựng khác: -/-'));
+assert(transcriptLines.includes('4. Rừng sản xuất là rừng trồng: -/-'));
+assert(transcriptLines.includes('6. Ghi chú:'));
+assert(transcriptLines.some(line => line.indexOf('Xóa nội dung đăng ký thế chấp') >= 0));
+assert.strictEqual(reviewClientContext.semanticDocumentItemValue_(transcriptFirstDocument, ['certificate_number']), 'BĐ151871');
 const reorderedNoisyFields = dataMergeContext.extractRealEstateIndexedLandFields_(reorderedNoisyOldCertificateText);
 assert.strictEqual(reorderedNoisyFields.land_plot_number, '303');
 assert.strictEqual(reorderedNoisyFields.map_sheet_number, '3');

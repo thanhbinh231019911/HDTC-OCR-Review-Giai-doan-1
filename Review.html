@@ -717,6 +717,9 @@
       const printedLayout = semanticCertificateDocumentToPrintedLayout_(
         asset.certificate_semantic_document || null
       );
+      const semanticTranscriptLines = semanticCertificateDocumentToTranscriptLines_(
+        asset.certificate_semantic_document || null
+      );
       const certificateGeneration = certificateGenerationFromCompleteTitleForReview_(
         certificateTitleForReview_(asset, ocrText)
       );
@@ -725,10 +728,10 @@
       const oldA3Certificate = certificateGeneration === 'gcn_qsdd' || oldHouseCertificate;
       const important = [
         [t('Loai GCN'), certificateTitleForReview_(asset, ocrText)],
-        [t('So GCN'), valueOf(re.certificate_number) || inferCertificateNumberFromText(ocrText)],
-        [t('So vao so'), normalizeRegistryForReview(valueOf(re.registry_number) || inferRegistryNumberFromText(ocrText))],
-        [t('Ngay cap'), valueOf(re.issue_date)],
-        [t('Noi cap'), titleCaseAgency(valueOf(re.issuing_authority))]
+        [t('So GCN'), semanticDocumentItemValue_(asset.certificate_semantic_document, ['certificate_number']) || valueOf(re.certificate_number) || inferCertificateNumberFromText(ocrText)],
+        [t('So vao so'), normalizeRegistryForReview(semanticDocumentItemValue_(asset.certificate_semantic_document, ['registry_number']) || valueOf(re.registry_number) || inferRegistryNumberFromText(ocrText))],
+        [t('Ngay cap'), semanticDocumentItemValue_(asset.certificate_semantic_document, ['issue_date']) || valueOf(re.issue_date)],
+        [t('Noi cap'), titleCaseAgency(semanticDocumentItemValue_(asset.certificate_semantic_document, ['issuing_authority']) || valueOf(re.issuing_authority))]
       ];
       const lines = [];
       lines.push('<div class="asset-doc">');
@@ -738,7 +741,12 @@
       });
       lines.push('</div></section>');
       lines.push('<section class="asset-doc-section"><h3>' + t('Thong tin theo giay chung nhan') + '</h3><div class="asset-doc-lines">');
-      if (isNewA4) {
+      if (semanticTranscriptLines.length) {
+        semanticTranscriptLines.forEach(function(line) {
+          const content = escapeHtml(line.text);
+          lines.push('<div class="asset-doc-line">' + (line.heading ? '<strong>' + content + '</strong>' : content) + '</div>');
+        });
+      } else if (isNewA4) {
         if (printedLayout.owner_heading) {
           lines.push('<div class="asset-doc-line"><strong>' + escapeHtml(printedLayout.owner_heading) + '</strong></div>');
         }
@@ -1040,6 +1048,93 @@
         layout.note_value = noteItem.value || '';
       }
       return layout;
+    }
+
+    function semanticCertificateDocumentToTranscriptLines_(document) {
+      const pages = document && document.pages || [];
+      if (!pages.length) return [];
+      const out = [];
+      pages.slice().sort(function(a, b) {
+        return Number(a.page_index || 0) - Number(b.page_index || 0);
+      }).forEach(function(page) {
+        const sections = (page.sections || []).slice().sort(function(a, b) {
+          return Number(a.visual_order || 0) - Number(b.visual_order || 0);
+        });
+        if (sections.some(function(section) { return (section.raw_lines || []).length; })) {
+          sections.forEach(function(section) {
+            appendSemanticTranscriptSection_(out, section);
+          });
+          return;
+        }
+        (page.printed_lines || []).forEach(function(line) {
+          appendSemanticTranscriptLine_(out, line, semanticLineLooksLikeHeading_(line));
+        });
+      });
+      return out;
+    }
+
+    function appendSemanticTranscriptSection_(out, section) {
+      const heading = semanticSectionHeadingForReview_(section);
+      const rawLines = section.raw_lines || [];
+      if (heading && !semanticLinesEquivalent_(heading, rawLines[0] || '')) {
+        appendSemanticTranscriptLine_(out, heading, true);
+      }
+      rawLines.forEach(function(line) {
+        appendSemanticTranscriptLine_(out, line, semanticLineLooksLikeHeading_(line));
+      });
+    }
+
+    function appendSemanticTranscriptLine_(out, line, heading) {
+      const clean = cleanSemanticTranscriptLine_(line);
+      if (!clean) return;
+      const last = out.length ? out[out.length - 1].text : '';
+      if (semanticLinesEquivalent_(last, clean)) return;
+      out.push({ text: clean, heading: Boolean(heading) });
+    }
+
+    function semanticSectionHeadingForReview_(section) {
+      if (!section) return '';
+      const raw = cleanValue(section.label_raw);
+      const marker = cleanValue(section.marker_raw);
+      if (raw) return marker && raw.indexOf(marker) !== 0 ? marker + ' ' + raw : raw;
+      return [marker, cleanValue(section.label_canonical)].filter(Boolean).join(' ');
+    }
+
+    function cleanSemanticTranscriptLine_(line) {
+      return cleanValue(line)
+        .replace(/\s+/g, ' ')
+        .replace(/mÂ²|m2/ig, 'm²')
+        .replace(/\bCCCP\s+sa\b/ig, 'CCCD số')
+        .trim();
+    }
+
+    function semanticLinesEquivalent_(a, b) {
+      const left = removeVietnameseMarks(cleanSemanticTranscriptLine_(a)).toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+      const right = removeVietnameseMarks(cleanSemanticTranscriptLine_(b)).toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+      return Boolean(left && right && left === right);
+    }
+
+    function semanticLineLooksLikeHeading_(line) {
+      const text = cleanValue(line);
+      const normalized = removeVietnameseMarks(text).toLowerCase().replace(/\s+/g, ' ').trim();
+      if (/^(?:i|ii|iii|iv|v|vi)\s*[\).]\s+/.test(normalized)) return true;
+      if (/^[1-6]\s*[\).]\s+/.test(normalized) &&
+          !/:\s*\S/.test(text) &&
+          /(thua dat|nha o|cong trinh|rung san xuat|cay lau nam|ghi chu|so do)/.test(normalized)) {
+        return true;
+      }
+      return false;
+    }
+
+    function semanticDocumentItemValue_(document, keys) {
+      const wanted = {};
+      (keys || []).forEach(function(key) { wanted[key] = true; });
+      const candidates = (document && document.items || []).filter(function(item) {
+        return wanted[item.semantic_key] && cleanValue(item.value);
+      }).sort(function(a, b) {
+        return Number(b.confidence || 0) - Number(a.confidence || 0);
+      });
+      return candidates.length ? cleanValue(candidates[0].value) : '';
     }
 
     function bestSemanticCertificatePage_(pages, semanticKeys, sectionSemantic) {
@@ -3751,7 +3846,8 @@
         '.real_estate.certificate_info_raw_text',
         '.real_estate.certificate_owner_raw_text',
         '.real_estate.certificate_land_raw_text',
-        '.real_estate.certificate_attached_raw_text'
+        '.real_estate.certificate_attached_raw_text',
+        '.certificate_semantic_document'
       ].some(part => String(path || '').indexOf(part) >= 0);
     }
 
