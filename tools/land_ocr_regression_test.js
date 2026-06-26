@@ -1803,6 +1803,12 @@ vm.runInContext([
   extractClientFunction('semanticLinesEquivalent_'),
   extractClientFunction('semanticLineLooksLikeHeading_'),
   extractClientFunction('semanticDocumentItemValue_'),
+  extractClientFunction('combineStandaloneMapSheetTranscriptLines_'),
+  extractClientFunction('repairCertificateReferenceTranscriptLines_'),
+  extractClientFunction('registryNumberFromSemanticDocument_'),
+  extractClientFunction('certificateSerialForReview_'),
+  extractClientFunction('certificateSerialFromSemanticPrintedLines_'),
+  extractClientFunction('normalizeCertificateSerialForReview_'),
   extractClientFunction('bestSemanticCertificatePage_'),
   extractClientFunction('dedupeSemanticCertificateItems_'),
   extractClientFunction('semanticCertificateItemLabel_'),
@@ -2122,6 +2128,7 @@ assert.strictEqual(
 const configSource = fs.readFileSync('Config.gs', 'utf8');
 const aiExtractionSource = fs.readFileSync('AIExtractionService.gs', 'utf8');
 const reviewServiceSource = fs.readFileSync('ReviewService.gs', 'utf8');
+const reviewWebAppSource = fs.readFileSync('ReviewWebApp.gs', 'utf8');
 assert.ok(configSource.includes("OPENAI_MODEL_LOCKED: 'gpt-5.4-mini'"));
 assert.ok(!aiExtractionSource.includes("getProperty('OPENAI_MODEL')"));
 assert.ok(!reviewServiceSource.includes("getProperty('OPENAI_MODEL')"));
@@ -2134,6 +2141,8 @@ assert.ok(aiExtractionSource.includes('printed_lines'));
 assert.ok(aiExtractionSource.includes('raw_lines'));
 assert.ok(aiExtractionSource.includes("certificate_number', 'registry_number', 'issue_date', 'issuing_authority"));
 assert.ok(fs.readFileSync('Review.html', 'utf8').includes('semanticCertificateDocumentToTranscriptLines_'));
+assert.ok(reviewWebAppSource.includes("action === 'reprocessLabCaseForSelfCheck'"));
+assert.ok(reviewWebAppSource.includes("indexOf('LAB-') !== 0"));
 assert.ok(fs.readFileSync('DataMergeService.gs', 'utf8').includes("if (key === 'certificate_semantic_document') return"));
 
 const transcriptFirstDocument = {
@@ -2210,6 +2219,49 @@ assert(transcriptLines.includes('4. Rừng sản xuất là rừng trồng: -/-'
 assert(transcriptLines.includes('6. Ghi chú:'));
 assert(transcriptLines.some(line => line.indexOf('Xóa nội dung đăng ký thế chấp') >= 0));
 assert.strictEqual(reviewClientContext.semanticDocumentItemValue_(transcriptFirstDocument, ['certificate_number']), 'BĐ151871');
+const printedLineTranscript = reviewClientContext.semanticCertificateDocumentToTranscriptLines_({
+  items: [
+    { semantic_key: 'registry_number', label_raw: 'Số vào sổ cấp GCN', value: 'C# 00144', confidence: 0.94 },
+    { semantic_key: 'certificate_number', label_raw: 'Số vào sổ cấp GCN', value: 'CH00344', confidence: 0.98 }
+  ],
+  pages: [{
+    page_index: 0,
+    printed_lines: [
+      'BD 151871',
+      'II. Thửa đất, nhà ở và tài sản khác gắn liền với đất',
+      '1. Thửa đất:',
+      'a) Thửa đất số: 69',
+      'b) Địa chỉ: Tổ 10 Phường Tân Hòa, Thành phố Hòa Bình, Tỉnh Hòa Bình',
+      'c) Diện tích: 45,10 mÂ²',
+      'Tờ bản đồ số: 16',
+      '3. Công trình xây dựng khác:',
+      '4. Rừng sản xuất là rừng trồng:',
+      'IV. Những thay đổi sau khi cấp giấy chứng nhận quyền sử dụng đất',
+      'Số phát hành GCN: BĐ 51871',
+      'Số vào sổ cấp GCN: C# 00144',
+      'Xóa nội dung đăng ký thế chấp ngày 26/9/2012 theo hồ sơ số 002526.XT.002'
+    ],
+    sections: []
+  }]
+}).map(line => line.text);
+assert(printedLineTranscript.includes('BĐ 151871'));
+assert(printedLineTranscript.includes('a) Thửa đất số: 69; tờ bản đồ số: 16'));
+assert(!printedLineTranscript.includes('Tờ bản đồ số: 16'));
+assert(printedLineTranscript.includes('II. Thửa đất, nhà ở và tài sản khác gắn liền với đất'));
+assert(printedLineTranscript.includes('3. Công trình xây dựng khác:'));
+assert(printedLineTranscript.some(line => line.indexOf('Xóa nội dung đăng ký thế chấp') >= 0));
+assert(printedLineTranscript.includes('Số phát hành GCN: BĐ151871'));
+assert(printedLineTranscript.includes('Số vào sổ cấp GCN: CH00344'));
+assert(!printedLineTranscript.includes('Số phát hành GCN: BĐ 51871'));
+assert(!printedLineTranscript.includes('Số vào sổ cấp GCN: C# 00144'));
+assert.strictEqual(
+  reviewClientContext.certificateSerialForReview_(
+    { real_estate: { certificate_number: { final_value: 'BD151871' } } },
+    ''
+  ),
+  'BĐ151871'
+);
+assert.strictEqual(reviewClientContext.normalizeCertificateSerialForReview_('BD 151871'), 'BĐ151871');
 const reorderedNoisyFields = dataMergeContext.extractRealEstateIndexedLandFields_(reorderedNoisyOldCertificateText);
 assert.strictEqual(reorderedNoisyFields.land_plot_number, '303');
 assert.strictEqual(reorderedNoisyFields.map_sheet_number, '3');

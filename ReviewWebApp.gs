@@ -25,6 +25,11 @@ function reviewApi(body) {
   if (action === 'resendLabReviewEmail') {
     return resendLabReviewEmail(body.caseId, body.token);
   }
+  if (action === 'reprocessLabCaseForSelfCheck') {
+    assertValidToken_(body.caseId, body.token);
+    if (String(body.caseId || '').indexOf('LAB-') !== 0) throw new Error('Self-check reprocess is only enabled for LAB cases');
+    return reprocessCaseById(body.caseId);
+  }
   if (action === 'saveOverride') {
     return saveManualOverride(body.caseId, body.token, body.fieldPath, body.newValue, body.reason);
   }
