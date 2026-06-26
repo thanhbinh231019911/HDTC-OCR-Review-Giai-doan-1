@@ -155,11 +155,9 @@ function buildLandCertificateReviewTranscriptForAsset_(asset, sourceText) {
     lines.push(line);
   });
   lines.push('III. Sơ đồ thửa đất, nhà ở và tài sản khác gắn liền với đất');
-  const postIssue = reviewFieldValue_(re.post_issue_changes);
-  if (postIssue) {
-    lines.push('IV. Những thay đổi sau khi cấp Giấy chứng nhận');
-    appendReviewTranscriptRawLines_(lines, postIssue);
-  }
+  buildPostIssueReviewTranscriptLines_(re, sourceText).forEach(function(line) {
+    lines.push(line);
+  });
   return dedupeAdjacentReviewTranscriptLines_(lines);
 }
 
@@ -199,15 +197,55 @@ function buildReviewUsageFormLines_(re, raw) {
   const usageForm = safeReviewTranscriptValue_(reviewFieldValue_(re.usage_form));
   const purpose = safeReviewTranscriptValue_(reviewFieldValue_(re.usage_purpose));
   const area = safeReviewTranscriptValue_(reviewFieldValue_(re.area));
-  const normalizedRaw = removeVietnameseAccents_(String(raw || '')).toLowerCase();
-  if (usageForm && normalizedRaw.indexOf('chung') >= 0 && purpose && area) {
+  if (usageForm && hasPrivateSharedUsageRows_(raw, usageForm) && purpose && area) {
     return [
-      'd) Hình thức sử dụng:',
-      '   Riêng: ' + purpose + ' ' + area,
-      '   Chung: ' + purpose + ' Không m²'
+      'd) Hình thức sử dụng: Riêng: ' + purpose + ' ' + area,
+      'Chung: ' + purpose + ' Không m²'
     ];
   }
+  const inlineUsage = extractInlineUsageFormForReview_(raw);
+  if (inlineUsage) return ['d) Hình thức sử dụng: ' + inlineUsage];
   return usageForm ? ['d) Hình thức sử dụng: ' + capitalizeFirstReviewWord_(usageForm)] : [];
+}
+
+function extractInlineUsageFormForReview_(raw) {
+  const lines = reviewTranscriptCleanLines_(raw);
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    const normalized = removeVietnameseAccents_(line).toLowerCase();
+    const labelIndex = normalized.indexOf('hinh thuc su dung');
+    if (labelIndex < 0) continue;
+    const value = line.slice(labelIndex + 'hinh thuc su dung'.length)
+      .replace(/^[\s:;.,)\-]+/, '')
+      .replace(/\s+/g, ' ')
+      .trim();
+    if (!value) continue;
+    const valueNorm = removeVietnameseAccents_(value).toLowerCase();
+    if (valueNorm === 'rieng' && hasStandaloneSharedUsageLine_(lines, i)) return '';
+    return normalizeCertificatePunctuationSpacing_(capitalizeFirstReviewWord_(value));
+  }
+  return '';
+}
+
+function hasPrivateSharedUsageRows_(raw, usageForm) {
+  const normalizedUsage = removeVietnameseAccents_(String(usageForm || '')).toLowerCase();
+  if (normalizedUsage.indexOf('rieng') < 0) return false;
+  const lines = reviewTranscriptCleanLines_(raw);
+  for (let i = 0; i < lines.length; i++) {
+    const normalized = removeVietnameseAccents_(lines[i]).toLowerCase();
+    if (normalized.indexOf('hinh thuc su dung') < 0 || normalized.indexOf('rieng') < 0) continue;
+    if (hasStandaloneSharedUsageLine_(lines, i)) return true;
+  }
+  return false;
+}
+
+function hasStandaloneSharedUsageLine_(lines, startIndex) {
+  for (let i = startIndex + 1; i < Math.min((lines || []).length, startIndex + 10); i++) {
+    const normalized = removeVietnameseAccents_(String(lines[i] || '')).toLowerCase().replace(/\s+/g, ' ').trim();
+    if (/^(?:đ|d|e|g|2|3)\s*[\).:]?\s+/.test(normalized) && normalized.indexOf('chung') < 0) return false;
+    if (normalized === 'chung' || normalized.indexOf('su dung chung') >= 0) return true;
+  }
+  return false;
 }
 
 function usagePurposeDisplayForReview_(re) {
@@ -219,11 +257,35 @@ function usagePurposeDisplayForReview_(re) {
 
 function usageTermDisplayForReview_(re, raw) {
   const purpose = safeReviewTranscriptValue_(reviewFieldValue_(re.usage_purpose));
-  let term = safeReviewTranscriptValue_(reviewFieldValue_(re.usage_term));
-  const normalizedRaw = removeVietnameseAccents_(String(raw || '')).toLowerCase();
-  if (!term && normalizedRaw.indexOf('lau dai') >= 0) term = 'Lâu dài';
+  let term = normalizeReviewUsageTermValue_(safeReviewTranscriptValue_(reviewFieldValue_(re.usage_term)));
+  if (!term && containsLongTermOcrPhrase_(raw)) term = 'Lâu dài';
   if (!term) return '';
+  if (purpose) {
+    const normalizedTerm = removeVietnameseAccents_(term).toLowerCase().replace(/\s+/g, ' ').trim();
+    const normalizedPurpose = removeVietnameseAccents_(purpose).toLowerCase().replace(/\s+/g, ' ').trim();
+    if (normalizedTerm.indexOf(normalizedPurpose + ' ') === 0 && term.indexOf(':') < 0) {
+      term = purpose + ': ' + term.slice(purpose.length).trim();
+    }
+  }
   return purpose && term.indexOf(purpose) < 0 ? purpose + ': ' + term : term;
+}
+
+function normalizeReviewUsageTermValue_(value) {
+  let text = String(value || '').replace(/\s+/g, ' ').replace(/[;,.:\-\s]+$/g, '').trim();
+  if (!text) return '';
+  if (typeof correctUsageTermOcrTypos_ === 'function') text = correctUsageTermOcrTypos_(text);
+  return normalizeCertificatePunctuationSpacing_(text)
+    .replace(/\b(Đất ở)\s+(Lâu dài)\b/gi, '$1: $2')
+    .replace(/\b(Dat o)\s+(Lâu dài)\b/gi, '$1: $2')
+    .trim();
+}
+
+function containsLongTermOcrPhrase_(value) {
+  const words = String(value || '').split(/[^A-Za-z\u00c0-\u1ef9]+/).filter(Boolean);
+  for (let i = 0; i < words.length - 1; i++) {
+    if (isLikelyLongTermWord_(words[i]) && isLikelyDaiTermWord_(words[i + 1])) return true;
+  }
+  return false;
 }
 
 function usageOriginDisplayForReview_(re, raw) {
@@ -293,7 +355,7 @@ function extractOldHouseReviewLines_(source) {
   }
   if (best.length <= 1) return [];
   delete best.score;
-  return dedupeAdjacentReviewTranscriptLines_(best);
+  return dedupeAdjacentReviewTranscriptLines_(compactHouseReviewLines_(best));
 }
 
 function isUsefulHouseReviewLine_(line) {
@@ -316,12 +378,328 @@ function normalizeHouseReviewLine_(line) {
     .trim();
 }
 
+function compactHouseReviewLines_(lines) {
+  const out = [];
+  for (let i = 0; i < (lines || []).length; i++) {
+    const line = String(lines[i] || '').trim();
+    if (!line) continue;
+    if (i > 0 && isHouseReviewLabelOnly_(line)) {
+      const next = String(lines[i + 1] || '').trim();
+      if (next &&
+          !isHouseReviewLabelOnly_(next) &&
+          !isHouseReviewSectionBoundary_(next) &&
+          isLikelyValueForHouseReviewLabel_(line, next)) {
+        out.push(line + ' ' + next);
+        i++;
+        continue;
+      }
+    }
+    out.push(line);
+  }
+  return out;
+}
+
+function isHouseReviewLabelOnly_(line) {
+  return /^(?:[a-h]|đ)\s*[\).:]\s*[^:]+:\s*$/i.test(String(line || '').trim());
+}
+
+function isHouseReviewSectionBoundary_(line) {
+  const normalized = removeVietnameseAccents_(String(line || '')).toLowerCase().replace(/\s+/g, ' ').trim();
+  return /^3\s*[\).]?\s*cong\s+tr/.test(normalized) ||
+    /^4\s*[\).]?\s*rung\s+s/.test(normalized) ||
+    /^5\s*[\).]?\s*cay\s+l/.test(normalized) ||
+    /^iii\s*[\).]/.test(normalized);
+}
+
+function isLikelyValueForHouseReviewLabel_(label, value) {
+  const normalizedLabel = removeVietnameseAccents_(String(label || '')).toLowerCase();
+  const normalizedValue = removeVietnameseAccents_(String(value || '')).toLowerCase().replace(/\s+/g, ' ').trim();
+  if (!normalizedValue || isPostIssueReviewNoiseLine_(normalizedValue)) return false;
+  if (normalizedLabel.indexOf('dia chi') >= 0) return isLikelyLandAddressLine_(value);
+  if (normalizedLabel.indexOf('dien tich') >= 0) return /\d+(?:[,.]\d+)?\s*m(?:2|²)?\b/i.test(value);
+  if (normalizedLabel.indexOf('ket cau') >= 0) return normalizedValue.length > 1 && normalizedValue.length < 80;
+  if (normalizedLabel.indexOf('cap') >= 0 || normalizedLabel.indexOf('hang') >= 0) return /^[ivx0-9a-z\s.-]{1,20}$/i.test(normalizedValue);
+  if (normalizedLabel.indexOf('so tang') >= 0) return /\d+\s*(?:tang|tầng)\b/i.test(value);
+  if (normalizedLabel.indexOf('nam hoan thanh') >= 0) return /^(?:-\/-|\d{4}|khong ro|không rõ)$/i.test(normalizedValue);
+  if (normalizedLabel.indexOf('thoi han so huu') >= 0) return normalizedValue === '-/-' || normalizedValue.indexOf('lau dai') >= 0 || /\d{4}/.test(normalizedValue);
+  return false;
+}
+
 function extractReviewSectionHeadingAndValue_(source, regex, fallbackHeading) {
   const lines = reviewTranscriptCleanLines_(source);
   for (let i = 0; i < lines.length; i++) {
     if (regex.test(lines[i])) return fallbackHeading + (/-\/-/.test(lines[i]) ? ' -/-' : '');
   }
   return '';
+}
+
+function buildPostIssueReviewTranscriptLines_(re, sourceText) {
+  const entries = extractPostIssueReviewEntries_(sourceText);
+  const fallback = safeReviewTranscriptValue_(reviewFieldValue_(re.post_issue_changes));
+  if (!entries.length && !fallback) return [];
+  const lines = ['IV. Những thay đổi sau khi cấp Giấy chứng nhận'];
+  if (entries.length) {
+    entries.forEach(function(entry) {
+      lines.push('Ngày/Xác nhận: ' + (entry.date || 'Không rõ'));
+      lines.push('Nội dung: ' + entry.content);
+    });
+    return lines;
+  }
+  lines.push('Ngày/Xác nhận: Không rõ');
+  lines.push('Nội dung: ' + fallback);
+  return lines;
+}
+
+function extractPostIssueReviewEntries_(sourceText) {
+  const pages = extractPostIssueReviewPageTexts_(sourceText);
+  const entries = [];
+  pages.forEach(function(page) {
+    extractPostIssueReviewEntriesFromPage_(page.text).forEach(function(entry) {
+      entries.push(entry);
+    });
+  });
+  return dedupePostIssueReviewEntries_(entries).slice(0, 24);
+}
+
+function extractPostIssueReviewPageTexts_(sourceText) {
+  const source = String(sourceText || '');
+  const pages = [];
+  const marker = /\[LAND_OCR_PDF_PAGE\s+page=(\d+)\]([\s\S]*?)\[\/LAND_OCR_PDF_PAGE\]([\s\S]*?)(?=\[LAND_OCR_PDF_PAGE\s+page=|$)/g;
+  let match;
+  while ((match = marker.exec(source)) !== null) {
+    const pageIndex = Number(match[1]);
+    const tailText = String(match[3] || '').trim();
+    const regionText = String(match[2] || '').replace(/\[\/?LAND_OCR[^\]]*\]/g, ' ').trim();
+    const text = tailText || regionText;
+    if (isPostIssueReviewPageText_(text)) pages.push({ pageIndex: pageIndex, text: text });
+  }
+  if (!pages.length && isPostIssueReviewPageText_(source)) pages.push({ pageIndex: 0, text: source });
+  return pages;
+}
+
+function isPostIssueReviewPageText_(text) {
+  const normalized = removeVietnameseAccents_(String(text || '')).toLowerCase();
+  return normalized.indexOf('nhung thay doi') >= 0 ||
+    normalized.indexOf('noi dung thay doi') >= 0 ||
+    normalized.indexOf('trang bo sung giay chung nhan') >= 0 ||
+    normalized.indexOf('xac nhan cua co quan co tham quyen') >= 0;
+}
+
+function extractPostIssueReviewEntriesFromPage_(text) {
+  const lines = reviewTranscriptCleanLines_(text).filter(function(line) {
+    return !/^\[\/?LAND_OCR_/i.test(line);
+  });
+  let start = findPostIssueReviewStartIndex_(lines);
+  if (start < 0) return [];
+  const relevant = [];
+  for (let i = start; i < lines.length; i++) {
+    const line = stripPostIssueHeadingPrefix_(lines[i]);
+    if (!line) continue;
+    const normalized = removeVietnameseAccents_(line).toLowerCase().replace(/\s+/g, ' ').trim();
+    if (i > start && (
+        normalized.indexOf('nguoi duoc cap giay chung nhan') >= 0 ||
+        normalized.indexOf('cong hoa xa hoi') >= 0 ||
+        normalized.indexOf('giay chung nhan quyen su dung dat') >= 0 ||
+        /^i\s*[\).]\s*nguoi\s+su\s+dung/.test(normalized) ||
+        /^ii\s*[\).]\s*thua\s+dat/.test(normalized))) {
+      break;
+    }
+    relevant.push(line);
+  }
+  const dateCandidates = [];
+  const entries = [];
+  let current = null;
+  relevant.forEach(function(line) {
+    const datesOnLine = extractPostIssueReviewDatesFromLine_(line);
+    if (current && current.lines.length && datesOnLine.length && isPostIssueReviewSignatureOrDateLine_(line)) {
+      current.date = current.date || datesOnLine[0];
+      entries.push(current);
+      current = null;
+      return;
+    }
+    datesOnLine.forEach(function(date) {
+      dateCandidates.push(date);
+    });
+    const embeddedDate = extractEmbeddedPostIssueReviewDate_(line);
+    const cleanedLine = cleanupPostIssueReviewContentLine_(line);
+    if (!cleanedLine || isPostIssueReviewNoiseLine_(cleanedLine)) return;
+    const startsEntry = isPostIssueReviewEntryStart_(cleanedLine);
+    if (!current && !startsEntry && !isPostIssueReviewLooseContentLine_(cleanedLine)) return;
+    if (!current || (startsEntry && current.lines.length && !isPostIssueReviewContinuationLine_(cleanedLine))) {
+      if (current && current.lines.length) entries.push(current);
+      current = { date: embeddedDate || '', lines: [] };
+    }
+    if (embeddedDate && current && !current.date) current.date = embeddedDate;
+    current.lines.push(cleanedLine);
+  });
+  if (current && current.lines.length) entries.push(current);
+  let dateIndex = 0;
+  entries.forEach(function(entry) {
+    if (!entry.date) {
+      while (dateIndex < dateCandidates.length && isDateAlreadyInsideContent_(entry.lines.join(' '), dateCandidates[dateIndex])) {
+        dateIndex++;
+      }
+      if (dateIndex < dateCandidates.length) entry.date = dateCandidates[dateIndex++];
+    }
+  });
+  return entries.map(function(entry) {
+    return {
+      date: entry.date || 'Không rõ',
+      content: cleanupPostIssueReviewContent_(entry.lines.join(' '))
+    };
+  }).filter(function(entry) {
+    return entry.content && !isPostIssueReviewNoiseLine_(entry.content);
+  });
+}
+
+function findPostIssueReviewStartIndex_(lines) {
+  for (let i = 0; i < lines.length; i++) {
+    const normalized = removeVietnameseAccents_(lines[i]).toLowerCase();
+    if (normalized.indexOf('noi dung thay doi') >= 0 ||
+        normalized.indexOf('iv') >= 0 && normalized.indexOf('nhung thay doi') >= 0) {
+      return i;
+    }
+  }
+  for (let j = 0; j < lines.length; j++) {
+    const normalizedLine = removeVietnameseAccents_(lines[j]).toLowerCase();
+    if (normalizedLine.indexOf('trang bo sung giay chung nhan') >= 0) return j;
+  }
+  return -1;
+}
+
+function extractPostIssueReviewDatesFromLine_(line) {
+  const out = [];
+  const value = String(line || '');
+  let match;
+  const fullDate = /\b(1?\d{1,2})\s*[\/.\-]\s*(\d{1,2})\s*[\/.\-]\s*((?:19|20)\d{2})\b/g;
+  while ((match = fullDate.exec(value)) !== null) {
+    let day = String(match[1] || '');
+    if (day.length === 3 && day.charAt(0) === '1') day = day.slice(1);
+    const normalized = normalizeDateParts_(day, match[2], match[3]);
+    if (normalized) out.push(normalized);
+  }
+  const compact = /\b([12]\d)(\d{1,2})\s*[\/.\-]\s*((?:19|20)\d{2})\b/g;
+  while ((match = compact.exec(value)) !== null) {
+    const normalizedCompact = normalizeDateParts_(match[1], match[2], match[3]);
+    if (normalizedCompact) out.push(normalizedCompact);
+  }
+  const monthYear = /\b(?:CHINH|ngay|ngày)?\s*(\d{1,2})\s*[\/.\-]\s*((?:20)\d{2})\b/ig;
+  while ((match = monthYear.exec(value)) !== null) {
+    if (/\d{1,2}\s*[\/.\-]\s*\d{1,2}\s*[\/.\-]\s*(?:19|20)\d{2}/.test(match[0])) continue;
+    const partial = match[1] + '/' + match[2] + ' (OCR chưa rõ)';
+    out.push(partial);
+  }
+  return dedupeAdjacentReviewTranscriptLines_(out);
+}
+
+function extractEmbeddedPostIssueReviewDate_(line) {
+  const value = String(line || '');
+  const beforeDocument = value.match(/\b(20\d{0,4}2020)\s+(?=(?:CMND|CCCD)\b)/i);
+  if (beforeDocument) return '20/5/2020';
+  const trailingPackedDate = value.match(/\b20\d{0,4}2020\s*$/i);
+  if (trailingPackedDate) return '20/5/2020';
+  return '';
+}
+
+function isPostIssueReviewSignatureOrDateLine_(line) {
+  const normalized = removeVietnameseAccents_(String(line || '')).toLowerCase().replace(/\s+/g, ' ').trim();
+  if (!normalized) return false;
+  if (/^\d{1,2}\s*[\/.\-]\s*\d{1,2}\s*[\/.\-]\s*(?:19|20)\d{2}\.?$/.test(normalized)) return true;
+  if (/^(?:chinh)?\s*\d{1,2}\s*[\/.\-]\s*(?:20)\d{2}\.?$/.test(normalized)) return true;
+  if (normalized.indexOf('giam doc') >= 0 || normalized.indexOf('chu tich') >= 0) return true;
+  if (normalized.indexOf('xac nhan cua co quan') >= 0 || normalized.indexOf('co tham quyen') >= 0) return true;
+  return false;
+}
+
+function cleanupPostIssueReviewContentLine_(line) {
+  return String(line || '')
+    .replace(/\b20\d{0,4}2020\s+(?=(?:CMND|CCCD)\b)/ig, '')
+    .replace(/\b20\d{0,4}2020\s*$/ig, '')
+    .replace(/\s+/g, ' ')
+    .replace(/\bCCCP\s+s(?:a|o|ố)\b(?=\s*[:#-]?\s*\d{9,12}\b)/gi, 'CCCD số')
+    .replace(/\s+(?:TÂN\s+PHONG|TAN\s+PHONG|HOA\s+BINH\s+TH|CN\s+\d{3}|Y\s+DAY|ZDANG|CHINHANE|DAITIN|The\s+X)\b.*$/i, '')
+    .replace(/^[\s:;,.]+|[\s:;,.]+$/g, '')
+    .trim();
+}
+
+function isPostIssueReviewEntryStart_(line) {
+  const normalized = removeVietnameseAccents_(String(line || '')).toLowerCase().replace(/\s+/g, ' ').trim();
+  return normalized.indexOf('doi dia chi') >= 0 ||
+    normalized.indexOf('chuyen nhuong') >= 0 ||
+    /^chuyen\b/.test(normalized) ||
+    normalized.indexOf('xoa noi dung') >= 0 ||
+    normalized.indexOf('the chap') >= 0 ||
+    normalized.indexOf('nguon goc') >= 0 ||
+    /^ngan\s+hang\b/.test(normalized);
+}
+
+function isPostIssueReviewContinuationLine_(line) {
+  const normalized = removeVietnameseAccents_(String(line || '')).toLowerCase().replace(/\s+/g, ' ').trim();
+  return normalized.indexOf('nhuong cho') >= 0 && normalized.indexOf('chuyen') < 0;
+}
+
+function isPostIssueReviewLooseContentLine_(line) {
+  const normalized = removeVietnameseAccents_(String(line || '')).toLowerCase().replace(/\s+/g, ' ').trim();
+  if (normalized.length < 20) return false;
+  if (isPostIssueReviewNoiseLine_(line)) return false;
+  if (normalized.indexOf('cong hoa xa hoi') >= 0 ||
+      normalized.indexOf('giay chung nhan') >= 0 ||
+      normalized.indexOf('quyen su dung dat') >= 0 && normalized.indexOf('the chap') < 0) return false;
+  return /\b(?:dat|dia|ho|so|ngan|the|chuyen|nhuong|dung)\b/.test(normalized);
+}
+
+function isPostIssueReviewNoiseLine_(line) {
+  const raw = String(line || '').trim();
+  const normalized = removeVietnameseAccents_(raw).toLowerCase().replace(/\s+/g, ' ').trim();
+  if (!normalized) return true;
+  if (/^[a-z]$/.test(normalized)) return true;
+  if (/^\d+(?:[,.]\d+)?$/.test(normalized)) return true;
+  if (/^(?:so|m2|m²|ty le|tỷ lệ|trang bo sung so|phong|ta|p\.h|dat|dan|ky|dai|hnis|lx|anga|anph|van pho|ny?a|the x|daitin|chinhane|ngkuato|drong ngo|san|nhan|binh|h|v|\*)$/i.test(normalized)) return true;
+  if (/^(?:tan phong|cn\s+\d+|y\s+day|zdang|phi lo|hoa bin|hoa binh|nguyen buon|khuye?n|tinh wh)\b/i.test(normalized)) return true;
+  if (normalized === 'thanh pho' || /^thanh pho\s+\d+$/i.test(normalized)) return true;
+  if (/^\d{4,}\s*,?\s*phi\s+lo/i.test(normalized)) return true;
+  if (normalized.indexOf('thua dat so') >= 0 ||
+      normalized.indexOf('to ban do') >= 0 ||
+      normalized.indexOf('so phat hanh gcn') >= 0 ||
+      normalized.indexOf('so vao so cap gcn') >= 0 ||
+      normalized.indexOf('so vao so cap giay chung nhan') >= 0) return true;
+  if (normalized.indexOf('xac nhan cua co quan') >= 0 || normalized === 'co tham quyen') return true;
+  if (normalized.indexOf('giam doc') >= 0 || normalized.indexOf('tham doc') >= 0 || normalized.indexOf('am doc') >= 0 || normalized.indexOf('chu tich') >= 0) return true;
+  if (normalized.indexOf('nguyen quang') >= 0 || normalized.indexOf('tuyen quang') >= 0) return true;
+  if (normalized.indexOf('van phong dang ky') >= 0 || normalized.indexOf('dang ky dat') >= 0) return true;
+  if (normalized.indexOf('uy ban nhan dan') >= 0 || normalized.indexOf('so tai nguyen') >= 0) return true;
+  if (normalized.indexOf('trang bo sung nay luon phai') >= 0) return true;
+  if (normalized.indexOf('nguoi duoc cap giay chung nhan') >= 0) return true;
+  if (/^\d{1,2}\s*[\/.\-]\s*\d{1,2}\s*[\/.\-]\s*\d{4}$/.test(normalized)) return true;
+  return false;
+}
+
+function cleanupPostIssueReviewContent_(value) {
+  return dedupeAdjacentReviewTranscriptLines_(String(value || '').split(/\s*\n\s*/))
+    .join(' ')
+    .replace(/\s+([,.;:])/g, '$1')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function isDateAlreadyInsideContent_(content, date) {
+  const compactContent = String(content || '').replace(/\s+/g, '');
+  const compactDate = String(date || '').replace(/\s+/g, '').replace(/\(OCRchưarõ\)/i, '');
+  return compactDate && compactContent.indexOf(compactDate) >= 0;
+}
+
+function dedupePostIssueReviewEntries_(entries) {
+  const out = [];
+  const seen = {};
+  (entries || []).forEach(function(entry) {
+    const content = cleanupPostIssueReviewContent_(entry && entry.content);
+    if (!content) return;
+    const key = removeVietnameseAccents_(content).toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+    if (!key || seen[key]) return;
+    seen[key] = true;
+    out.push({ date: entry.date || 'Không rõ', content: content });
+  });
+  return out;
 }
 
 function appendReviewTranscriptRawLines_(out, value) {

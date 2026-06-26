@@ -627,20 +627,42 @@ const oldHouseReviewSource = [
 const oldHouseReviewTranscript = dataMergeContext.buildLandCertificateReviewTranscriptForAsset_(oldHouseReviewTranscriptAsset, oldHouseReviewSource).join('\n');
 assert.ok(oldHouseReviewTranscript.includes('Năm sinh: 1983'));
 assert.ok(oldHouseReviewTranscript.includes('cấp ngày 13/12/1999 tại Công an Tỉnh Thanh Hóa'));
+assert.ok(oldHouseReviewTranscript.includes('d) Hình thức sử dụng: Riêng: Đất ở 45,10 m²\nChung: Đất ở Không m²'));
 assert.ok(oldHouseReviewTranscript.includes('Riêng: Đất ở 45,10 m²'));
 assert.ok(oldHouseReviewTranscript.includes('Chung: Đất ở Không m²'));
 assert.ok(oldHouseReviewTranscript.includes('đ) Mục đích sử dụng: Đất ở: 45,10 m²'));
 assert.ok(oldHouseReviewTranscript.includes('e) Thời hạn sử dụng: Đất ở: Lâu dài'));
 assert.ok(oldHouseReviewTranscript.includes('g) Nguồn gốc sử dụng: "Công nhận QSDĐ như giao đất không thu tiền sử dụng đất"'));
 assert.ok(oldHouseReviewTranscript.includes('2. Nhà ở:'));
-assert.ok(oldHouseReviewTranscript.includes('b) Diện tích xây dựng:'));
+assert.ok(oldHouseReviewTranscript.includes('a) Địa chỉ: Tổ 10 Phường Tân Hòa, Thành phố Hòa Bình, Tỉnh Hòa Bình'));
+assert.ok(oldHouseReviewTranscript.includes('b) Diện tích xây dựng: 40,0 m²'));
 assert.ok(!oldHouseReviewTranscript.includes('2. Nhà ở: -/-'));
+assert.ok(!oldHouseReviewTranscript.includes('b) Diện tích xây dựng:\n40,0 m²'));
 const oldHouseBlock = oldHouseReviewTranscript.slice(
   oldHouseReviewTranscript.indexOf('2. Nhà ở:'),
   oldHouseReviewTranscript.indexOf('3. Công trình xây dựng khác:')
 );
 assert.ok(!oldHouseBlock.includes('Nguồn gốc sử dụng'));
 assert.ok(!oldHouseBlock.includes('Công nhận QSDĐ'));
+assert.strictEqual(dataMergeContext.correctUsageTermOcrTypos_('Lầu dài'), 'Lâu dài');
+assert.strictEqual(dataMergeContext.correctUsageTermOcrTypos_('Lấu dìa'), 'Lâu dài');
+assert.strictEqual(dataMergeContext.correctUsageTermOcrTypos_('Đất ở Lấu dìa'), 'Đất ở Lâu dài');
+const postIssueReviewEntries = dataMergeContext.extractPostIssueReviewEntries_([
+  '[LAND_OCR_PDF_PAGE page=2]',
+  'IV. Những thay đổi sau khi cấp giấy chứng nhận quyền sử dụng đất',
+  'Nội dung thay đổi và cơ sở pháp lý',
+  'Đổi địa chỉ thửa đất từ tổ 10 thành tổ 8. Theo hồ sơ',
+  'Xác nhận của cơ quan có thẩm quyền',
+  '25/7/2020',
+  'GIÁM ĐỐC',
+  'Chuyển nhượng cho ông Nguyễn Văn A, sinh năm 1994, 201512020',
+  'CMND số 113331134, địa chỉ tại tổ 11 phường Đồng Tiền',
+  '[/LAND_OCR_PDF_PAGE]'
+].join('\n'));
+assert.strictEqual(postIssueReviewEntries.length, 2);
+assert.strictEqual(postIssueReviewEntries[0].content, 'Đổi địa chỉ thửa đất từ tổ 10 thành tổ 8. Theo hồ sơ');
+assert.strictEqual(postIssueReviewEntries[1].date, '20/5/2020');
+assert.ok(postIssueReviewEntries[1].content.indexOf('201512020') < 0);
 assert.strictEqual(
   dataMergeContext.normalizeRealEstateUsageForm_('Sử dụng riêng 2 Đường bê tông'),
   'Sử dụng riêng'

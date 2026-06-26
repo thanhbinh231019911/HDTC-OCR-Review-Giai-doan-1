@@ -970,11 +970,21 @@ function normalizeLandTypeAreaUnits_(value) {
 }
 
 function correctUsageTermOcrTypos_(value) {
-  return String(value || '')
-    .replace(/(^|[^A-Za-z\u00c0-\u1ef9])(L\u00e2u)\s+\u0111\u00e0i(?=$|[^A-Za-z\u00c0-\u1ef9])/g, '$1L\u00e2u d\u00e0i')
-    .replace(/(^|[^A-Za-z\u00c0-\u1ef9])(l\u00e2u)\s+\u0111\u00e0i(?=$|[^A-Za-z\u00c0-\u1ef9])/g, '$1l\u00e2u d\u00e0i')
-    .replace(/(^|[^A-Za-z\u00c0-\u1ef9])(Lau)\s+dai(?=$|[^A-Za-z\u00c0-\u1ef9])/g, '$1L\u00e2u d\u00e0i')
-    .replace(/(^|[^A-Za-z\u00c0-\u1ef9])(lau)\s+dai(?=$|[^A-Za-z\u00c0-\u1ef9])/g, '$1l\u00e2u d\u00e0i');
+  return String(value || '').replace(/\b([A-Za-z\u00c0-\u1ef9]+)\s+([A-Za-z\u00c0-\u1ef9]+)\b/g, function(match, first, second) {
+    if (!isLikelyLongTermWord_(first) || !isLikelyDaiTermWord_(second)) return match;
+    const startsUpper = first.charAt(0) === first.charAt(0).toLocaleUpperCase('vi-VN');
+    return startsUpper ? 'L\u00e2u d\u00e0i' : 'l\u00e2u d\u00e0i';
+  });
+}
+
+function isLikelyLongTermWord_(value) {
+  const normalized = removeVietnameseAccents_(String(value || '')).toLowerCase().replace(/[^a-z0-9]/g, '');
+  return normalized === 'lau' || normalized === 'l4u' || normalized === 'iau';
+}
+
+function isLikelyDaiTermWord_(value) {
+  const normalized = removeVietnameseAccents_(String(value || '')).toLowerCase().replace(/[^a-z0-9]/g, '');
+  return normalized === 'dai' || normalized === 'dia' || normalized === 'dja' || normalized === 'daii';
 }
 
 function extractAreaWordsFromCertificateText_(text) {
