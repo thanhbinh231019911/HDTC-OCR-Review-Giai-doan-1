@@ -496,6 +496,72 @@ const dataMergeContext = { console };
 vm.createContext(dataMergeContext);
 vm.runInContext(fs.readFileSync('DataMergeService.gs', 'utf8'), dataMergeContext);
 vm.runInContext(fs.readFileSync('ReviewService.gs', 'utf8'), dataMergeContext);
+dataMergeContext.CONFIG = { OPENAI_MODEL_LOCKED: 'gpt-5.4-mini' };
+const incompleteOpenAiSemanticReview = {
+  assets: [{
+    certificate_title: { final_value: 'Giấy chứng nhận quyền sử dụng đất, quyền sở hữu nhà ở và tài sản khác gắn liền với đất', ai_value: '' },
+    certificate_semantic_document: {
+      source: 'OPENAI_VISION_SEMANTIC',
+      model: 'gpt-5.4-mini',
+      pages: [{
+        page_index: 0,
+        layout: 'gcn_qsdd_qsh_nha_o_va_tsk_cover',
+        sections: [
+          { semantic: 'owners', raw_lines: ['Ông: Vũ Văn Đức'] },
+          { semantic: 'signature_seal', raw_lines: ['Hòa Bình, ngày / 4k, tháng 5, năm 2011'] }
+        ],
+        printed_lines: ['BD 151871', 'I. Người sử dụng đất', 'Ông: Vũ Văn Đức']
+      }],
+      items: [
+        { semantic_key: 'owner_raw_text', section_semantic: 'owners', value: 'Ông: Vũ Văn Đức', confidence: 0.9 },
+        { semantic_key: 'issue_date', section_semantic: 'signature_seal', value: '01/05/2011', confidence: 0.9 }
+      ]
+    },
+    real_estate: {
+      certificate_number: { final_value: 'BĐ151871', ai_value: 'BĐ151871', source: 'OCR', confidence: 0.96 },
+      registry_number: { final_value: 'CH00344', ai_value: 'CH00344', source: 'OCR', confidence: 0.94 },
+      issue_date: { final_value: '16/05/2011', ai_value: '16/05/2011', source: 'OCR_ASSET_TEXT_ISSUE_DATE_REPAIR', confidence: 0.86 },
+      issuing_authority: { final_value: 'Ủy ban nhân dân thành phố Hòa Bình', ai_value: 'Ủy ban nhân dân thành phố Hòa Bình', source: 'OCR', confidence: 0.9 }
+    }
+  }]
+};
+const originalGetFullOcrTextMapsForCase = dataMergeContext.getFullOcrTextMapsForCase_;
+dataMergeContext.getFullOcrTextMapsForCase_ = function() {
+  return {
+    assetText: [
+      '[LAND_OCR_REGION layout=gcn_qsdd_qsh_nha_o_va_tsk_land score=12 region=full]',
+      'II. Thửa đất, nhà ở và tài sản khác gắn liền với đất',
+      '1. Thửa đất:',
+      'a) Thửa đất số: 69; tờ bản đồ số: 16',
+      'b) Địa chỉ: Tổ 10 Phường Tân Hòa, Thành phố Hòa Bình, Tỉnh Hòa Bình',
+      'c) Diện tích: 45,10 m²',
+      '2. Nhà ở',
+      'a) Địa chỉ: Tổ 10 Phường Tân Hòa, Thành phố Hòa Bình, Tỉnh Hòa Bình',
+      '[/LAND_OCR_REGION]'
+    ].join('\n'),
+    assetTextByFileName: {
+      'asset.pdf': [
+        '[LAND_OCR_REGION layout=gcn_qsdd_qsh_nha_o_va_tsk_land score=12 region=full]',
+        'II. Thửa đất, nhà ở và tài sản khác gắn liền với đất',
+        '1. Thửa đất:',
+        'a) Thửa đất số: 69; tờ bản đồ số: 16',
+        '2. Nhà ở',
+        '[/LAND_OCR_REGION]'
+      ].join('\n')
+    }
+  };
+};
+dataMergeContext.attachLandCertificateSemanticDocumentsForReview_(incompleteOpenAiSemanticReview, 'CASE');
+dataMergeContext.getFullOcrTextMapsForCase_ = originalGetFullOcrTextMapsForCase;
+const repairedSemanticDocument = incompleteOpenAiSemanticReview.assets[0].certificate_semantic_document;
+assert.ok(
+  repairedSemanticDocument.pages.some(page => (page.sections || []).some(section => section.semantic === 'land_details')),
+  'Incomplete OpenAI semantic document must fall back to full OCR land_details transcript'
+);
+assert.ok(
+  repairedSemanticDocument.items.some(item => item.semantic_key === 'issue_date' && item.value === '16/05/2011'),
+  'Review field overlay must keep repaired issue date ahead of noisy semantic values'
+);
 assert.strictEqual(
   dataMergeContext.normalizeRealEstateUsageForm_('Sử dụng riêng 2 Đường bê tông'),
   'Sử dụng riêng'

@@ -19,7 +19,9 @@ function attachLandCertificateSemanticDocumentsForReview_(data, caseId) {
   assets.forEach(function(asset) {
     if (asset && asset.certificate_semantic_document &&
         asset.certificate_semantic_document.source === 'OPENAI_VISION_SEMANTIC' &&
-        asset.certificate_semantic_document.model === CONFIG.OPENAI_MODEL_LOCKED) {
+        asset.certificate_semantic_document.model === CONFIG.OPENAI_MODEL_LOCKED &&
+        isCompleteLandCertificateSemanticDocumentForReview_(asset.certificate_semantic_document)) {
+      overlayReviewAssetFieldsOntoSemanticDocument_(asset.certificate_semantic_document, asset);
       return;
     }
     const scopedText = assetOcrTextForSemanticReview_(
@@ -37,8 +39,67 @@ function attachLandCertificateSemanticDocumentsForReview_(data, caseId) {
       certificate_title: title,
       source: 'FULL_ASSET_OCR'
     });
+    overlayReviewAssetFieldsOntoSemanticDocument_(asset.certificate_semantic_document, asset);
   });
   return data;
+}
+
+function isCompleteLandCertificateSemanticDocumentForReview_(document) {
+  const pages = document && document.pages || [];
+  let hasLandDetails = false;
+  let hasAttachedAssets = false;
+  pages.forEach(function(page) {
+    (page.sections || []).forEach(function(section) {
+      if (section.semantic === 'land_details') hasLandDetails = true;
+      if (section.semantic === 'attached_assets') hasAttachedAssets = true;
+    });
+  });
+  if (hasLandDetails || hasAttachedAssets) return true;
+  return (document && document.items || []).some(function(item) {
+    return [
+      'land_plot_number',
+      'map_sheet_number',
+      'land_address',
+      'area',
+      'usage_purpose',
+      'usage_term',
+      'usage_form',
+      'usage_origin',
+      'house',
+      'construction'
+    ].indexOf(item && item.semantic_key) >= 0;
+  });
+}
+
+function overlayReviewAssetFieldsOntoSemanticDocument_(document, asset) {
+  if (!document || !asset || !asset.real_estate) return document;
+  const overlays = [
+    { key: 'certificate_number', label: 'Số GCN', field: asset.real_estate.certificate_number, confidence: 0.99 },
+    { key: 'registry_number', label: 'Số vào sổ cấp GCN', field: asset.real_estate.registry_number, confidence: 0.99 },
+    { key: 'issue_date', label: 'Ngày cấp', field: asset.real_estate.issue_date, confidence: 0.99 },
+    { key: 'issuing_authority', label: 'Nơi cấp', field: asset.real_estate.issuing_authority, confidence: 0.99 }
+  ];
+  document.items = document.items || [];
+  overlays.forEach(function(overlay) {
+    const value = overlay.field && (overlay.field.final_value || overlay.field.ai_value) || '';
+    if (!value) return;
+    document.items.push({
+      semantic_key: overlay.key,
+      section_semantic: 'certificate_note',
+      marker_raw: '',
+      label_raw: overlay.label,
+      label_canonical: overlay.label,
+      value: value,
+      value_raw: value,
+      value_normalized: value,
+      visual_order: 999999,
+      confidence: overlay.confidence,
+      evidence: {
+        source: overlay.field.source || 'REVIEW_FIELD_OVERLAY'
+      }
+    });
+  });
+  return document;
 }
 
 function assetOcrTextForSemanticReview_(asset, fullAssetOcrText, assetTextByFileName, allowAllFiles) {
