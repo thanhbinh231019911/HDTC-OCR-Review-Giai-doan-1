@@ -562,6 +562,85 @@ assert.ok(
   repairedSemanticDocument.items.some(item => item.semantic_key === 'issue_date' && item.value === '16/05/2011'),
   'Review field overlay must keep repaired issue date ahead of noisy semantic values'
 );
+const oldHouseReviewTranscriptAsset = {
+  certificate_title: {
+    final_value: 'Giấy chứng nhận quyền sử dụng đất, quyền sở hữu nhà ở và tài sản khác gắn liền với đất'
+  },
+  owner_identity_summary: { final_value: 'Ông: Vũ Văn Đức, Số CMND 172128567' },
+  owner_address: { final_value: 'Khu 5 TT Mường Khến Huyện Tân Lạc, Tỉnh Hòa Bình' },
+  real_estate: {
+    certificate_owner_raw_text: { final_value: [
+      'I. Người sử dụng đất, chủ sở hữu nhà ở và tài sản khác gắn liền với đất',
+      'Ông: Vũ Văn Đức, Năm sinh: 1983,',
+      'Số CMND 172128567 cấp ngày 13/12/1999 tại Công an Tỉnh Thanh Hóa',
+      'Địa chỉ thường trú: Khu 5 TT Mường Khến Huyện Tân Lạc, Tỉnh Hòa Bình'
+    ].join('\n') },
+    certificate_land_raw_text: { final_value: [
+      '1. Thửa đất:',
+      'a) Thửa đất số:',
+      '69 Tờ bản đồ số:',
+      '16',
+      'd) Hình thức sử dụng: riêng',
+      '45,10 m²',
+      'Đất ở',
+      'chung',
+      'e) Thời hạn sử dụng:',
+      'Đất ở',
+      'Lầu dài;'
+    ].join('\n') },
+    land_plot_number: { final_value: '69' },
+    map_sheet_number: { final_value: '16' },
+    land_address: { final_value: 'Tổ 10 Phường Tân Hòa, Thành phố Hòa Bình, Tỉnh Hòa Bình Tổ 10 Phường Tân Hòa, Thành phố Hòa Bình, Tỉnh Hòa Bình " -/-"' },
+    area: { final_value: '45,10 m²' },
+    area_in_words: { final_value: 'Bốn lăm phẩy một mét vuông' },
+    usage_form: { final_value: 'riêng' },
+    usage_purpose: { final_value: 'Đất ở' },
+    usage_term: { final_value: 'KhÃ´ng rÃµ, Ä‘á» nghá»‹ sá»­a thá»§ cÃ´ng' },
+    usage_origin: { final_value: 'Công nhận QSDĐ như giao đất không thu tiền sử dụng đất' },
+    certificate_note: { final_value: 'công trình Hạng mục Số vào số cấp GCN: CH00344' },
+    post_issue_changes: { final_value: 'Chuyển nhượng cho ông Nguyễn Xuân Nghĩa' }
+  }
+};
+const oldHouseReviewSource = [
+  '2 Nhà ở',
+  'a) Địa chỉ:',
+  'g) Nguồn gốc sử dụng:',
+  '" Công nhận QSDĐ như giao đất không thu tiền sử dụng đất"',
+  'Tổ 10 Phường Tân Hòa, Thành phố Hòa Bình, Tỉnh Hòa Bình',
+  'b) Diện tích xây dựng:',
+  '40,0 m',
+  'c) Diện tích sàn:',
+  '40,0 m',
+  'đ) Cấp (Hạng):',
+  'IV',
+  'e) Số tầng:',
+  '01 tầng',
+  'g) Năm hoàn thành xây dựng:',
+  '"-/-"',
+  'h) Thời hạn sở hữu:',
+  '"-/-"',
+  '3. Công trình xây dựng khác:',
+  '4. Rừng sản xuất là rừng trồng:',
+  '5. Cây lâu năm:',
+  '" Công nhận QSDĐ như giao đất không thu tiền sử dụng đất "'
+].join('\n');
+const oldHouseReviewTranscript = dataMergeContext.buildLandCertificateReviewTranscriptForAsset_(oldHouseReviewTranscriptAsset, oldHouseReviewSource).join('\n');
+assert.ok(oldHouseReviewTranscript.includes('Năm sinh: 1983'));
+assert.ok(oldHouseReviewTranscript.includes('cấp ngày 13/12/1999 tại Công an Tỉnh Thanh Hóa'));
+assert.ok(oldHouseReviewTranscript.includes('Riêng: Đất ở 45,10 m²'));
+assert.ok(oldHouseReviewTranscript.includes('Chung: Đất ở Không m²'));
+assert.ok(oldHouseReviewTranscript.includes('đ) Mục đích sử dụng: Đất ở: 45,10 m²'));
+assert.ok(oldHouseReviewTranscript.includes('e) Thời hạn sử dụng: Đất ở: Lâu dài'));
+assert.ok(oldHouseReviewTranscript.includes('g) Nguồn gốc sử dụng: "Công nhận QSDĐ như giao đất không thu tiền sử dụng đất"'));
+assert.ok(oldHouseReviewTranscript.includes('2. Nhà ở:'));
+assert.ok(oldHouseReviewTranscript.includes('b) Diện tích xây dựng:'));
+assert.ok(!oldHouseReviewTranscript.includes('2. Nhà ở: -/-'));
+const oldHouseBlock = oldHouseReviewTranscript.slice(
+  oldHouseReviewTranscript.indexOf('2. Nhà ở:'),
+  oldHouseReviewTranscript.indexOf('3. Công trình xây dựng khác:')
+);
+assert.ok(!oldHouseBlock.includes('Nguồn gốc sử dụng'));
+assert.ok(!oldHouseBlock.includes('Công nhận QSDĐ'));
 assert.strictEqual(
   dataMergeContext.normalizeRealEstateUsageForm_('Sử dụng riêng 2 Đường bê tông'),
   'Sử dụng riêng'
@@ -1353,6 +1432,26 @@ assert.strictEqual(
   dataMergeContext.extractRealEstateIssueDateFromPlainText_('Hòa Bình, Ngày / 4k .tháng5..năm 2011 TM. ỦY BAN NHÂN DÂN'),
   '16/05/2011'
 );
+const autoOcrWrongIssueDateReview = {
+  validation: { warnings: [] },
+  assets: [{
+    real_estate: {
+      issue_date: {
+        ai_value: '04/05/2011',
+        final_value: '04/05/2011',
+        manual_value: '',
+        source: 'AUTO_OCR_LAND_ISSUE_DATE_CROP_CONSENSUS_V2',
+        confidence: 0.94
+      }
+    }
+  }]
+};
+dataMergeContext.repairAssetIssueDateInReviewJson(
+  autoOcrWrongIssueDateReview,
+  'Hòa Bình, Ngày / 4k .tháng5..năm 2011\nTM. ỦY BAN NHÂN DÂN\nCHỦ TỊCH'
+);
+assert.strictEqual(autoOcrWrongIssueDateReview.assets[0].real_estate.issue_date.final_value, '16/05/2011');
+assert.strictEqual(autoOcrWrongIssueDateReview.assets[0].real_estate.issue_date.source, 'OCR_ASSET_TEXT_ISSUE_DATE_REPAIR');
 assert.strictEqual(dataMergeContext.normalizeCertificateSerialValue_('BD151871'), 'BĐ151871');
 assert.strictEqual(
   dataMergeContext.normalizeVietnameseAgencyNameClean_('ỦY BAN NHÂN DÂN THÀNH PHỐ HÒA BÌNH'),

@@ -17,20 +17,24 @@ function attachLandCertificateSemanticDocumentsForReview_(data, caseId) {
   const assets = data.assets || [];
   const allowAllAssetTexts = canUseSharedAssetOcr_(assets, { byFileName: fullOcr.assetTextByFileName || {} });
   assets.forEach(function(asset) {
-    if (asset && asset.certificate_semantic_document &&
-        asset.certificate_semantic_document.source === 'OPENAI_VISION_SEMANTIC' &&
-        asset.certificate_semantic_document.model === CONFIG.OPENAI_MODEL_LOCKED &&
-        isCompleteLandCertificateSemanticDocumentForReview_(asset.certificate_semantic_document)) {
-      overlayReviewAssetFieldsOntoSemanticDocument_(asset.certificate_semantic_document, asset);
-      return;
-    }
     const scopedText = assetOcrTextForSemanticReview_(
       asset,
       fullOcr.assetText || '',
       fullOcr.assetTextByFileName || {},
       allowAllAssetTexts
     );
-    if (!scopedText) return;
+    if (asset && asset.certificate_semantic_document &&
+        asset.certificate_semantic_document.source === 'OPENAI_VISION_SEMANTIC' &&
+        asset.certificate_semantic_document.model === CONFIG.OPENAI_MODEL_LOCKED &&
+        isCompleteLandCertificateSemanticDocumentForReview_(asset.certificate_semantic_document)) {
+      overlayReviewAssetFieldsOntoSemanticDocument_(asset.certificate_semantic_document, asset);
+      attachReviewTranscriptToSemanticDocument_(asset, scopedText);
+      return;
+    }
+    if (!scopedText) {
+      if (asset && asset.certificate_semantic_document) attachReviewTranscriptToSemanticDocument_(asset, '');
+      return;
+    }
     const title = String(
       asset && asset.certificate_title &&
       (asset.certificate_title.final_value || asset.certificate_title.ai_value) || ''
@@ -40,6 +44,7 @@ function attachLandCertificateSemanticDocumentsForReview_(data, caseId) {
       source: 'FULL_ASSET_OCR'
     });
     overlayReviewAssetFieldsOntoSemanticDocument_(asset.certificate_semantic_document, asset);
+    attachReviewTranscriptToSemanticDocument_(asset, scopedText);
   });
   return data;
 }
@@ -100,6 +105,300 @@ function overlayReviewAssetFieldsOntoSemanticDocument_(document, asset) {
     });
   });
   return document;
+}
+
+function attachReviewTranscriptToSemanticDocument_(asset, sourceText) {
+  const document = asset && asset.certificate_semantic_document;
+  if (!document) return;
+  if (hasLandReviewTranscriptEvidence_(document)) return;
+  const lines = buildLandCertificateReviewTranscriptForAsset_(asset, sourceText);
+  if (!lines.length) return;
+  document.pages = document.pages || [];
+  document.pages.unshift({
+    page_index: -1000,
+    layout: 'review_transcript',
+    source_region: 'review_transcript',
+    printed_lines: lines,
+    sections: []
+  });
+  document.review_transcript_source = 'RAW_CERTIFICATE_TEXT';
+}
+
+function hasLandReviewTranscriptEvidence_(document) {
+  return (document && document.pages || []).some(function(page) {
+    if ((page.printed_lines || []).length) return true;
+    return (page.sections || []).some(function(section) {
+      return (section.raw_lines || []).length;
+    });
+  });
+}
+
+function buildLandCertificateReviewTranscriptForAsset_(asset, sourceText) {
+  const re = asset && asset.real_estate || {};
+  const title = reviewFieldValue_(asset && asset.certificate_title);
+  const generation = certificateGenerationFromCompleteTitle_(title) ||
+    inferLandCertificateGenerationFromLayout_(asset && asset.certificate_semantic_document && asset.certificate_semantic_document.generation || '');
+  if (generation !== 'gcn_qsdd' && generation !== 'gcn_qsdd_qsh_nha_o_va_tsk') return [];
+  const lines = [];
+  appendReviewTranscriptRawLines_(lines, reviewFieldValue_(re.certificate_owner_raw_text));
+  if (!lines.length) {
+    lines.push('I. Người sử dụng đất, chủ sở hữu nhà ở và tài sản khác gắn liền với đất');
+    appendReviewTranscriptRawLines_(lines, reviewFieldValue_(asset && asset.owner_identity_summary));
+    appendReviewTranscriptRawLines_(lines, reviewFieldValue_(asset && asset.owner_address));
+  }
+  lines.push('II. Thửa đất, nhà ở và tài sản khác gắn liền với đất');
+  lines.push('1. Thửa đất:');
+  buildOldCertificateLandTranscriptLines_(re, sourceText).forEach(function(line) {
+    lines.push(line);
+  });
+  buildOldCertificateAttachedTranscriptLines_(re, sourceText).forEach(function(line) {
+    lines.push(line);
+  });
+  lines.push('III. Sơ đồ thửa đất, nhà ở và tài sản khác gắn liền với đất');
+  const postIssue = reviewFieldValue_(re.post_issue_changes);
+  if (postIssue) {
+    lines.push('IV. Những thay đổi sau khi cấp Giấy chứng nhận');
+    appendReviewTranscriptRawLines_(lines, postIssue);
+  }
+  return dedupeAdjacentReviewTranscriptLines_(lines);
+}
+
+function buildOldCertificateLandTranscriptLines_(re, sourceText) {
+  const lines = [];
+  const raw = [
+    sourceText || '',
+    reviewFieldValue_(re.certificate_land_raw_text),
+    reviewFieldValue_(re.certificate_info_raw_text)
+  ].join('\n');
+  const plot = safeReviewTranscriptValue_(reviewFieldValue_(re.land_plot_number));
+  const map = safeReviewTranscriptValue_(reviewFieldValue_(re.map_sheet_number));
+  if (plot || map) {
+    lines.push('a) ' + [
+      plot ? 'Thửa đất số: ' + plot : '',
+      map ? 'tờ bản đồ số: ' + map : ''
+    ].filter(Boolean).join('; '));
+  }
+  const address = cleanupReviewLandAddress_(reviewFieldValue_(re.land_address));
+  if (address) lines.push('b) Địa chỉ: ' + address);
+  const area = safeReviewTranscriptValue_(reviewFieldValue_(re.area));
+  const areaWords = safeReviewTranscriptValue_(reviewFieldValue_(re.area_in_words));
+  if (area || areaWords) lines.push('c) Diện tích: ' + formatReviewAreaWithWords_(area, areaWords));
+  buildReviewUsageFormLines_(re, raw).forEach(function(line) {
+    lines.push(line);
+  });
+  const purpose = usagePurposeDisplayForReview_(re);
+  if (purpose) lines.push('đ) Mục đích sử dụng: ' + purpose);
+  const term = usageTermDisplayForReview_(re, raw);
+  if (term) lines.push('e) Thời hạn sử dụng: ' + term);
+  const origin = usageOriginDisplayForReview_(re, raw);
+  if (origin) lines.push('g) Nguồn gốc sử dụng: ' + origin);
+  return lines;
+}
+
+function buildReviewUsageFormLines_(re, raw) {
+  const usageForm = safeReviewTranscriptValue_(reviewFieldValue_(re.usage_form));
+  const purpose = safeReviewTranscriptValue_(reviewFieldValue_(re.usage_purpose));
+  const area = safeReviewTranscriptValue_(reviewFieldValue_(re.area));
+  const normalizedRaw = removeVietnameseAccents_(String(raw || '')).toLowerCase();
+  if (usageForm && normalizedRaw.indexOf('chung') >= 0 && purpose && area) {
+    return [
+      'd) Hình thức sử dụng:',
+      '   Riêng: ' + purpose + ' ' + area,
+      '   Chung: ' + purpose + ' Không m²'
+    ];
+  }
+  return usageForm ? ['d) Hình thức sử dụng: ' + capitalizeFirstReviewWord_(usageForm)] : [];
+}
+
+function usagePurposeDisplayForReview_(re) {
+  const purpose = safeReviewTranscriptValue_(reviewFieldValue_(re.usage_purpose));
+  const area = safeReviewTranscriptValue_(reviewFieldValue_(re.area));
+  if (!purpose) return '';
+  return area && purpose.indexOf(area) < 0 ? purpose + ': ' + area : purpose;
+}
+
+function usageTermDisplayForReview_(re, raw) {
+  const purpose = safeReviewTranscriptValue_(reviewFieldValue_(re.usage_purpose));
+  let term = safeReviewTranscriptValue_(reviewFieldValue_(re.usage_term));
+  const normalizedRaw = removeVietnameseAccents_(String(raw || '')).toLowerCase();
+  if (!term && normalizedRaw.indexOf('lau dai') >= 0) term = 'Lâu dài';
+  if (!term) return '';
+  return purpose && term.indexOf(purpose) < 0 ? purpose + ': ' + term : term;
+}
+
+function usageOriginDisplayForReview_(re, raw) {
+  let origin = safeReviewTranscriptValue_(reviewFieldValue_(re.usage_origin));
+  if (!origin) return '';
+  origin = normalizeCertificatePunctuationSpacing_(origin);
+  const normalizedRaw = removeVietnameseAccents_(String(raw || '')).toLowerCase();
+  if (normalizedRaw.indexOf('"') >= 0 && origin.charAt(0) !== '"') {
+    origin = '"' + origin.replace(/^"+|"+$/g, '') + '"';
+  }
+  return origin;
+}
+
+function buildOldCertificateAttachedTranscriptLines_(re, sourceText) {
+  const source = [
+    sourceText || '',
+    reviewFieldValue_(re.certificate_attached_raw_text),
+    reviewFieldValue_(re.certificate_info_raw_text)
+  ].join('\n');
+  const lines = [];
+  const houseLines = extractOldHouseReviewLines_(source);
+  if (houseLines.length) {
+    houseLines.forEach(function(line) { lines.push(line); });
+  } else {
+    const houseValue = safeReviewTranscriptValue_(reviewFieldValue_(re.attached_assets));
+    lines.push('2. Nhà ở:' + (houseValue ? ' ' + houseValue : ''));
+  }
+  const construction = extractReviewSectionHeadingAndValue_(source, /^3\s*[\).]?\s*c[oô]ng\s+tr/i, '3. Công trình xây dựng khác:');
+  lines.push(construction || '3. Công trình xây dựng khác: -/-');
+  const forest = extractReviewSectionHeadingAndValue_(source, /^4\s*[\).]?\s*r[uư]ng\s+s/i, '4. Rừng sản xuất là rừng trồng:');
+  lines.push(forest || '4. Rừng sản xuất là rừng trồng: -/-');
+  const crops = extractReviewSectionHeadingAndValue_(source, /^5\s*[\).]?\s*c[aâ]y\s+l/i, '5. Cây lâu năm:');
+  lines.push(crops || '5. Cây lâu năm: -/-');
+  const note = safeCertificateNoteTranscriptValue_(reviewFieldValue_(re.certificate_note));
+  lines.push('6. Ghi chú:' + (note ? ' ' + note : ''));
+  return lines;
+}
+
+function extractOldHouseReviewLines_(source) {
+  const lines = reviewTranscriptCleanLines_(source).filter(function(line) {
+    return !/^\[\/?LAND_OCR_/i.test(line);
+  });
+  let best = [];
+  for (let i = 0; i < lines.length; i++) {
+    const normalized = removeVietnameseAccents_(lines[i]).toLowerCase().replace(/\s+/g, ' ').trim();
+    if (!/^2\s*[\).]?\s*nha\s*o\b/.test(normalized)) continue;
+    const candidate = [];
+    candidate.push('2. Nhà ở:');
+    for (let j = i + 1; j < lines.length && candidate.length < 18; j++) {
+      const nextNorm = removeVietnameseAccents_(lines[j]).toLowerCase().replace(/\s+/g, ' ').trim();
+      if (/^3\s*[\).]?\s*cong\s+tr/.test(nextNorm) ||
+          /^iii\s*[\).]/.test(nextNorm) ||
+          /^4\s*[\).]?\s*rung\s+s/.test(nextNorm) ||
+          /^5\s*[\).]?\s*cay\s+l/.test(nextNorm)) break;
+      if (!isUsefulHouseReviewLine_(lines[j])) continue;
+      candidate.push(normalizeHouseReviewLine_(lines[j]));
+    }
+    const joined = removeVietnameseAccents_(candidate.join(' ')).toLowerCase();
+    const score = (joined.indexOf('dien tich xay dung') >= 0 ? 3 : 0) +
+      (joined.indexOf('dien tich san') >= 0 ? 3 : 0) +
+      (joined.indexOf('so tang') >= 0 ? 2 : 0) +
+      candidate.length;
+    if (score > best.score || !best.length) {
+      best = candidate;
+      best.score = score;
+    }
+  }
+  if (best.length <= 1) return [];
+  delete best.score;
+  return dedupeAdjacentReviewTranscriptLines_(best);
+}
+
+function isUsefulHouseReviewLine_(line) {
+  const value = String(line || '').trim();
+  if (!value) return false;
+  const normalized = removeVietnameseAccents_(value).toLowerCase();
+  if (normalized.indexOf('uy ban nhan dan') >= 0 || normalized.indexOf('chu tich') >= 0) return false;
+  if (/^\s*g\s*[\).:]?\s*nguon\s+goc\s+su\s+dung\b/.test(normalized)) return false;
+  if (normalized.indexOf('cong nhan qsdd') >= 0) return false;
+  if (normalized.indexOf('giao dat') >= 0 && normalized.indexOf('su dung dat') >= 0) return false;
+  if (/^\d+(?:[,.]\d+)?$/.test(value)) return false;
+  return true;
+}
+
+function normalizeHouseReviewLine_(line) {
+  return String(line || '')
+    .replace(/\s+/g, ' ')
+    .replace(/\b40,0\s*m(?!²|2)\b/ig, '40,0 m²')
+    .replace(/^"\s*-\s*\/\s*-\s*"$/g, '-/-')
+    .trim();
+}
+
+function extractReviewSectionHeadingAndValue_(source, regex, fallbackHeading) {
+  const lines = reviewTranscriptCleanLines_(source);
+  for (let i = 0; i < lines.length; i++) {
+    if (regex.test(lines[i])) return fallbackHeading + (/-\/-/.test(lines[i]) ? ' -/-' : '');
+  }
+  return '';
+}
+
+function appendReviewTranscriptRawLines_(out, value) {
+  reviewTranscriptCleanLines_(value).forEach(function(line) {
+    out.push(line);
+  });
+}
+
+function reviewTranscriptCleanLines_(value) {
+  return String(value || '').split(/\r?\n/).map(function(line) {
+    return String(line || '').replace(/\s+/g, ' ').trim();
+  }).filter(Boolean);
+}
+
+function dedupeAdjacentReviewTranscriptLines_(lines) {
+  const out = [];
+  (lines || []).forEach(function(line) {
+    const value = String(line || '').replace(/\s+/g, ' ').trim();
+    if (!value) return;
+    const last = out.length ? out[out.length - 1] : '';
+    if (removeVietnameseAccents_(last).toLowerCase() === removeVietnameseAccents_(value).toLowerCase()) return;
+    out.push(value);
+  });
+  return out;
+}
+
+function reviewFieldValue_(field) {
+  if (!field) return '';
+  if (typeof field === 'object' && field.hasOwnProperty('final_value')) return String(field.final_value || field.ai_value || '').trim();
+  return String(field || '').trim();
+}
+
+function safeReviewTranscriptValue_(value) {
+  value = String(value || '').replace(/\s+/g, ' ').trim();
+  if (!value) return '';
+  const normalized = removeVietnameseAccents_(value).toLowerCase();
+  if (value.indexOf('KhÃ') >= 0 || normalized.indexOf('khong ro') >= 0 || normalized.indexOf('de nghi') >= 0) return '';
+  return value;
+}
+
+function cleanupReviewLandAddress_(value) {
+  value = safeReviewTranscriptValue_(value).replace(/["']?\s*-\s*\/\s*-\s*["']?\s*$/g, '').trim();
+  if (!value) return '';
+  const parts = value.split(/(?=Tổ\s+\d+\s+Phường)/i).map(function(part) {
+    return part.trim();
+  }).filter(Boolean);
+  if (parts.length > 1) {
+    const seen = {};
+    value = parts.filter(function(part) {
+      const key = removeVietnameseAccents_(part).toLowerCase();
+      if (seen[key]) return false;
+      seen[key] = true;
+      return true;
+    }).join(' ');
+  }
+  return normalizeCertificatePunctuationSpacing_(value);
+}
+
+function formatReviewAreaWithWords_(area, words) {
+  area = safeReviewTranscriptValue_(area);
+  words = safeReviewTranscriptValue_(words);
+  if (area && words) return area + ' (Bằng chữ: ' + words + ')';
+  return area || (words ? '(Bằng chữ: ' + words + ')' : '');
+}
+
+function safeCertificateNoteTranscriptValue_(value) {
+  value = safeReviewTranscriptValue_(value);
+  if (!value) return '';
+  const normalized = removeVietnameseAccents_(value).toLowerCase();
+  if (normalized.indexOf('hang muc') >= 0 && normalized.indexOf('so vao so') >= 0) return '';
+  if (normalized.indexOf('thua dat so') >= 0 && normalized.indexOf('cong trinh xay dung khac') >= 0) return '';
+  return value;
+}
+
+function capitalizeFirstReviewWord_(value) {
+  value = String(value || '').trim();
+  return value ? value.charAt(0).toLocaleUpperCase('vi-VN') + value.slice(1) : '';
 }
 
 function assetOcrTextForSemanticReview_(asset, fullAssetOcrText, assetTextByFileName, allowAllFiles) {

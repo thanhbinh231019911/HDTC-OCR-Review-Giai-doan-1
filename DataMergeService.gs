@@ -257,10 +257,12 @@ function repairAssetIssueDateInReviewJson(reviewJson, fullAssetOcrText) {
   (reviewJson.assets || []).forEach(function(asset) {
     const field = asset && asset.real_estate && asset.real_estate.issue_date;
     if (!field || !field.hasOwnProperty('final_value') || field.manual_value) return;
-    if (issueDate && shouldReplaceRealEstateIssueDate_(field, issueDate)) {
+    const replaceIssueDate = issueDate && shouldReplaceRealEstateIssueDate_(field, issueDate);
+    const overrideAutoOcrIssueDate = issueDate && shouldOverrideAutoOcrIssueDateFromSignature_(field, issueDate, assetText);
+    if (replaceIssueDate || overrideAutoOcrIssueDate) {
       field.ai_value = issueDate;
       field.final_value = issueDate;
-      field.source = String(field.source || '').indexOf('OCR_REJECTED') === 0
+      field.source = overrideAutoOcrIssueDate || String(field.source || '').indexOf('OCR_REJECTED') === 0
         ? 'OCR_ASSET_TEXT_ISSUE_DATE_REPAIR'
         : field.source || 'OCR_ASSET_TEXT_ISSUE_DATE_REPAIR';
       field.confidence = Math.max(Number(field.confidence || 0), 0.86);
@@ -688,6 +690,20 @@ function repairAssetLandAddressInReviewJson(reviewJson, fullAssetOcrText, assetT
     field.confidence = Math.max(Number(field.confidence || 0), 0.86);
   });
   return reviewJson;
+}
+
+function shouldOverrideAutoOcrIssueDateFromSignature_(field, candidate, assetText) {
+  if (!field || !candidate || field.manual_value) return false;
+  if (String(field.source || '').indexOf('AUTO_OCR_LAND_ISSUE_DATE_CROP_CONSENSUS') !== 0) return false;
+  const current = normalizeDateValue_(field.final_value || field.ai_value || '');
+  if (!isStrictDateValue_(current) || current === candidate) return false;
+  const raw = String(assetText || '');
+  const noisySignatureDate = extractRealEstateIssueDateFromPlainText_(raw);
+  if (noisySignatureDate !== candidate) return false;
+  const normalized = removeVietnameseAccents_(raw).toLowerCase();
+  return normalized.indexOf('uy ban nhan dan') >= 0 &&
+    normalized.indexOf('chu tich') >= 0 &&
+    normalized.indexOf('nam ' + candidate.slice(-4)) >= 0;
 }
 
 function repairAssetPlotAndMapSheetInReviewJson(reviewJson, fullAssetOcrText) {
