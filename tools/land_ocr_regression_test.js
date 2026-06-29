@@ -562,6 +562,58 @@ assert.ok(
   repairedSemanticDocument.items.some(item => item.semantic_key === 'issue_date' && item.value === '16/05/2011'),
   'Review field overlay must keep repaired issue date ahead of noisy semantic values'
 );
+const existingPrintedLinesAsset = {
+  certificate_title: {
+    final_value: 'Giấy chứng nhận quyền sử dụng đất, quyền sở hữu nhà ở và tài sản khác gắn liền với đất'
+  },
+  certificate_semantic_document: {
+    source: 'OPENAI_VISION_SEMANTIC',
+    model: 'gpt-5.4-mini',
+    generation: 'gcn_qsdd_qsh_nha_o_va_tsk',
+    pages: [{
+      page_index: 1,
+      layout: 'gcn_qsdd_qsh_nha_o_va_tsk_cover',
+      printed_lines: [
+        'GIẤY CHỨNG NHẬN',
+        'I. Người sử dụng đất, chủ sở hữu nhà ở và tài sản khác gắn liền với đất',
+        'Ông: Trần Minh Đức',
+        'Năm sinh: 1982, CCCD số: 036082012721',
+        'Địa chỉ thường trú: Tổ 5, phường Tân Hòa, thành phố Hòa Bình, tỉnh Hòa Bình.',
+        'BQ 258292'
+      ],
+      sections: []
+    }],
+    items: [{ semantic_key: 'land_plot_number', section_semantic: 'land_details', value: '139' }]
+  },
+  owner_identity_summary: { final_value: 'Ông: Trần Minh Đức, Năm sinh: 1982, CCCD số: 036082012721' },
+  owner_address: { final_value: 'Tổ 5, phường Tân Hòa, thành phố Hòa Bình, tỉnh Hòa Bình' },
+  real_estate: {
+    certificate_owner_raw_text: { final_value: [
+      'I. Người sử dụng đất, chủ sở hữu nhà ở và tài sản khác gắn liền với đất',
+      'Ông: Trần Minh Đức',
+      'Năm sinh: 1982, CCCD số: 036082012721',
+      'Địa chỉ thường trú: Tổ 5, phường Tân Hòa, thành phố Hòa Bình, tỉnh Hòa Bình.'
+    ].join('\n') },
+    land_plot_number: { final_value: '139' },
+    map_sheet_number: { final_value: '31' },
+    land_address: { final_value: 'Tổ dân phố số 6, phường Tân Hòa, thành phố Hòa Bình, tỉnh Hòa Bình' },
+    area: { final_value: '250,0 m²' },
+    usage_form: { final_value: 'Sử dụng riêng' },
+    usage_purpose: { final_value: 'Đất ở 165,0 m², đất trồng cây lâu năm 85,0 m²' },
+    usage_term: { final_value: 'Đất ở: Lâu dài; Đất trồng cây lâu năm: đến ngày 15/10/2043' },
+    usage_origin: { final_value: 'Nhận chuyển nhượng đất được Công nhận QSDĐ như giao đất có thu tiền sử dụng đất' },
+    certificate_note: { final_value: 'Không' },
+    post_issue_changes: { final_value: 'Không rõ, đề nghị kiểm tra' }
+  }
+};
+dataMergeContext.attachReviewTranscriptToSemanticDocument_(existingPrintedLinesAsset, '');
+const reviewTranscriptPage = existingPrintedLinesAsset.certificate_semantic_document.pages[0];
+assert.strictEqual(reviewTranscriptPage.layout, 'review_transcript');
+assert.ok(!reviewTranscriptPage.printed_lines.join('\n').includes('BQ 258292'));
+assert.ok(
+  existingPrintedLinesAsset.certificate_semantic_document.pages.some(page => (page.printed_lines || []).includes('BQ 258292')),
+  'Original OCR printed lines remain available as trace evidence after adding clean review transcript'
+);
 const oldHouseReviewTranscriptAsset = {
   certificate_title: {
     final_value: 'Giấy chứng nhận quyền sử dụng đất, quyền sở hữu nhà ở và tài sản khác gắn liền với đất'

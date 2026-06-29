@@ -110,7 +110,7 @@ function overlayReviewAssetFieldsOntoSemanticDocument_(document, asset) {
 function attachReviewTranscriptToSemanticDocument_(asset, sourceText) {
   const document = asset && asset.certificate_semantic_document;
   if (!document) return;
-  if (hasLandReviewTranscriptEvidence_(document)) return;
+  if (hasReviewTranscriptPage_(document)) return;
   const lines = buildLandCertificateReviewTranscriptForAsset_(asset, sourceText);
   if (!lines.length) return;
   document.pages = document.pages || [];
@@ -124,12 +124,10 @@ function attachReviewTranscriptToSemanticDocument_(asset, sourceText) {
   document.review_transcript_source = 'RAW_CERTIFICATE_TEXT';
 }
 
-function hasLandReviewTranscriptEvidence_(document) {
+function hasReviewTranscriptPage_(document) {
+  if (document && document.review_transcript_source) return true;
   return (document && document.pages || []).some(function(page) {
-    if ((page.printed_lines || []).length) return true;
-    return (page.sections || []).some(function(section) {
-      return (section.raw_lines || []).length;
-    });
+    return page && (page.layout === 'review_transcript' || page.source_region === 'review_transcript');
   });
 }
 
