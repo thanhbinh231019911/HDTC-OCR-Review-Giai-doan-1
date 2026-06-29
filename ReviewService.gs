@@ -177,9 +177,23 @@ function extractOldCertificateOwnerReviewLines_(re, sourceText) {
       if (isStandaloneReviewCertificateSerialLine_(next)) continue;
       out.push(next);
     }
-    if (out.length > 1) return dedupeAdjacentReviewTranscriptLines_(out);
+    if (out.length > 1 && !isNoisyOldCertificateOwnerReviewLines_(out)) {
+      return dedupeAdjacentReviewTranscriptLines_(out);
+    }
   }
   return reviewTranscriptCleanLines_(reviewFieldValue_(re && re.certificate_owner_raw_text));
+}
+
+function isNoisyOldCertificateOwnerReviewLines_(lines) {
+  return (lines || []).slice(1).some(function(line) {
+    const normalized = removeVietnameseAccents_(String(line || '')).toLowerCase().replace(/\s+/g, ' ').trim();
+    return /^\[\/?land_ocr_/i.test(String(line || '').trim()) ||
+      normalized.indexOf('giay chung nhan') >= 0 ||
+      normalized.indexOf('quyen su dung dat') >= 0 ||
+      normalized.indexOf('quyen so huu') >= 0 ||
+      normalized.indexOf('cong hoa xa hoi chu nghia') >= 0 ||
+      normalized.indexOf('doc lap') >= 0 && normalized.indexOf('hanh phuc') >= 0;
+  });
 }
 
 function isOldCertificateOwnerBlockBoundary_(line) {
@@ -380,6 +394,15 @@ function isUsefulHouseReviewLine_(line) {
   const value = String(line || '').trim();
   if (!value) return false;
   const normalized = removeVietnameseAccents_(value).toLowerCase();
+  if (/^\s*\[\/?land_ocr_/i.test(value)) return false;
+  if (/^\s*1\s*[\).:]?\s*thua\s+dat\b/i.test(normalized)) return false;
+  if (normalized.indexOf('thua dat so') >= 0 ||
+      normalized.indexOf('to ban do') >= 0 ||
+      normalized.indexOf('so vao so cap gcn') >= 0 ||
+      normalized.indexOf('so vao so cap giay chung nhan') >= 0 ||
+      normalized.indexOf('giay chung nhan') >= 0 ||
+      normalized.indexOf('quyen su dung dat') >= 0 ||
+      normalized.indexOf('cong hoa xa hoi chu nghia') >= 0) return false;
   if (normalized.indexOf('uy ban nhan dan') >= 0 || normalized.indexOf('chu tich') >= 0) return false;
   if (/^\s*g\s*[\).:]?\s*nguon\s+goc\s+su\s+dung\b/.test(normalized)) return false;
   if (normalized.indexOf('cong nhan qsdd') >= 0) return false;

@@ -606,10 +606,28 @@ const existingPrintedLinesAsset = {
     post_issue_changes: { final_value: 'Không rõ, đề nghị kiểm tra' }
   }
 };
-dataMergeContext.attachReviewTranscriptToSemanticDocument_(existingPrintedLinesAsset, '');
+const dirtyPrintedLineSource = [
+  'I. Người sử dụng đất , chủ sở hữu nhà ở và tài sản khác gắn liền với đất',
+  'QUYỀN SỞ HỮU NHÀ Ở VÀ TÀI SẢN KHÁC GẮN LIỀN VỚI ĐẤT',
+  'GIẤY CHỨNG NHẬN',
+  'QUYỀN SỬ DỤNG ĐẤT',
+  '[/LAND_OCR_REGION]',
+  '[LAND_OCR_REGION layout=gcn_qsdd_qsh_nha_o_va_tsk_change score=6 region=top]',
+  'II. Thửa đất, nhà ở và tài sản khác gắn liền với đất',
+  '1. Thửa đất:',
+  '2. Nhà ở:',
+  'a ) Thửa đất số :',
+  'Số vào số cấp GCN : CS.02994 .',
+  '3. Công trình xây dựng khác: -/-'
+].join('\n');
+dataMergeContext.attachReviewTranscriptToSemanticDocument_(existingPrintedLinesAsset, dirtyPrintedLineSource);
 const reviewTranscriptPage = existingPrintedLinesAsset.certificate_semantic_document.pages[0];
+const reviewTranscriptText = reviewTranscriptPage.printed_lines.join('\n');
 assert.strictEqual(reviewTranscriptPage.layout, 'review_transcript');
-assert.ok(!reviewTranscriptPage.printed_lines.join('\n').includes('BQ 258292'));
+assert.ok(!reviewTranscriptText.includes('BQ 258292'));
+assert.ok(!reviewTranscriptText.includes('[LAND_OCR_REGION'));
+assert.ok(!reviewTranscriptText.includes('GIẤY CHỨNG NHẬN'));
+assert.ok(!reviewTranscriptText.includes('CS.02994'));
 assert.ok(
   existingPrintedLinesAsset.certificate_semantic_document.pages.some(page => (page.printed_lines || []).includes('BQ 258292')),
   'Original OCR printed lines remain available as trace evidence after adding clean review transcript'
