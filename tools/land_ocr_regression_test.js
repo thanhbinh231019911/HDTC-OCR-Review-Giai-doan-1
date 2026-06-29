@@ -794,6 +794,14 @@ assert.ok(doanVanMinhTranscript.includes('b) Diện tích xây dựng: 87,7m2.')
 assert.ok(doanVanMinhTranscript.includes('d) Hình thức sở hữu: Sở hữu riêng'));
 assert.ok(!doanVanMinhTranscript.includes('b) Diện tích xây dựng:\n'));
 assert.ok(!doanVanMinhTranscript.includes('d) Hình thức sở hữu:\n'));
+const doanVanMinhHouseBlock = doanVanMinhTranscript.slice(
+  doanVanMinhTranscript.indexOf('2. Nhà ở:'),
+  doanVanMinhTranscript.indexOf('3. Công trình xây dựng khác:')
+);
+assert.ok(doanVanMinhHouseBlock.indexOf('b) Diện tích xây dựng') < doanVanMinhHouseBlock.indexOf('c) Diện tích sàn'));
+assert.ok(doanVanMinhHouseBlock.indexOf('c) Diện tích sàn') < doanVanMinhHouseBlock.indexOf('d) Hình thức sở hữu'));
+assert.ok(doanVanMinhHouseBlock.indexOf('d) Hình thức sở hữu') < doanVanMinhHouseBlock.indexOf('đ) Cấp (Hạng)'));
+assert.ok(doanVanMinhHouseBlock.indexOf('đ) Cấp (Hạng)') < doanVanMinhHouseBlock.indexOf('e) Thời hạn sở hữu'));
 assert.ok(doanVanMinhTranscript.includes('6. Ghi chú: Không'));
 assert.ok(!doanVanMinhTranscript.includes('6. Ghi chú: Không . 4. Rừng'));
 assert.ok(!doanVanMinhTranscript.includes(', e) Thời hạn sở hữu'));

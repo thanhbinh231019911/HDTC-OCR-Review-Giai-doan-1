@@ -396,7 +396,7 @@ function extractOldHouseReviewLines_(source) {
   }
   if (best.length <= 1) return [];
   delete best.score;
-  return dedupeAdjacentReviewTranscriptLines_(compactHouseReviewLines_(best));
+  return dedupeAdjacentReviewTranscriptLines_(sortHouseReviewLines_(compactHouseReviewLines_(best)));
 }
 
 function isUsefulHouseReviewLine_(line) {
@@ -460,6 +460,47 @@ function compactHouseReviewLines_(lines) {
     out.push(line);
   }
   return out;
+}
+
+function sortHouseReviewLines_(lines) {
+  const heading = [];
+  const sortable = [];
+  const trailing = [];
+  (lines || []).forEach(function(line, index) {
+    const value = String(line || '').trim();
+    if (!value) return;
+    if (index === 0 && /^2\s*[\).]?\s*nha\s*o\b/i.test(removeVietnameseAccents_(value))) {
+      heading.push(value);
+      return;
+    }
+    const order = houseReviewLineOrder_(value);
+    if (order >= 0) {
+      sortable.push({ line: value, order: order, index: index });
+      return;
+    }
+    trailing.push({ line: value, index: index });
+  });
+  sortable.sort(function(a, b) {
+    return a.order - b.order || a.index - b.index;
+  });
+  return heading.concat(sortable.map(function(item) {
+    return item.line;
+  })).concat(trailing.map(function(item) {
+    return item.line;
+  }));
+}
+
+function houseReviewLineOrder_(line) {
+  const marker = houseReviewLineMarker_(line);
+  const orders = { a: 1, b: 2, c: 3, d: 4, 'đ': 5, e: 6, g: 7, h: 8 };
+  return marker && Object.prototype.hasOwnProperty.call(orders, marker) ? orders[marker] : -1;
+}
+
+function houseReviewLineMarker_(line) {
+  const value = String(line || '').trim();
+  if (/^(?:đ|Ä‘)\s*[\).:]/i.test(value)) return 'đ';
+  const match = value.match(/^([a-h])\s*[\).:]/i);
+  return match ? match[1].toLowerCase() : '';
 }
 
 function findOpenHouseReviewLabelIndex_(lines, value) {
