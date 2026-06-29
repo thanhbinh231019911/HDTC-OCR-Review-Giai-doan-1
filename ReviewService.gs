@@ -138,7 +138,11 @@ function buildLandCertificateReviewTranscriptForAsset_(asset, sourceText) {
     inferLandCertificateGenerationFromLayout_(asset && asset.certificate_semantic_document && asset.certificate_semantic_document.generation || '');
   if (generation !== 'gcn_qsdd' && generation !== 'gcn_qsdd_qsh_nha_o_va_tsk') return [];
   const lines = [];
-  extractOldCertificateOwnerReviewLines_(re, sourceText).forEach(function(line) {
+  const ownerLines = extractOldCertificateOwnerReviewLines_(re, sourceText);
+  if (ownerLines.length && !isOldCertificateOwnerHeadingReviewLine_(ownerLines[0])) {
+    lines.push('I. Người sử dụng đất, chủ sở hữu nhà ở và tài sản khác gắn liền với đất');
+  }
+  ownerLines.forEach(function(line) {
     lines.push(line);
   });
   if (!lines.length) {
@@ -182,6 +186,11 @@ function extractOldCertificateOwnerReviewLines_(re, sourceText) {
     }
   }
   return reviewTranscriptCleanLines_(reviewFieldValue_(re && re.certificate_owner_raw_text));
+}
+
+function isOldCertificateOwnerHeadingReviewLine_(line) {
+  const normalized = removeVietnameseAccents_(String(line || '')).toLowerCase().replace(/\s+/g, ' ').trim();
+  return /^(?:i|1)\s*[\).:]?\s*nguoi\s+su\s+dung\s+dat\b/.test(normalized);
 }
 
 function isNoisyOldCertificateOwnerReviewLines_(lines) {

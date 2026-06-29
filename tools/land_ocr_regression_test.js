@@ -589,7 +589,6 @@ const existingPrintedLinesAsset = {
   owner_address: { final_value: 'Tổ 5, phường Tân Hòa, thành phố Hòa Bình, tỉnh Hòa Bình' },
   real_estate: {
     certificate_owner_raw_text: { final_value: [
-      'I. Người sử dụng đất, chủ sở hữu nhà ở và tài sản khác gắn liền với đất',
       'Ông: Trần Minh Đức',
       'Năm sinh: 1982, CCCD số: 036082012721',
       'Địa chỉ thường trú: Tổ 5, phường Tân Hòa, thành phố Hòa Bình, tỉnh Hòa Bình.'
@@ -624,6 +623,7 @@ dataMergeContext.attachReviewTranscriptToSemanticDocument_(existingPrintedLinesA
 const reviewTranscriptPage = existingPrintedLinesAsset.certificate_semantic_document.pages[0];
 const reviewTranscriptText = reviewTranscriptPage.printed_lines.join('\n');
 assert.strictEqual(reviewTranscriptPage.layout, 'review_transcript');
+assert.ok(reviewTranscriptPage.printed_lines[0].indexOf('I. Người sử dụng đất') === 0);
 assert.ok(!reviewTranscriptText.includes('BQ 258292'));
 assert.ok(!reviewTranscriptText.includes('[LAND_OCR_REGION'));
 assert.ok(!reviewTranscriptText.includes('GIẤY CHỨNG NHẬN'));
